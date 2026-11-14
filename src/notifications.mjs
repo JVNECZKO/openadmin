@@ -18,6 +18,11 @@ export function markRead(id, userId) {
   return { ok: true };
 }
 
+export function deleteNotification(id, userId) {
+  run('DELETE FROM notifications WHERE id = ? AND (user_id = ? OR user_id IS NULL)', Number(id), userId);
+  return { ok: true };
+}
+
 export function markAllRead(userId) {
   run('UPDATE notifications SET read_at = ? WHERE (user_id = ? OR user_id IS NULL) AND read_at IS NULL', nowIso(), userId);
   return { ok: true };

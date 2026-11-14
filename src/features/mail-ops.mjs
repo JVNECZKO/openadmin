@@ -166,6 +166,7 @@ export function register(router) {
         ${card('Aktywny routing', table({
           columns: [{ label: 'Domena', key: 'domain' }, { label: 'Router', key: 'router' }, { label: 'Cel', key: 'target' }, { label: 'Split', render: (r) => badge(r.split ? 'tak' : 'nie', r.split ? 'warn' : 'muted') }],
           rows: listRoutes(), empty: 'Brak niestandardowego routingu.',
+          actions: [{ label: 'Usuń', form: (r) => `${A}/routing/${encodeURIComponent(r.domain)}/delete`, icon: 'trash', danger: true, confirm: (r) => `Usunąć routing ${r.domain}?` }],
         }), { padded: false })}
         <form method="post" action="${A}/routing/apply"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary" type="submit">Zastosuj routing w Eximie</button></form>`;
     }
@@ -194,6 +195,7 @@ export function register(router) {
           actions: [
             { label: 'Edytuj', href: (r) => `${A}?tab=smtp&edit=${r.id}`, icon: 'edit' },
             { label: 'Test', form: (r) => `${A}/smtp/${r.id}/test`, icon: 'check' },
+            { label: 'Usuń', form: (r) => `${A}/smtp/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć remote SMTP?' },
             { label: 'Aktywuj', form: (r) => `${A}/smtp/${r.id}/activate`, icon: 'play' },
           ],
           empty: 'Brak remote SMTP.',
@@ -276,6 +278,11 @@ export function register(router) {
     const r = saveRoute(ctx.body, ctx.user.username);
     return ctx.redirect(`${A}?tab=routing&flash=${encodeURIComponent(r.ok ? 'Routing zapisany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
+  router.post(`${A}/routing/:domain/delete`, (ctx) => {
+    run('DELETE FROM mail_routing WHERE domain = ?', decodeURIComponent(ctx.params.domain));
+    applyRouting();
+    return ctx.redirect(`${A}?tab=routing&flash=Routing%20usuni%C4%99ty`);
+  });
   router.post(`${A}/routing/apply`, (ctx) => {
     const r = applyRouting();
     return ctx.redirect(`${A}?tab=routing&flash=${encodeURIComponent(r.ok ? 'Routing zastosowany' : r.error)}${r.ok ? '' : '&type=error'}`);
@@ -285,6 +292,10 @@ export function register(router) {
     if (!r.ok) return ctx.redirect(`${A}?tab=smtp&flash=${encodeURIComponent(r.error)}&type=error`);
     const msg = r.tested?.ok ? 'Zapisano; test TCP OK' : `Zapisano; test nieudany: ${r.tested?.detail || 'brak'}`;
     return ctx.redirect(`${A}?tab=smtp&flash=${encodeURIComponent(msg)}&type=${r.tested?.ok ? 'ok' : 'error'}`);
+  });
+  router.post(`${A}/smtp/:id/delete`, (ctx) => {
+    run('DELETE FROM remote_smtp WHERE id = ?', Number(ctx.params.id));
+    return ctx.redirect(`${A}?tab=smtp&flash=Usuni%C4%99to`);
   });
   router.post(`${A}/smtp/:id/update`, async (ctx) => {
     const r = await saveRemoteSmtp({ ...ctx.body, id: ctx.params.id }, ctx.user.username);

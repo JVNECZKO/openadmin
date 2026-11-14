@@ -2,7 +2,7 @@
 import { html as h, formatDate } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, table, badge, alert, tabs, form, field, emptyState } from '../ui/components.mjs';
-import { listNotifications, unreadCount, markRead, markAllRead, channels, saveChannel, deleteChannel, testChannel, testAll, channelFor } from '../notifications.mjs';
+import { listNotifications, unreadCount, markRead, deleteNotification, markAllRead, channels, saveChannel, deleteChannel, testChannel, testAll, channelFor } from '../notifications.mjs';
 
 const AP = '/admin/notifications';
 const UP = '/user/notifications';
@@ -26,6 +26,7 @@ export function register(router) {
           actions: [
             { label: 'Otwórz', href: (r) => r.link || AP, icon: 'eye' },
             { label: 'Oznacz', form: (r) => `${AP}/${r.id}/read`, icon: 'check', show: (r) => !r.read_at },
+            { label: 'Usuń', form: (r) => `${AP}/${r.id}/delete`, icon: 'trash', danger: true },
           ],
           empty: 'Brak powiadomień.',
         }) : emptyState('Brak powiadomień.')}
@@ -67,6 +68,7 @@ export function register(router) {
   });
 
   router.post(`${AP}/:id/read`, (ctx) => { markRead(ctx.params.id, ctx.user.id); return ctx.redirect(AP); });
+  router.post(`${AP}/:id/delete`, (ctx) => { deleteNotification(ctx.params.id, ctx.user.id); return ctx.redirect(AP); });
   router.post(`${AP}/read-all`, (ctx) => { markAllRead(ctx.user.id); return ctx.redirect(AP); });
   router.post(`${AP}/channels`, (ctx) => {
     const r = saveChannel(ctx.body, ctx.user.username);
@@ -90,9 +92,11 @@ export function register(router) {
     const rows = listNotifications(ctx.user.id);
     const editing = ctx.query.edit ? channelFor(ctx.query.edit) : null;
     const body = h`${card('Powiadomienia', h`${rows.length ? h`<div class="timeline">${rows.map((n) => h`<div class="timeline-item"><div class="timeline-dot">${badge(n.level, 'brand')}</div><div class="timeline-body"><div class="spread"><strong>${n.title}</strong><span class="small muted">${formatDate(n.created_at, { time: true })}</span></div><div class="small">${n.body || ''}</div>${n.link ? h`<a class="link small" href="${n.link}">Otwórz</a>` : ''}</div></div>`)}</div>` : emptyState('Brak powiadomień.')}
+      ${rows.length ? h`<div class="row mt-12">${rows.slice(0, 20).map((n) => h`<form method="post" action="${UP}/${n.id}/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-ghost btn-sm" type="submit">Usuń: ${n.title}</button></form>`)}</div>` : ''}
       <form method="post" action="${UP}/read-all" class="mt-12"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary btn-sm" type="submit">Oznacz wszystkie jako przeczytane</button></form>`, { padded: false })}`;
     return page(ctx, { title: 'Powiadomienia', subtitle: 'Zdarzenia Twojego konta', body });
   });
+  router.post(`${UP}/:id/delete`, (ctx) => { deleteNotification(ctx.params.id, ctx.user.id); return ctx.redirect(UP); });
   router.post(`${UP}/read-all`, (ctx) => { markAllRead(ctx.user.id); return ctx.redirect(UP); });
   router.post(`${UP}/:id/read`, (ctx) => { markRead(ctx.params.id, ctx.user.id); return ctx.redirect(UP); });
 }

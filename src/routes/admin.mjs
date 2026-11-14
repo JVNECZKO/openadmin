@@ -18,7 +18,7 @@ import { systemProvider, providerInfo } from '../providers/index.mjs';
 import { register as registerWebServer } from '../features/webserver.mjs';
 import { register as registerMariaDb } from '../features/mariadb.mjs';
 import { register as registerApps } from '../features/apps.mjs';
-import { createServerBackup } from '../backups.mjs';
+import { createServerBackup, backupPath } from '../backups.mjs';
 import { collectUsage, usageMeta } from '../usage.mjs';
 import { enforceAll, quotaMeta } from '../quota.mjs';
 import { pluginInventory, hookScript } from '../plugins.mjs';
@@ -929,8 +929,17 @@ ${setting('ns2', 'ns2')}.   3600  IN  A  ${setting('server_ip', '127.0.0.1')}</p
           { label: 'Status', render: (b) => badge(b.status, 'ok') },
         ],
         rows, empty: 'No backups yet.',
+        actions: [{ label: 'Delete', form: (b) => `${A}/backups/${b.id}/delete`, icon: 'trash', danger: true, confirm: 'Delete this backup archive?' }],
       })}`;
     return page(ctx, { title: 'Backup / Restore', subtitle: 'Server-wide backup management', body });
+  });
+  router.post('/admin/backups/:id/delete', (ctx) => {
+    const row = get('SELECT * FROM backups WHERE id = ?', Number(ctx.params.id));
+    if (!row) return ctx.redirect(`${A}/backups?flash=Not%20found&type=error`);
+    try { fs.rmSync(backupPath(row.filename), { force: true }); } catch { /* ignore */ }
+    run('DELETE FROM backups WHERE id = ?', row.id);
+    audit(ctx.user.username, 'admin', 'backup.delete', row.filename, ctx.ip);
+    return ctx.redirect(`${A}/backups?flash=Backup%20deleted`);
   });
   router.post('/admin/backups/create', (ctx) => {
     try {
@@ -968,11 +977,22 @@ ${setting('ns2', 'ns2')}.   3600  IN  A  ${setting('server_ip', '127.0.0.1')}</p
       <div class="ticket-thread">${msgs.map((m) => h`<div class="ticket-msg ${m.level === 'user' ? 'user' : 'staff'}">
         <div class="ticket-head"><strong>${m.author}</strong><span class="small muted">${formatDate(m.created_at, { time: true })}</span></div>
         <div class="ticket-body">${m.body}</div></div>`)}</div>
+      <form method="post" action="${A}/tickets/${t.id}/update" class="row mb-12"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <select name="status">${['open','answered','customer-reply','closed'].map((x) => h`<option ${x === t.status ? 'selected' : ''}>${x}</option>`)}</select>
+        <select name="priority">${['low','normal','high','urgent'].map((x) => h`<option ${x === t.priority ? 'selected' : ''}>${x}</option>`)}</select>
+        <button class="btn btn-secondary btn-sm" type="submit">Zapisz status</button></form>
       <form method="post" action="${A}/tickets/${t.id}/reply" class="oa-form mt-18"><input type="hidden" name="_csrf" value="${ctx.csrf}">
         <div class="field field-full"><label class="field-label">Reply</label><textarea name="message" rows="5" required></textarea></div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Send reply</button>
           <button class="btn btn-ghost" type="submit" formaction="${A}/tickets/${t.id}/close">Close</button></div></form>`)}`;
     return page(ctx, { title: 'Ticket #' + t.id, subtitle: t.subject, body });
+  });
+  router.post('/admin/tickets/:id/update', (ctx) => {
+    const t = get('SELECT * FROM tickets WHERE id = ?', Number(ctx.params.id));
+    if (!t) return ctx.redirect(`${A}/tickets?flash=Not%20found&type=error`);
+    run('UPDATE tickets SET status = ?, priority = ?, updated_at = ? WHERE id = ?', String(ctx.body.status || t.status), String(ctx.body.priority || t.priority), nowIso(), t.id);
+    audit(ctx.user.username, 'admin', 'ticket.update', String(t.id), ctx.ip);
+    return ctx.redirect(`${A}/tickets/${t.id}?flash=Updated`);
   });
   router.post('/admin/tickets/:id/reply', (ctx) => {
     const t = get('SELECT * FROM tickets WHERE id = ?', Number(ctx.params.id));
@@ -1012,8 +1032,14 @@ ${setting('ns2', 'ns2')}.   3600  IN  A  ${setting('server_ip', '127.0.0.1')}</p
           { label: 'Read', render: (m) => (m.read_at ? badge('yes', 'ok') : badge('no', 'muted')) },
         ],
         rows, empty: 'No messages sent.',
+        actions: [{ label: 'Delete', form: (m) => `${A}/messages/${m.id}/delete`, icon: 'trash', danger: true, confirm: 'Delete this message?' }],
       })}`)}`;
     return page(ctx, { title: 'Message System', subtitle: 'Send notices to accounts', body });
+  });
+  router.post('/admin/messages/:id/delete', (ctx) => {
+    run('DELETE FROM messages WHERE id = ?', Number(ctx.params.id));
+    audit(ctx.user.username, 'admin', 'message.delete', String(ctx.params.id), ctx.ip);
+    return ctx.redirect(`${A}/messages?flash=Message%20deleted`);
   });
   router.post('/admin/messages/send', (ctx) => {
     run('INSERT INTO messages(level, username, subject, body, created_at) VALUES(?,?,?,?,?)',

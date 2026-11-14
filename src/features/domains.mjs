@@ -282,6 +282,16 @@ export function registerDomainsPost(router) {
     return ctx.redirect('/user/redirects?flash=Redirect%20created');
   });
 
+  router.post('/user/redirects/:id/update', (ctx) => {
+    const r = get('SELECT * FROM redirects WHERE id = ? AND username = ?', Number(ctx.params.id), ctx.user.username);
+    if (!r) return ctx.redirect('/user/redirects?flash=Not%20found&type=error');
+    const to = String(ctx.body.to_url || '').trim();
+    if (!/^https?:\/\//i.test(to)) return ctx.redirect('/user/redirects?flash=Target%20must%20start%20with%20http(s)://&type=error');
+    run('UPDATE redirects SET from_path=?, to_url=?, type=? WHERE id=?', String(ctx.body.from_path || '/'), to, String(ctx.body.type || '301'), r.id);
+    audit(ctx.user.username, ctx.user.level, 'redirect.update', `${r.domain_id}:${to}`, ctx.ip);
+    return ctx.redirect('/user/redirects?flash=Redirect%20updated');
+  });
+
   router.post('/user/redirects/:id/delete', (ctx) => {
     const r = get('SELECT * FROM redirects WHERE id = ?', Number(ctx.params.id));
     if (r && r.username === ctx.user.username) run('DELETE FROM redirects WHERE id = ?', r.id);
@@ -298,6 +308,18 @@ export function registerDomainsPost(router) {
     run('INSERT INTO dns_records(domain_id, name, type, value, ttl) VALUES(?,?,?,?,?)', d.id, `pointer-${alias}`, 'POINTER', alias, 3600);
     audit(ctx.user.username, ctx.user.level, 'pointer.create', alias, ctx.ip);
     return ctx.redirect('/user/pointers?flash=' + encodeURIComponent(`Pointer ${alias} → ${d.name} created`));
+  });
+
+  router.post('/user/pointers/:id/update', (ctx) => {
+    const p = get("SELECT * FROM dns_records WHERE id = ? AND type = 'POINTER'", Number(ctx.params.id));
+    const d = p ? domainFor(ctx.user, p.domain_id) : null;
+    if (!d) return ctx.redirect('/user/pointers?flash=Not%20found&type=error');
+    const alias = String(ctx.body.alias || '').trim().toLowerCase();
+    if (!isDomain(alias) || get('SELECT id FROM domains WHERE name = ?', alias)) return ctx.redirect('/user/pointers?flash=Invalid%20or%20existing%20domain&type=error');
+    run('UPDATE dns_records SET name=?, value=? WHERE id=?', `pointer-${alias}`, alias, p.id);
+    rebuildZone(d.name); apply({ dns: true });
+    audit(ctx.user.username, ctx.user.level, 'pointer.update', alias, ctx.ip);
+    return ctx.redirect('/user/pointers?flash=Pointer%20updated');
   });
 
   router.post('/user/pointers/:id/delete', (ctx) => {
@@ -410,6 +432,7 @@ export function register(router) {
     const domains = visibleDomains(ctx.user);
     const pointers = all(`SELECT r.*, d.name domain FROM dns_records r JOIN domains d ON d.id = r.domain_id
                           WHERE r.type = 'POINTER' AND d.user_id = ? ORDER BY r.value`, ctx.user.id);
+    const editing = ctx.query.edit ? pointers.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`
       ${alert('A domain pointer makes an additional domain serve the same content as an existing domain. Add the pointer, then create an A record for it in its own DNS zone.', 'info')}
       ${listCard({
@@ -421,19 +444,28 @@ export function register(router) {
         ],
         rows: pointers,
         empty: 'No domain pointers yet.',
-        actions: [{ label: 'Remove', form: (r) => `/user/pointers/${r.id}/delete`, confirm: 'Remove this pointer?', icon: 'trash', danger: true }],
+        actions: [
+          { label: 'Edytuj', href: (r) => `/user/pointers?edit=${r.id}`, icon: 'edit' },
+          { label: 'Remove', form: (r) => `/user/pointers/${r.id}/delete`, confirm: 'Remove this pointer?', icon: 'trash', danger: true },
+        ],
         footer: h`<form method="post" action="/user/pointers/create" class="inline-form" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <select name="domain" style="width:220px">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
           <input type="text" name="alias" placeholder="alias-domain.com" style="max-width:240px">
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add pointer</button>
         </form>`,
-      })}`;
+      })}
+      ${editing ? card(`Edytuj pointer · ${editing.value}`, h`<form method="post" action="/user/pointers/${editing.id}/update" class="oa-form">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <div class="form-grid"><div class="field field-full"><label class="field-label">Nowa domena wskaźnika</label><input name="alias" value="${editing.value}" required></div></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/pointers">Anuluj</a></div>
+      </form>`) : ''}`;
     return page(ctx, { title: 'Domain Pointers', subtitle: 'Alias extra domains to content you already host', body });
   });
 
   router.get('/user/redirects', (ctx) => {
     const rows = all('SELECT r.*, d.name domain FROM redirects r JOIN domains d ON d.id = r.domain_id WHERE r.username = ? ORDER BY r.created_at DESC', ctx.user.username);
+    const editing = ctx.query.edit ? rows.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const domains = visibleDomains(ctx.user);
     const body = h`
       ${listCard({
@@ -446,7 +478,10 @@ export function register(router) {
         ],
         rows,
         empty: 'No redirects configured.',
-        actions: [{ label: 'Delete', form: (r) => `/user/redirects/${r.id}/delete`, confirm: 'Delete redirect?', icon: 'trash', danger: true }],
+        actions: [
+          { label: 'Edytuj', href: (r) => `/user/redirects?edit=${r.id}`, icon: 'edit' },
+          { label: 'Delete', form: (r) => `/user/redirects/${r.id}/delete`, confirm: 'Delete redirect?', icon: 'trash', danger: true },
+        ],
         footer: h`<form method="post" action="/user/redirects/create" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <select name="domain" style="width:200px">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
@@ -455,7 +490,16 @@ export function register(router) {
           <select name="type" style="width:90px"><option>301</option><option>302</option></select>
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add redirect</button>
         </form>`,
-      })}`;
+      })}
+      ${editing ? card(`Edytuj przekierowanie · ${editing.domain}${editing.from_path}`, h`<form method="post" action="/user/redirects/${editing.id}/update" class="oa-form">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <div class="form-grid">
+          <div class="field"><label class="field-label">Od</label><input name="from_path" value="${editing.from_path}" required></div>
+          <div class="field"><label class="field-label">Do URL</label><input name="to_url" value="${editing.to_url}" required></div>
+          <div class="field"><label class="field-label">Typ</label><select name="type">${['301','302'].map((x) => h`<option ${x === editing.type ? 'selected' : ''}>${x}</option>`)}</select></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/redirects">Anuluj</a></div>
+      </form>`) : ''}`;
     return page(ctx, { title: 'Site Redirects', subtitle: 'Redirect requests to another URL', body });
   });
 

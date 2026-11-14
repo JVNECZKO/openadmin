@@ -235,6 +235,7 @@ See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the command matrix.
 - [Migration import](docs/IMPORT.md) — cPanel and DirectAdmin archives
 - [Webuzo audit](docs/WEBUZO-AUDIT.md) — feature gaps and QoL roadmap (read-only production audit)
 - [Platform features](docs/PLATFORM-FEATURES.md) — Security Center, Mail Ops, backups, limits, MCP, WebDisk
+- [CRUD audit](docs/CRUD-AUDIT.md) — resource-by-resource completeness and fixed gaps
 - [Roundcube](docs/ROUNDCUBE.md) — mail client setup
 - [Frontend reconstruction](docs/recon.md) — how the compatibility surface was recovered
 - [Landing page source](site/README.md) — build and deploy the marketing site
@@ -246,7 +247,7 @@ dependencies; the test suite is plain <code>node --test</code>.
 
     node --test tests/
 
-The suite is **100/100 passing** locally and on the Debian container (Node 22,
+The suite is **103/103 passing** locally and on the Debian container (Node 22,
 no npm dependencies).
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.

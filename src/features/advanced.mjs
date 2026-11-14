@@ -145,6 +145,7 @@ export function register(router) {
   /* ------------------------------------------------------- handlers / mime */
   const simpleListPage = (kind, title, subtitle, placeholderKey, placeholderValue) => (ctx) => {
     const rows = getSetting(`user:${ctx.user.username}:${kind}`, []);
+    const editing = ctx.query.edit ? rows.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`${listCard({
       title, sub: `${rows.length} entry(ies)`,
       columns: [
@@ -153,14 +154,24 @@ export function register(router) {
         { label: 'Added', render: (r) => formatDate(r.added) },
       ],
       rows, empty: 'No custom entries.',
-      actions: [{ label: 'Delete', form: (r) => `/user/${kind}/${r.id}/delete`, icon: 'trash', danger: true }],
+      actions: [
+        { label: 'Edytuj', href: (r) => `/user/${kind}?edit=${r.id}`, icon: 'edit' },
+        { label: 'Delete', form: (r) => `/user/${kind}/${r.id}/delete`, icon: 'trash', danger: true },
+      ],
       footer: h`<form method="post" action="/user/${kind}/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <input name="key" placeholder="${placeholderKey}" style="max-width:220px" required>
         <input name="value" placeholder="${placeholderValue}" style="flex:1;min-width:260px" required>
         <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add</button>
       </form>`,
-    })}${card('Default configuration', h`${kvList([
+    })}${editing ? card(`Edytuj wpis · ${editing.key}`, h`<form method="post" action="/user/${kind}/${editing.id}/update" class="oa-form">
+      <input type="hidden" name="_csrf" value="${ctx.csrf}">
+      <div class="form-grid">
+        <div class="field"><label class="field-label">Klucz</label><input name="key" value="${editing.key}" required></div>
+        <div class="field field-full"><label class="field-label">Wartość</label><input name="value" value="${editing.value}" required></div>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/${kind}">Anuluj</a></div>
+    </form>`) : ''}${card('Default configuration', h`${kvList([
       ['Config file', kind === 'handlers' ? '/etc/apache2/conf.d/handlers.conf' : '/etc/apache2/conf.d/mime.conf'],
       ['Applied to', 'All domains on this account'],
       ['Override', 'Requires AllowOverride FileInfo'],
@@ -185,14 +196,24 @@ export function register(router) {
     putSetting(`user:${ctx.user.username}:${kind}`, rows);
     return ctx.redirect(`/user/${kind}?flash=Entry%20deleted`);
   };
+  const simpleUpdate = (kind) => (ctx) => {
+    const key = String(ctx.body.key || '').trim(); const value = String(ctx.body.value || '').trim();
+    if (!key || !value) return ctx.redirect(`/user/${kind}?flash=Both%20fields%20are%20required&type=error`);
+    const rows = getSetting(`user:${ctx.user.username}:${kind}`, []).map((r) => r.id === ctx.params.id ? { ...r, key, value } : r);
+    putSetting(`user:${ctx.user.username}:${kind}`, rows);
+    return ctx.redirect(`/user/${kind}?flash=Entry%20updated`);
+  };
   router.post('/user/handlers/create', simpleCreate('handlers'));
+  router.post('/user/handlers/:id/update', simpleUpdate('handlers'));
   router.post('/user/handlers/:id/delete', simpleDelete('handlers'));
   router.post('/user/mime-types/create', simpleCreate('mime-types'));
+  router.post('/user/mime-types/:id/update', simpleUpdate('mime-types'));
   router.post('/user/mime-types/:id/delete', simpleDelete('mime-types'));
 
   /* -------------------------------------------------- protected directories */
   router.get('/user/protected-directories', (ctx) => {
     const rows = getSetting(`protected:${ctx.user.username}`, []);
+    const editing = ctx.query.edit ? rows.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const domains = visibleDomains(ctx.user);
     const body = h`${listCard({
       title: 'Protected directories', sub: 'Password-protect folders with HTTP Basic auth',
@@ -202,7 +223,10 @@ export function register(router) {
         { label: 'Created', render: (r) => formatDate(r.created) },
       ],
       rows, empty: 'No protected directories.',
-      actions: [{ label: 'Remove', form: (r) => `/user/protected-directories/${r.id}/delete`, confirm: 'Remove protection?', icon: 'trash', danger: true }],
+      actions: [
+        { label: 'Edytuj', href: (r) => `/user/protected-directories?edit=${r.id}`, icon: 'edit' },
+        { label: 'Remove', form: (r) => `/user/protected-directories/${r.id}/delete`, confirm: 'Remove protection?', icon: 'trash', danger: true },
+      ],
       footer: h`<form method="post" action="/user/protected-directories/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <select name="domain" style="width:200px">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
@@ -211,7 +235,14 @@ export function register(router) {
         <input name="password" type="password" placeholder="password" style="max-width:160px" required>
         <button class="btn btn-primary btn-sm" type="submit">${icon('lock', { size: 14 })} Protect</button>
       </form>`,
-    })}`;
+    })}${editing ? card(`Edytuj ochronę · ${editing.domain}${editing.path}`, h`<form method="post" action="/user/protected-directories/${editing.id}/update" class="oa-form">
+      <input type="hidden" name="_csrf" value="${ctx.csrf}">
+      <div class="form-grid">
+        <div class="field"><label class="field-label">Katalog</label><input value="${editing.domain}${editing.path}" disabled></div>
+        <div class="field"><label class="field-label">Nowe hasło</label><input name="password" type="password" minlength="4" required></div>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Zmień hasło</button><a class="btn btn-ghost" href="/user/protected-directories">Anuluj</a></div>
+    </form>`) : ''}`;
     return page(ctx, { title: 'Protected Directories', subtitle: 'Require a password for a folder', body });
   });
 
@@ -226,6 +257,15 @@ export function register(router) {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, '.htpasswd'), `${ctx.body.username}:{SHA}${Buffer.from(String(ctx.body.password)).toString('base64')}\n`);
     return ctx.redirect('/user/protected-directories?flash=Directory%20protected');
+  });
+
+  router.post('/user/protected-directories/:id/update', (ctx) => {
+    const rows = getSetting(`protected:${ctx.user.username}`, []);
+    const row = rows.find((r) => String(r.id) === String(ctx.params.id));
+    if (!row) return ctx.redirect('/user/protected-directories?flash=Not%20found&type=error');
+    const dir = path.join(homeDir(ctx.user.username), 'domains', row.domain, 'public_html', row.path);
+    fs.writeFileSync(path.join(dir, '.htpasswd'), `${row.users[0]}:{SHA}${Buffer.from(String(ctx.body.password)).toString('base64')}\n`);
+    return ctx.redirect('/user/protected-directories?flash=Password%20updated');
   });
 
   router.post('/user/protected-directories/:id/delete', (ctx) => {

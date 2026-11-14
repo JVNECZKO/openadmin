@@ -2074,3 +2074,39 @@ test('admin DNS record has working edit and update', async () => {
   assert.equal(updated.value, '192.0.2.55');
   assert.equal(updated.ttl, 600);
 });
+
+test('primary user CRUD resources support update', async () => {
+  const cookie = await loginAs('demouser');
+  const domain = db.get("SELECT * FROM domains WHERE username='demouser' LIMIT 1");
+  let page = await (await fetch(base + `/user/domains/${domain.id}/edit`, { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Edit domain/);
+  let csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  await fetch(base + `/user/domains/${domain.id}/update`, {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, php_version: '8.4', ssl: '1' }).toString(),
+  });
+  assert.equal(db.get('SELECT php_version FROM domains WHERE id=?', domain.id).php_version, '8.4');
+
+  const mail = db.get("SELECT * FROM email_accounts WHERE domain='example.com' LIMIT 1");
+  page = await (await fetch(base + `/user/email?domain=example.com&edit=${mail.id}`, { headers: { Cookie: cookie } })).text();
+  csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  await fetch(base + `/user/email/${mail.id}/update`, {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, quota_mb: '2048' }).toString(),
+  });
+  assert.equal(db.get('SELECT quota_mb FROM email_accounts WHERE id=?', mail.id).quota_mb, 2048);
+
+  const cronId = db.run('INSERT INTO cron_jobs(user_id,minute,hour,day,month,weekday,command,created_at) VALUES(?,?,?,?,?,?,?,?)', db.get("SELECT * FROM users WHERE username='demouser'").id, '0', '*', '*', '*', '*', '/bin/true', new Date().toISOString()).lastInsertRowid;
+  page = await (await fetch(base + `/user/cron?edit=${cronId}`, { headers: { Cookie: cookie } })).text();
+  csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  await fetch(base + `/user/cron/${cronId}/update`, {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, minute: '5', hour: '*', day: '*', month: '*', weekday: '*', command: '/bin/echo updated' }).toString(),
+  });
+  assert.equal(db.get('SELECT command FROM cron_jobs WHERE id=?', cronId).command, '/bin/echo updated');
+  db.run('DELETE FROM cron_jobs WHERE id=?', cronId);
+
+  const dbRow = db.get("SELECT * FROM databases WHERE user_id=(SELECT id FROM users WHERE username='demouser') LIMIT 1");
+  page = await (await fetch(base + `/user/databases/${dbRow.id}/password`, { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Zmiana hasła/);
+});
