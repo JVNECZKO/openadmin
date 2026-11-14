@@ -165,9 +165,9 @@ export function register(router) {
 
   router.get('/admin/web-server/view', (ctx) => {
     const rel = String(ctx.query.file || '');
-    if (rel.includes('..')) return ctx.redirect('/admin/web-server?flash=Invalid%20path&type=error');
+    if (!rel || rel.includes('..')) return ctx.redirect('/admin/web-server?flash=Invalid%20path&type=error');
     const full = path.join(stagingDir(activeServer()), 'sites', rel.split('/').pop());
-    if (!fs.existsSync(full)) return ctx.redirect('/admin/web-server?flash=File%20not%20found&type=error');
+    if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return ctx.redirect('/admin/web-server?flash=File%20not%20found&type=error');
     const body = h`${card(rel, h`<pre class="code-block">${fs.readFileSync(full, 'utf8')}</pre>`, {
       actions: [h`<a class="link small" href="/admin/web-server">Back</a>`],
     })}`;
