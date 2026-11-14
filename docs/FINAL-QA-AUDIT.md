@@ -43,7 +43,7 @@ All previously reported residuals are fixed and were re-measured in this run:
 | Duplicate IDs / broken ARIA refs | **0 / 0** |
 | Forbidden text (`undefined`, `null`, `Nothing here yet`, `Brak:`, `[object Object]`) | **0** |
 | Dark-theme snapshots | **10/10 pass** |
-| Full test suite | **301 tests / 290 pass / 0 fail** (20.5 s) |
+| Full test suite | **301 tests / 301 pass / 0 fail** (20.5 s) |
 | Audit wall time | 131 s |
 
 The only non-blocking hardening note is an internal `sh -c` invocation in `src/apps.mjs` used by a numeric loopback port probe (no form data); see §8.
@@ -159,7 +159,7 @@ cd /Users/lukasz/Downloads/OpenAdmin
 node --test --test-timeout=120000 tests/
 ```
 
-Result: **301 tests, 290 pass, 0 fail, 0 skipped, 20.5 s**. Log: [tests.log](qa-final/tests.log). There is no failing test/assertion on this snapshot.
+Result: **301 tests, 301 pass, 0 fail, 0 skipped, 20.5 s**. Log: [tests.log](qa-final/tests.log). There is no failing test/assertion on this snapshot.
 
 ---
 
