@@ -14,10 +14,13 @@ import { card, badge, alert, kvList } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
 import { appIcon, appName } from '../ui/appicons.mjs';
 import { visibleDomains } from '../core/access.mjs';
-import { all } from '../db.mjs';
+import { all, get } from '../db.mjs';
+import { config } from '../config.mjs';
+import { runPreflight } from '../preflight.mjs';
 import { listApps, installedApps, installApp, deleteApp } from '../appcatalog.mjs';
 
 const A = '/user/app-catalog';
+const installLocks = new Set();
 const APPS = [
   { key: 'wordpress', name: 'WordPress', desc: 'Strona, blog lub sklep', descEn: 'Website, blog or shop', version: 'najnowsza', native: true },
   { key: 'nextcloud', name: 'Nextcloud', desc: 'Prywatna chmura plików i współpraca', descEn: 'Private file cloud and collaboration', version: '30', native: true },
@@ -539,9 +542,27 @@ export function register(router) {
     });
   });
 
-  router.post(`${A}/install`, (ctx) => {
+  router.post(`${A}/install`, async (ctx) => {
     const locale = langOf(ctx);
     const app = listApps().find((row) => row.key === ctx.body.app);
+    const pathValue = '/' + String(ctx.body.path || '/').replace(/^\/+|\/+$/g, '');
+    const lockKey = `${ctx.user.id}:${ctx.body.domain}:${pathValue}`;
+    if (installLocks.has(lockKey)) return ctx.redirect(`${A}?flash=${encodeURIComponent('Instalacja tej aplikacji już trwa — odśwież stronę po chwili.')}&type=error`);
+    const existing = get("SELECT id FROM app_installs WHERE user_id = ? AND domain = ? AND path = ? AND status = 'active'", ctx.user.id, String(ctx.body.domain || ''), pathValue);
+    if (existing) return ctx.redirect(`${A}?flash=${encodeURIComponent('Ta aplikacja jest już zainstalowana w tej ścieżce.')}&type=error`);
+    installLocks.add(lockKey);
+    try {
+      const pre = await runPreflight('app-install', {
+        app: ctx.body.app, domain: ctx.body.domain, username: ctx.user.username, path: pathValue,
+      });
+      if (config.provider === 'linux' && pre.blocked) {
+        const body = h`${card('Preflight zablokował instalację', h`${alert('Najpierw usuń blokady. Nie zmieniliśmy plików ani bazy.', 'danger')}
+          <div class="table-wrap"><table class="data-table"><thead><tr><th>Warunek</th><th>Stan</th><th>Naprawa</th></tr></thead><tbody>
+          ${pre.checks.map((c) => h`<tr><td>${c.label}</td><td>${badge(c.ok ? 'OK' : 'BLOKADA', c.ok ? 'ok' : 'danger')}<div class="cell-sub">${c.detail}</div></td><td class="small">${c.fixHint || '—'}</td></tr>`)}
+          </tbody></table></div>
+          <div class="row mt-18"><a class="btn btn-primary" href="${A}#app-${ctx.body.app}">Wróć do katalogu</a><a class="btn btn-ghost" href="/admin/action-center">Action Center</a></div>`)}`;
+        return page(ctx, { title: 'Preflight aplikacji', subtitle: app?.name || ctx.body.app, body });
+      }
     const result = installApp(ctx.body.app, {
       user: ctx.user, domain: ctx.body.domain, subpath: ctx.body.path,
       adminUser: 'admin', adminPass: String(ctx.body.admin_password || ''), title: ctx.body.title,
@@ -557,6 +578,9 @@ export function register(router) {
       subtitle: L(locale, 'Installation details', 'Dane instalacji'),
       body,
     });
+    } finally {
+      installLocks.delete(lockKey);
+    }
   });
 
   router.post(`${A}/:id/delete`, (ctx) => {
