@@ -1,37 +1,132 @@
-// Administrator backup destinations, jobs and restore.
+// Administrator backup destinations, durable jobs and transactional restore.
 import { all } from '../db.mjs';
 import { html as h, formatDate } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
-import { card, table, badge, alert, emptyState, form, field, tabs, kvList } from '../ui/components.mjs';
-import { listServers, listJobs, listRuns, saveServer, deleteServer, testServer, saveJob, deleteJob, runJob, restoreRun } from '../backupcenter.mjs';
+import { card, table, badge, alert, form, field, tabs, kvList, progress } from '../ui/components.mjs';
+import {
+  listServers,
+  listJobs,
+  listRuns,
+  saveServer,
+  deleteServer,
+  testServer,
+  saveJob,
+  deleteJob,
+  runJob,
+  restoreRun,
+  previewRestoreRun,
+  schedulerTimezone,
+} from '../backupcenter.mjs';
+import { cancelJob, retryJob, resumeJob, jobView, listJobViews, spawnJobRunner } from '../backups.mjs';
 
 const A = '/admin/backup-center';
 
 function tab(ctx) {
-  const t = String(ctx.query.tab || 'servers');
-  return ['servers', 'jobs', 'runs'].includes(t) ? t : 'servers';
+  const value = String(ctx.query.tab || 'servers');
+  return ['servers', 'jobs', 'runs', 'operations'].includes(value) ? value : 'servers';
+}
+
+function statusTone(status) {
+  if (status === 'complete' || status === 'succeeded' || status === 'ok') return 'ok';
+  if (status === 'failed' || status === 'error') return 'danger';
+  if (status === 'running' || status === 'queued' || status === 'cancelling') return 'warn';
+  return 'muted';
+}
+
+function flashFrom(ctx) {
+  return ctx.query.flash ? { type: ctx.query.type === 'error' ? 'error' : 'ok', message: String(ctx.query.flash) } : null;
+}
+
+async function waitForJob(jobId, timeoutMs = 300000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const job = jobView(jobId);
+    if (!job || job.terminal) return job;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return jobView(jobId);
+}
+
+function operationColumns() {
+  return [
+    { label: 'Job', render: (r) => h`<a href="${A}/operations/${r.id}" class="cell-strong">#${r.id}</a><span class="cell-sub">${r.kind}</span>` },
+    { label: 'Status', render: (r) => h`${badge(r.status, statusTone(r.status))}<div class="small muted">${r.stageLabel || r.stage || ''}</div>` },
+    { label: 'Postęp', render: (r) => h`<div class="small">${r.progress}% (${r.stagesDone}/${r.stagesTotal})</div>` },
+    { label: 'Cel', render: (r) => h`<span class="cell-mono small">${r.target || '—'}</span>` },
+    { label: 'Aktualizacja', render: (r) => h`<span class="small muted">${formatDate(r.updated_at, { time: true })}</span>` },
+  ];
+}
+
+function operationDetail(ctx, job) {
+  const result = job.result || {};
+  return h`
+    ${card(`Zadanie #${job.id}`, h`
+      ${kvList([
+        ['Rodzaj', job.kind], ['Status', job.status], ['Etap', job.stageLabel || job.stage || '—'],
+        ['Postęp', `${job.progress}% (${job.stagesDone}/${job.stagesTotal} etapów)`],
+        ['Aktor', job.actor || '—'], ['Cel', job.target || '—'],
+        ['Utworzono', formatDate(job.created_at, { time: true })],
+        ['Zakończono', job.finished_at ? formatDate(job.finished_at, { time: true }) : '—'],
+        ['Błąd', job.error || '—'],
+      ])}
+      ${job.cancellable ? h`<div class="row mt-18"><form method="post" action="${A}/operations/${job.id}/cancel" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger btn-sm" type="submit" onclick="return confirm('Anulować zadanie? Zostanie zatrzymane w najbliższym bezpiecznym punkcie kontrolnym.')">Anuluj</button></form></div>` : ''}
+      ${job.retryable ? h`<div class="row mt-18"><form method="post" action="${A}/operations/${job.id}/retry" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary btn-sm" type="submit">Ponów</button></form>${job.resumable ? h`<form method="post" action="${A}/operations/${job.id}/resume" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-primary btn-sm" type="submit">Wznów</button></form>` : ''}</div>` : ''}
+    `)}
+    ${card('Etapy', h`<div class="stack">${job.stages.map((stage) => h`<div class="service-row"><div style="flex:1"><strong>${stage.label}</strong><div class="small muted">${stage.detail || ''}</div></div>${badge(stage.status, stage.status === 'complete' ? 'ok' : stage.status === 'failed' ? 'danger' : stage.status === 'running' ? 'brand' : 'muted')}</div>`)}</div><div class="mt-18">${progress(job.stagesDone, job.stagesTotal || 1, { label: `${job.progress}%` })}</div>`)}
+    ${card('Log', job.events.length ? h`<pre class="code-block small">${job.events.map((event) => `[${event.created_at}] ${event.level}: ${event.message}`).join('\n')}</pre>` : '<p class="small muted">Brak wpisów.</p>')}
+    ${Object.keys(result).length ? card('Raport per obiekt', h`<pre class="code-block small">${JSON.stringify(result, null, 2)}</pre>`) : ''}
+    <div class="row mt-18"><a class="btn btn-primary" href="${A}?tab=operations">Wróć</a><a class="btn btn-ghost" href="${A}/operations/${job.id}/state">JSON</a></div>
+    ${['queued', 'running'].includes(job.status) ? h`<meta http-equiv="refresh" content="3">` : ''}
+  `;
+}
+
+function dryRunPage(ctx, preview) {
+  const homes = preview.homes || [];
+  return h`
+    ${card('Dry-run restore', h`
+      ${kvList([
+        ['Archiwum', preview.filename],
+        ['SHA-256', preview.sha256],
+        ['Integralność', preview.integrity?.verified ? 'zgodna z zapisem' : 'brak zapisanego hasha — tylko struktura archiwum'],
+        ['Wpisy', String(preview.entries)],
+        ['Baza panelu', preview.hasDb ? 'tak (zostanie przywrócona transakcyjnie)' : 'nie'],
+        ['Rozmiar', `${(Number(preview.bytes || 0) / 1024 / 1024).toFixed(1)} MB`],
+      ])}
+      ${preview.expectedSha && preview.sha256 !== preview.expectedSha ? alert('Hash archiwum nie zgadza się z zapisem — restore zostanie odrzucony.', 'error') : ''}
+      <p class="small muted mt-12">${preview.note || ''}</p>
+    `)}
+    ${card('Konflikty i zakres', homes.length ? h`<div class="table-wrap"><table class="data-table"><thead><tr><th>Konto</th><th>Pliki teraz</th><th>Pliki w archiwum</th><th>Nadpisane</th><th>Dodane</th><th>Usunięte</th></tr></thead><tbody>${homes.map((home) => h`<tr><td class="cell-mono">${home.username}</td><td>${home.currentFiles}</td><td>${home.archivedFiles}</td><td>${home.conflicts.overwritten}</td><td>${home.conflicts.added}</td><td>${home.conflicts.removed}</td></tr>`)}</tbody></table></div>` : '<p class="small muted">Archiwum nie zawiera katalogów domowych.</p>')}
+    ${card('Przykładowe wpisy', h`<div class="table-wrap"><table class="data-table"><thead><tr><th>Wpis</th></tr></thead><tbody>${(preview.sample || []).map((entry) => h`<tr><td class="cell-mono small">${entry}</td></tr>`)}</tbody></table></div>`)}
+    <div class="row mt-18"><a class="btn btn-primary" href="${A}?tab=runs">Wróć</a><form method="post" action="${A}/runs/${preview.runId}/restore" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger" type="submit" onclick="return confirm('Przywrócić backup? Zostanie utworzony punkt powrotu, staging, weryfikacja integralności i automatyczny rollback w razie błędu.')">Przywróć transakcyjnie</button></form></div>
+  `;
 }
 
 export function register(router) {
   router.get(A, (ctx) => {
-    const t = tab(ctx);
+    const current = tab(ctx);
     const users = all("SELECT username FROM users WHERE level IN ('user','reseller') ORDER BY username");
     const servers = listServers();
     const jobs = listJobs();
     const runs = listRuns(60);
-    const editServer = ctx.query.edit && t === 'servers' ? servers.find((x) => String(x.id) === String(ctx.query.edit)) : null;
-    const editJob = ctx.query.edit && t === 'jobs' ? jobs.find((x) => String(x.id) === String(ctx.query.edit)) : null;
+    const operations = listJobViews({ kinds: ['backup.job.run', 'backup.create', 'backup.restore.server', 'backup.restore.user'], limit: 40 });
+    const editServer = ctx.query.edit && current === 'servers' ? servers.find((x) => String(x.id) === String(ctx.query.edit)) : null;
+    const editJob = ctx.query.edit && current === 'jobs' ? jobs.find((x) => String(x.id) === String(ctx.query.edit)) : null;
+    const flash = flashFrom(ctx);
+    const tz = schedulerTimezone();
     const body = h`
       ${tabs([
         { key: 'servers', label: 'Serwery backup', count: servers.length },
         { key: 'jobs', label: 'Joby', count: jobs.length },
         { key: 'runs', label: 'Historia i restore', count: runs.length },
-      ], t, { base: A })}
-      ${t === 'servers' ? h`
+        { key: 'operations', label: 'Zadania', count: operations.length },
+      ], current, { base: A })}
+      ${flash ? alert(flash.message, flash.type) : ''}
+      ${current === 'servers' ? h`
         ${card('Dodaj lokalizację backupu', form([
           field({ name: 'name', label: 'Nazwa', required: true, placeholder: 'S3 lub NAS' }),
           field({ name: 'type', label: 'Typ', type: 'select', options: [
-            { value: 'local', label: 'Lokalny katalog' }, { value: 'sftp', label: 'SFTP (curl)' }, { value: 'ftp', label: 'FTP/FTPS (curl)' }, { value: 's3', label: 'Amazon S3 (AWS CLI)' },
+            { value: 'local', label: 'Lokalny katalog' }, { value: 'sftp', label: 'SFTP (curl)' },
+            { value: 'ftp', label: 'FTP — niebezpieczny, wymaga wyjątku' }, { value: 's3', label: 'Amazon S3 (AWS CLI)' },
           ] }),
           field({ name: 'host', label: 'Host', placeholder: 'backup.example.com' }),
           field({ name: 'port', label: 'Port', type: 'number' }),
@@ -62,9 +157,9 @@ export function register(router) {
           ],
           empty: 'Brak zdalnych lokalizacji — backup lokalny nadal działa.',
         }), { padded: false })}
-        ${alert('SFTP/FTP wymaga zainstalowanego curl. S3 wymaga AWS CLI i kluczy. Panel pokaże dokładny błąd, zamiast udawać sukces.', 'info')}
+        ${alert('SFTP używa curl; hasło jest przekazywane przez chroniony stdin, nie przez argv (SEC-021). Zwykły FTP jest domyślnie zablokowany, bo wysyła poświadczenia i archiwum bez szyfrowania (SEC-024); wyjątek wymaga daty w backup_plain_ftp_until.', 'info')}
       ` : ''}
-      ${t === 'jobs' ? h`
+      ${current === 'jobs' ? h`
         ${card('Nowy job', form([
           field({ name: 'name', label: 'Nazwa', required: true, placeholder: 'Backup nightly' }),
           field({ name: 'scope', label: 'Zakres', type: 'select', options: [{ value: 'server', label: 'Cały serwer' }, { value: 'user', label: 'Jedno konto' }] }),
@@ -73,20 +168,28 @@ export function register(router) {
           field({ name: 'schedule', label: 'Harmonogram', type: 'select', options: [
             { value: 'hourly', label: 'Co godzinę' }, { value: 'daily', label: 'Codziennie' }, { value: 'weekly', label: 'Co tydzień' }, { value: 'monthly', label: 'Co miesiąc' },
           ] }),
+          field({ name: 'schedule_time', label: 'Godzina (HH:MM, strefa joba)', value: '03:00', placeholder: '03:00' }),
+          field({ name: 'timezone', label: 'Strefa czasowa (IANA)', value: tz, placeholder: 'Europe/Warsaw' }),
+          field({ name: 'catch_up_minutes', label: 'Catch-up po restarcie (min)', type: 'number', value: 1440, min: 0, max: 10080 }),
           field({ name: 'retention_days', label: 'Retencja (dni)', type: 'number', value: 14, min: 1 }),
         ], { action: `${A}/jobs`, csrf: ctx.csrf, submit: 'Utwórz job' }))}
         ${editJob ? card(`Edytuj job · ${editJob.name}`, form([
           field({ name: 'name', label: 'Nazwa', value: editJob.name, required: true }),
           field({ name: 'scope', label: 'Zakres', type: 'select', value: editJob.scope, options: [{ value: 'server', label: 'serwer' }, { value: 'user', label: 'konto' }] }),
-          field({ name: 'target_user', label: 'Konto', type: 'select', value: editJob.target_user || '', options: [{ value: '', label: '—' }, ...users.map((u) => ({ value: u.username, label: u.username }))] }),
+          field({ name: 'target_user', label: 'Konto', type: 'select', value: editJob.target_user || '', options: [{ value: '', label: '—' }, ...users.map((x) => ({ value: x.username, label: x.username }))] }),
           field({ name: 'server_id', label: 'Lokalizacja', type: 'select', value: String(editJob.server_id || ''), options: [{ value: '', label: 'lokalnie' }, ...servers.map((x) => ({ value: String(x.id), label: x.name }))] }),
           field({ name: 'schedule', label: 'Harmonogram', type: 'select', value: editJob.schedule, options: ['hourly', 'daily', 'weekly', 'monthly'] }),
+          field({ name: 'schedule_time', label: 'Godzina HH:MM', value: editJob.schedule_time || '03:00' }),
+          field({ name: 'timezone', label: 'Strefa czasowa', value: editJob.timezone || tz }),
+          field({ name: 'catch_up_minutes', label: 'Catch-up (min)', type: 'number', value: editJob.catch_up_minutes ?? 1440 }),
           field({ name: 'retention_days', label: 'Retencja dni', type: 'number', value: editJob.retention_days }),
         ], { action: `${A}/jobs/${editJob.id}/update`, csrf: ctx.csrf, submit: 'Zapisz job' })) : ''}
         ${card('Joby', table({
           columns: [
             { label: 'Nazwa', key: 'name' }, { label: 'Zakres', render: (r) => r.scope === 'user' ? `user: ${r.target_user}` : 'serwer' },
-            { label: 'Lokalizacja', render: (r) => r.server_name || 'lokalnie' }, { label: 'Harmonogram', key: 'schedule' },
+            { label: 'Lokalizacja', render: (r) => r.server_name || 'lokalnie' },
+            { label: 'Harmonogram', render: (r) => h`${r.schedule} ${r.schedule_time || '03:00'}<div class="small muted">${r.timezone || tz}</div>` },
+            { label: 'Następny', render: (r) => r.next_run_at ? formatDate(r.next_run_at, { time: true }) : '—' },
             { label: 'Ostatni', render: (r) => r.last_run_at ? h`${badge(r.last_status || '?', r.last_status === 'ok' ? 'ok' : 'danger')}<div class="small muted">${formatDate(r.last_run_at, { time: true })}</div>` : '—' },
           ],
           rows: jobs,
@@ -97,73 +200,127 @@ export function register(router) {
           ],
           empty: 'Brak jobów. Backup lokalny nadal działa codziennie.',
         }), { padded: false })}
+        ${alert('Kolejka jest trwała: nextRunAt, lease, catch-up i historia prób są w bazie. Restart panelu ani druga instancja nie resetują rytmu ani nie dublują uruchomień.', 'info')}
       ` : ''}
-      ${t === 'runs' ? h`
+      ${current === 'runs' ? h`
         ${card('Historia', table({
           columns: [
             { label: 'Job', render: (r) => r.job_name || '—' }, { label: 'Plik', render: (r) => h`<span class="cell-mono small">${r.filename}</span>` },
-            { label: 'Status', render: (r) => badge(r.status, r.status === 'complete' ? 'ok' : r.status === 'failed' ? 'danger' : 'warn') },
+            { label: 'Status', render: (r) => badge(r.status, statusTone(r.status)) },
+            { label: 'SHA-256', render: (r) => h`<span class="cell-mono small">${r.sha256 ? String(r.sha256).slice(0, 12) : '—'}</span>` },
             { label: 'Rozmiar', render: (r) => `${r.size_mb} MB` }, { label: 'Start', render: (r) => formatDate(r.started_at, { time: true }) },
+            { label: 'Restore', render: (r) => r.restored_at ? formatDate(r.restored_at, { time: true }) : '—' },
           ],
           rows: runs,
           empty: 'Brak uruchomień.',
         }), { padded: false })}
-        ${card('Przywracanie', h`<p class="small muted">Najpierw uruchom <strong>dry-run</strong> — sprawdzi archiwum i pokaże zawartość. Przywrócenie tworzy kopię pre-restore, nadpisuje pliki domów i odtwarza bazę panelu (poza sesjami).</p>
-          <div class="stack">${runs.filter((r) => r.status === 'complete').slice(0, 20).map((r) => h`<div class="service-row"><div style="flex:1"><strong>${r.job_name || r.filename}</strong><div class="small muted">${r.filename}</div></div>
+        ${card('Przywracanie', h`<p class="small muted">Najpierw <strong>dry-run</strong> — pokaże integralność, zakres i konflikty. Apply tworzy punkt powrotu, rozpakowuje archiwum do staging, weryfikuje manifest i pliki, przełącza katalogi atomowo (rollback przy błędzie) oraz odtwarza bazę panelu w jednej transakcji.</p>
+          <div class="stack">${runs.filter((r) => r.status === 'complete').slice(0, 20).map((r) => h`<div class="service-row"><div style="flex:1"><strong>${r.job_name || r.filename}</strong><div class="small muted">${r.filename}${r.sha256 ? ` · sha256 ${String(r.sha256).slice(0, 12)}` : ''}</div></div>
             <form method="post" action="${A}/runs/${r.id}/dry" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-ghost btn-sm" type="submit">Dry-run</button></form>
-            <form method="post" action="${A}/runs/${r.id}/restore" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger btn-sm" type="submit" onclick="return confirm('Przywrócić ten backup? Zostanie wykonana kopia pre-restore.')">Przywróć</button></form>
+            <form method="post" action="${A}/runs/${r.id}/restore" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger btn-sm" type="submit" onclick="return confirm('Przywrócić ten backup transakcyjnie? Zostanie wykonany punkt powrotu i automatyczny rollback w razie błędu.')">Przywróć</button></form>
           </div>`)}</div>`)}
+      ` : ''}
+      ${current === 'operations' ? h`
+        ${card('Zadania backupu i restore', table({
+          columns: operationColumns(),
+          rows: operations,
+          empty: 'Brak zadań operacyjnych.',
+        }), { padded: false })}
+        ${alert('Każdy backup/restore to trwały job: status, etapy, realny postęp, log, lease, cancel/retry/resume i idempotency key. Odświeżenie strony nie przerywa zadania.', 'info')}
       ` : ''}`;
-    return page(ctx, { title: 'Backup Center', subtitle: 'Lokalizacje, joby, historia i restore', body, wide: true });
+    return page(ctx, { title: 'Backup Center', subtitle: 'Lokalizacje, trwałe joby, historia i transakcyjny restore', body, wide: true });
   });
 
   router.post(`${A}/servers`, async (ctx) => {
     const r = saveServer(ctx.body, ctx.user.username);
     if (!r.ok) return ctx.redirect(`${A}?tab=servers&flash=${encodeURIComponent(r.error)}&type=error`);
-    const s = listServers().find((x) => x.id === r.id);
-    const t = await testServer(s);
-    const { run } = await import('../db.mjs');
-    run('UPDATE backup_servers SET last_test_at=?, last_test_ok=?, last_test_output=? WHERE id=?', new Date().toISOString(), t.ok ? 1 : 0, t.detail, r.id);
-    return ctx.redirect(`${A}?tab=servers&flash=${encodeURIComponent(t.ok ? `Zapisano; ${t.detail}` : `Zapisano, test nieudany: ${t.detail}`)}&type=${t.ok ? 'ok' : 'error'}`);
+    const server = listServers().find((x) => x.id === r.id);
+    const test = server ? testServer(server) : { ok: false, detail: 'missing' };
+    return ctx.redirect(`${A}?tab=servers&flash=${encodeURIComponent(test.ok ? `Zapisano; ${test.detail}` : `Zapisano, test nieudany: ${test.detail}`)}&type=${test.ok ? 'ok' : 'error'}`);
   });
-  router.post(`${A}/servers/:id/update`, async (ctx) => {
+
+  router.post(`${A}/servers/:id/update`, (ctx) => {
     const r = saveServer({ ...ctx.body, id: ctx.params.id }, ctx.user.username);
     return ctx.redirect(`${A}?tab=servers&flash=${encodeURIComponent(r.ok ? 'Lokalizacja zapisana' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
-  router.post(`${A}/servers/:id/test`, async (ctx) => {
-    const s = listServers().find((x) => x.id === Number(ctx.params.id));
-    if (!s) return ctx.redirect(`${A}?tab=servers&flash=Nie%20znaleziono&type=error`);
-    const t = await testServer(s);
-    const { run } = await import('../db.mjs');
-    run('UPDATE backup_servers SET last_test_at=?, last_test_ok=?, last_test_output=? WHERE id=?', new Date().toISOString(), t.ok ? 1 : 0, t.detail, s.id);
-    return ctx.redirect(`${A}?tab=servers&flash=${encodeURIComponent(t.detail)}&type=${t.ok ? 'ok' : 'error'}`);
+
+  router.post(`${A}/servers/:id/test`, (ctx) => {
+    const server = listServers().find((x) => x.id === Number(ctx.params.id));
+    if (!server) return ctx.redirect(`${A}?tab=servers&flash=Nie%20znaleziono&type=error`);
+    const test = testServer(server);
+    return ctx.redirect(`${A}?tab=servers&flash=${encodeURIComponent(test.detail)}&type=${test.ok ? 'ok' : 'error'}`);
   });
+
   router.post(`${A}/servers/:id/delete`, (ctx) => { deleteServer(ctx.params.id); return ctx.redirect(`${A}?tab=servers&flash=Usuni%C4%99to`); });
+
   router.post(`${A}/jobs`, (ctx) => {
     const r = saveJob(ctx.body, ctx.user.username);
-    return ctx.redirect(`${A}?tab=jobs&flash=${encodeURIComponent(r.ok ? 'Job utworzony' : r.error)}${r.ok ? '' : '&type=error'}`);
+    return ctx.redirect(`${A}?tab=jobs&flash=${encodeURIComponent(r.ok ? `Job utworzony; następny: ${r.next_run_at}` : r.error)}${r.ok ? '' : '&type=error'}`);
   });
+
   router.post(`${A}/jobs/:id/update`, (ctx) => {
     const r = saveJob({ ...ctx.body, id: ctx.params.id }, ctx.user.username);
     return ctx.redirect(`${A}?tab=jobs&flash=${encodeURIComponent(r.ok ? 'Job zapisany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
-  router.post(`${A}/jobs/:id/run`, (ctx) => {
+
+  router.post(`${A}/jobs/:id/run`, async (ctx) => {
     const r = runJob(ctx.params.id, { actor: ctx.user.username });
-    return ctx.redirect(`${A}?tab=runs&flash=${encodeURIComponent(r.ok ? `Backup gotowy: ${r.filename}` : r.error)}${r.ok ? '' : '&type=error'}`);
+    if (!r.ok) return ctx.redirect(`${A}?tab=jobs&flash=${encodeURIComponent(r.error)}&type=error`);
+    try { spawnJobRunner(r.jobId); } catch { /* scheduler will pick it up */ }
+    const job = await waitForJob(r.jobId);
+    const ok = job?.status === 'succeeded';
+    return ctx.redirect(`${A}/operations/${r.jobId}?flash=${encodeURIComponent(ok ? `Backup gotowy: ${job.result?.filename || ''}` : (job?.error || 'Zadanie zakończone bez sukcesu'))}&type=${ok ? 'ok' : 'error'}`);
   });
+
   router.post(`${A}/jobs/:id/delete`, (ctx) => { deleteJob(ctx.params.id); return ctx.redirect(`${A}?tab=jobs&flash=Usuni%C4%99to`); });
+
+  router.get(`${A}/operations/:id`, (ctx) => {
+    const job = jobView(ctx.params.id);
+    if (!job) return ctx.redirect(`${A}?tab=operations&flash=${encodeURIComponent('Nie znaleziono zadania')}&type=error`);
+    return page(ctx, { title: `Zadanie #${job.id}`, subtitle: job.stageLabel || job.status, body: operationDetail(ctx, job), wide: true });
+  });
+
+  router.get(`${A}/operations/:id/state`, (ctx) => {
+    const job = jobView(ctx.params.id);
+    if (!job) return ctx.json({ ok: false, error: 'Not found' }, 404);
+    return ctx.json({ ok: true, job });
+  });
+
+  router.post(`${A}/operations/:id/cancel`, (ctx) => {
+    const r = cancelJob(ctx.params.id, { actor: ctx.user.username });
+    return ctx.redirect(`${A}/operations/${ctx.params.id}?flash=${encodeURIComponent(r.ok ? 'Anulowanie zlecone' : r.error)}&type=${r.ok ? 'ok' : 'error'}`);
+  });
+
+  router.post(`${A}/operations/:id/retry`, (ctx) => {
+    const r = retryJob(ctx.params.id, { actor: ctx.user.username });
+    if (r.ok) kickQueue();
+    return ctx.redirect(`${A}/operations/${ctx.params.id}?flash=${encodeURIComponent(r.ok ? 'Zadanie ponowione' : r.error)}&type=${r.ok ? 'ok' : 'error'}`);
+  });
+
+  router.post(`${A}/operations/:id/resume`, (ctx) => {
+    const r = resumeJob(ctx.params.id, { actor: ctx.user.username });
+    if (r.ok) kickQueue();
+    return ctx.redirect(`${A}/operations/${ctx.params.id}?flash=${encodeURIComponent(r.ok ? 'Zadanie wznowione' : r.error)}&type=${r.ok ? 'ok' : 'error'}`);
+  });
+
   router.post(`${A}/runs/:id/dry`, (ctx) => {
-    const r = restoreRun(ctx.params.id, { dryRun: true, actor: ctx.user.username });
+    const preview = previewRestoreRun(ctx.params.id);
+    if (!preview.ok) return ctx.redirect(`${A}?tab=runs&flash=${encodeURIComponent(preview.error)}&type=error`);
+    return page(ctx, { title: 'Dry-run restore', subtitle: 'Walidacja integralności, zakresu i konfliktów', body: dryRunPage(ctx, preview), wide: true });
+  });
+
+  router.post(`${A}/runs/:id/restore`, async (ctx) => {
+    const r = restoreRun(ctx.params.id, { dryRun: false, actor: ctx.user.username, wait: false });
     if (!r.ok) return ctx.redirect(`${A}?tab=runs&flash=${encodeURIComponent(r.error)}&type=error`);
-    const body = h`${card('Dry-run restore', h`
-      ${kvList([['Archiwum', 'OK'], ['Wpisy', String(r.entries)], ['Baza panelu', r.hasDb ? 'tak' : 'nie']])}
-      <p class="small muted mt-12">Nie zmieniono żadnych plików.</p>
-      <div class="table-wrap mt-12"><table class="data-table"><thead><tr><th>Wpis</th></tr></thead><tbody>${r.sample.map((x) => h`<tr><td class="cell-mono small">${x}</td></tr>`)}</tbody></table></div>
-      <div class="row mt-18"><a class="btn btn-primary" href="${A}?tab=runs">Wróć</a></div>`)}`;
-    return page(ctx, { title: 'Dry-run backupu', subtitle: 'Walidacja archiwum', body });
+    try { spawnJobRunner(r.jobId); } catch { /* scheduler will pick it up */ }
+    const job = await waitForJob(r.jobId);
+    const ok = job?.status === 'succeeded';
+    return ctx.redirect(`${A}/operations/${r.jobId}?flash=${encodeURIComponent(ok ? 'Backup przywrócony; punkt powrotu zapisany' : (job?.error || 'Restore nie powiódł się'))}&type=${ok ? 'ok' : 'error'}`);
   });
-  router.post(`${A}/runs/:id/restore`, (ctx) => {
-    const r = restoreRun(ctx.params.id, { dryRun: false, actor: ctx.user.username });
-    return ctx.redirect(`${A}?tab=runs&flash=${encodeURIComponent(r.ok ? 'Backup przywrócony; kopia pre-restore zapisana' : r.error)}${r.ok ? '' : '&type=error'}`);
-  });
+}
+
+function kickQueue() {
+  import('../scheduler.mjs')
+    .then((scheduler) => scheduler.schedulerTick({ limit: 1 }))
+    .catch(() => {});
 }

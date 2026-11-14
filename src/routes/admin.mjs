@@ -5,8 +5,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { all, get, run, nowIso, setting, setSetting, audit, hashPassword, transaction } from '../db.mjs';
 import { config, VERSION } from '../config.mjs';
-import { createSession, limitsFor } from '../auth.mjs';
+import { serializeCookie, limitsFor } from '../auth.mjs';
+import { startImpersonation } from '../secrets.mjs';
+import { previewActorCookie } from '../apps.mjs';
 import { html as h, formatBytes, formatDate, timeAgo, safeJson, isIp } from '../util.mjs';
+import { MetricsService, formatBytesIEC, serviceStateRows, summarizeServiceStates, deriveJobObservation } from '../metrics.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, table, btn, badge, alert, emptyState, kvList, progress, statCard, sparkline } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
@@ -16,6 +19,7 @@ import { usersPage, userForm, createUser, updateUser, userDetailPage, toggleSusp
 import { usageChartCard } from '../ui/pages/widgets.mjs';
 import { systemProvider, providerInfo } from '../providers/index.mjs';
 import { SERVERS } from '../webserver.mjs';
+import { passwordPolicyError } from '../security.mjs';
 import { automationStatus } from '../automation.mjs';
 import { register as registerWebServer } from '../features/webserver.mjs';
 import { register as registerMariaDb } from '../features/mariadb.mjs';
@@ -51,6 +55,8 @@ import { register as registerUserTools } from '../features/user-tools.mjs';
 import { register as registerPostgres } from '../features/postgres-center.mjs';
 import { register as registerMultiServer } from '../features/multiserver.mjs';
 import { register as registerAutomation } from '../features/automation.mjs';
+import { register as registerActionCenter } from '../features/action-center.mjs';
+import { collectDashboardAttention } from '../action-center.mjs';
 
 const A = '/admin';
 
@@ -59,15 +65,21 @@ function adminDashboard(ctx) {
   const resellers = all("SELECT * FROM users WHERE level = 'reseller'");
   const domains = all('SELECT * FROM domains');
   const series = allUsageSeries(30);
-  const services = all('SELECT * FROM services ORDER BY name').map((sv) => ({ ...sv, effective: systemProvider().serviceStatus(sv.name)?.status || sv.status }));
+  const activeEngine = setting('web_server', 'nginx');
+  const serviceRows = serviceStateRows({
+    rows: all('SELECT * FROM services ORDER BY name'),
+    provider: systemProvider(),
+    activeEngine,
+  });
+  const serviceSummary = summarizeServiceStates(serviceRows);
   const auditRows = all('SELECT * FROM audit_log ORDER BY id DESC LIMIT 8');
   const tickets = all("SELECT * FROM tickets WHERE status != 'closed' ORDER BY created_at DESC LIMIT 5");
-  const memTotal = os.totalmem() / 1024 / 1024;
-  const memFree = os.freemem() / 1024 / 1024;
-  const memPct = Math.round(((memTotal - memFree) / memTotal) * 100);
-  const bw = series.reduce((a, r) => a + (r.bandwidth_mb || 0), 0);
-  const running = services.filter((s) => s.status === 'running').length;
-  const activeEngine = setting('web_server', 'nginx');
+  const metrics = new MetricsService();
+  const memory = metrics.memory();
+  const bwMb = series.reduce((a, r) => a + (r.bandwidth_mb || 0), 0);
+  const bwBytes = bwMb * 1024 * 1024;
+  const running = serviceSummary.running;
+  const expectedServices = serviceSummary.expected;
   const engineRows = Object.values(SERVERS).map((server) => ({
     ...server,
     count: domains.filter((d) => (setting(`web_server:${d.name}`, '') || activeEngine) === server.id).length,
@@ -75,13 +87,29 @@ function adminDashboard(ctx) {
   }));
   let automation = { enabled: false, due: 0, totals: { jobs: 0, enabled: 0, failures: 0 }, jobs: [] };
   try { automation = automationStatus(); } catch { /* migrations may still be running on first boot */ }
-  const failedJobs = automation.jobs.filter((j) => Number(j.fail_count || 0) > 0 || j.last_status === 'error');
+  const jobObservations = automation.jobs.map((job) => ({
+    ...job,
+    observation: deriveJobObservation({
+      key: job.key,
+      status: job.last_status,
+      output: job.last_output,
+      error: job.last_error,
+    }),
+  }));
+  const criticalJobs = jobObservations.filter((job) => job.observation.observedStatus === 'critical');
+  const failedJobs = jobObservations.filter((job) => Number(job.fail_count || 0) > 0 || job.last_status === 'error');
   const dueJobs = automation.jobs.filter((j) => j.due);
+  const memoryValue = memory.available ? `${memory.percent}%` : 'Niedostępne';
+  const memorySub = memory.available
+    ? `${formatBytesIEC(memory.usedBytes)} z ${formatBytesIEC(memory.totalBytes)} · ${memory.source}`
+    : memory.reason;
+  let attention = { total: 0, bySeverity: { P0: 0, P1: 0, P2: 0 }, top: [], muted: 0, unavailableSources: 0, generatedAt: null };
+  try { attention = collectDashboardAttention({ serviceRows }); } catch { /* the full Action Center reports source-level errors */ }
   const body = h`<div data-auto-refresh="45" data-auto-refresh-label="Odświeżanie pulpitu">
     <div class="hero">
       <div>
         <h2>Pulpit administratora</h2>
-        <p><strong>${users.length}</strong> użytkowników · <strong>${resellers.length}</strong> resellerów · <strong>${domains.length}</strong> domen · ${running}/${services.length} usług działa.</p>
+        <p><strong>${users.length}</strong> użytkowników · <strong>${resellers.length}</strong> resellerów · <strong>${domains.length}</strong> domen · ${running}/${expectedServices} oczekiwanych usług działa.</p>
         <div class="row mt-18">${badge('OpenAdmin ' + VERSION, 'brand')}${badge('Licencja unlimited', 'ok')}${badge('Darmowy i open source', 'ok')}</div>
       </div>
       <div class="hero-actions">
@@ -91,24 +119,27 @@ function adminDashboard(ctx) {
       </div>
     </div>
     ${setting('setup_complete', '0') !== '1' ? alert(h`<strong>Dokończ konfigurację panelu.</strong> Ustaw IP, serwery nazw i wdróż strony, DNS oraz pocztę. <a class="link" href="/admin/setup">Otwórz kreator →</a>`, 'warn') : ''}
+    ${criticalJobs.length ? alert(h`<strong>Kontrola wykazała stan krytyczny: ${criticalJobs.map((job) => job.label).join(', ')}.</strong> ${criticalJobs[0].observation.reason || 'Sprawdź szczegóły w automatyzacji.'} <a class="link" href="/admin/automation">Automatyzacja →</a>`, 'danger') : ''}
     ${automation.totals.failures ? alert(h`<strong>${automation.totals.failures} nieudanych zadań automatyzacji.</strong> Sprawdź logi i uruchom ponownie. <a class="link" href="/admin/automation">Automatyzacja →</a>`, 'warn') : ''}
     <div class="stat-grid">
       ${statCard({ label: 'Użytkownicy', value: String(users.length), sub: `${resellers.length} resellerów`, icon: 'users', href: '/admin/users' })}
       ${statCard({ label: 'Domeny', value: String(domains.length), sub: `${domains.filter((d) => d.ssl).length} z SSL`, icon: 'globe', href: '/admin/dns' })}
-      ${statCard({ label: 'Transfer (30 dni)', value: formatBytes(bw), sub: 'wszystkie konta', icon: 'chart', tone: 'ok', href: '/admin/user-statistics' })}
-      ${statCard({ label: 'Pamięć RAM', value: `${memPct}%`, sub: `${formatBytes((memTotal - memFree) / 1024)} z ${formatBytes(memTotal / 1024)}`, icon: 'cpu', tone: memPct > 85 ? 'danger' : memPct > 70 ? 'warn' : 'ok', href: '/admin/system-info' })}
+      ${statCard({ label: 'Transfer (30 dni)', value: formatBytesIEC(bwBytes), sub: 'wszystkie konta', icon: 'chart', tone: 'ok', href: '/admin/user-statistics' })}
+      ${statCard({ label: 'Pamięć RAM', value: memoryValue, sub: memorySub, icon: 'cpu', tone: memory.percent > 85 ? 'danger' : memory.percent > 70 ? 'warn' : memory.available ? 'ok' : 'warn', href: '/admin/system-info' })}
     </div>
+    ${attentionCard(attention)}
     <div class="grid grid-2-1">
       ${usageChartCard(series.map((r) => ({ ...r, bandwidth_mb: r.bandwidth_mb })), { title: 'Transfer serwera', sub: 'Wszystkie konta, ostatnie 30 dni' })}
-      ${card('Usługi', h`${services.slice(0, 7).map((s) => h`<div class="service-row">
-        <span class="service-dot ${s.effective === 'running' ? 'on' : 'off'}"></span><strong>${s.name}</strong>
-        <span style="margin-left:auto">${badge(s.effective, s.effective === 'running' ? 'ok' : 'danger', { dot: true })}</span>
-      </div>`)}`, { sub: `${running}/${services.length} aktywnych`, actions: [h`<a class="link small" href="/admin/services">Zarządzaj</a>`] })}
+      ${card('Usługi', h`${serviceRows.slice(0, 7).map((s) => h`<div class="service-row">
+        <span class="service-dot ${s.state === 'running' ? 'on' : s.state === 'failed' ? 'off' : ''}"></span><strong>${s.name}</strong>
+        <span class="small muted" style="margin-left:8px">${s.detail}</span>
+        <span style="margin-left:auto">${badge(s.label, serviceTone(s.state), { dot: true })}</span>
+      </div>`)}`, { sub: `${running}/${expectedServices} oczekiwanych usług działa · ${serviceSummary.inactiveByDesign} nieaktywnych zgodnie z konfiguracją`, actions: [h`<a class="link small" href="/admin/services">Zarządzaj</a>`] })}
     </div>
     <div class="grid grid-2">
       ${card('Automatyzacja', h`
-        <div class="spread mb-12"><div class="row">${badge(automation.enabled ? 'WŁĄCZONA' : 'WSTRZYMANA', automation.enabled ? 'ok' : 'warn', { dot: true })}${dueJobs.length ? badge(`${dueJobs.length} do uruchomienia`, 'warn') : badge('wszystko na czasie', 'ok')}</div><span class="small muted">${automation.totals.enabled}/${automation.totals.jobs} zadań</span></div>
-        ${failedJobs.length ? h`<div class="stack" style="gap:8px">${failedJobs.slice(0, 3).map((j) => h`<div class="spread small"><span>${j.label}</span><span>${badge(j.last_status || 'error', 'danger')}</span></div>`)}</div>` : h`<p class="small muted">Backupy, SSL, health check, kolejka poczty i czyszczenie działają według harmonogramu.</p>`}
+        <div class="spread mb-12"><div class="row">${badge(automation.enabled ? 'WŁĄCZONA' : 'WSTRZYMANA', automation.enabled ? 'ok' : 'warn', { dot: true })}${criticalJobs.length ? badge(`${criticalJobs.length} krytycznych`, 'danger') : dueJobs.length ? badge(`${dueJobs.length} do uruchomienia`, 'warn') : badge('wszystko na czasie', 'ok')}</div><span class="small muted">${automation.totals.enabled}/${automation.totals.jobs} zadań</span></div>
+        ${criticalJobs.length || failedJobs.length ? h`<div class="stack" style="gap:8px">${[...criticalJobs, ...failedJobs.filter((job) => !criticalJobs.includes(job))].slice(0, 3).map((j) => h`<div class="spread small"><span>${j.label}</span><span>${badge(j.observation?.observedStatus === 'critical' ? 'krytyczny' : (j.last_status || 'error'), j.observation?.observedStatus === 'critical' ? 'danger' : 'warn')}</span></div>`)}</div>` : h`<p class="small muted">Backupy, SSL, health check, kolejka poczty i czyszczenie działają według harmonogramu.</p>`}
         <div class="row mt-18"><a class="btn btn-secondary btn-sm" href="/admin/automation">Otwórz automatyzację</a></div>
       `, { actions: [h`<a class="link small" href="/admin/automation">Logi</a>`] })}
       ${card('Silniki stron', h`<div class="stack" style="gap:8px">
@@ -141,6 +172,44 @@ function quick(href, ic, title, sub) {
   return h`<a class="quick-tile" href="${href}">${icon(ic, { size: 20 })}<strong>${title}</strong><span>${sub}</span></a>`;
 }
 
+function dashboardSeverityTone(severity) {
+  return severity === 'P0' ? 'danger' : severity === 'P1' ? 'warn' : 'brand';
+}
+
+/** Compact Action Center summary card. The metric cards above are untouched. */
+function attentionCard(attention) {
+  const top = Array.isArray(attention?.top) ? attention.top.slice(0, 5) : [];
+  const counts = attention?.bySeverity || { P0: 0, P1: 0, P2: 0 };
+  const total = Number(attention?.total) || 0;
+  const muted = Number(attention?.muted) || 0;
+  const unavailable = Number(attention?.unavailableSources) || 0;
+  return card('Wymaga uwagi', h`
+    <div class="spread mb-12">
+      <div class="row" style="gap:6px">
+        ${badge(`P0: ${counts.P0 || 0}`, counts.P0 ? 'danger' : 'muted', { dot: Boolean(counts.P0) })}
+        ${badge(`P1: ${counts.P1 || 0}`, counts.P1 ? 'warn' : 'muted', { dot: Boolean(counts.P1) })}
+        ${badge(`P2: ${counts.P2 || 0}`, counts.P2 ? 'brand' : 'muted', { dot: Boolean(counts.P2) })}
+        ${muted ? badge(`Wyciszone: ${muted}`, 'muted') : ''}
+      </div>
+      <span class="small muted">${total} aktywnych pozycji${unavailable ? ` · ${unavailable} źródeł niedostępnych` : ''}</span>
+    </div>
+    ${top.length ? h`<div class="stack" style="gap:8px">${top.map((item) => h`<div class="service-row">
+      <span class="service-dot ${item.severity === 'P0' ? 'off' : item.severity === 'P1' ? '' : 'on'}"></span>
+      <strong><a class="link" href="${item.detailsHref || '/admin/action-center'}">${item.title}</a></strong>
+      <span class="small muted" style="margin-left:8px; min-width:0; overflow-wrap:anywhere">${item.source}</span>
+      <span style="margin-left:auto">${badge(item.severity, dashboardSeverityTone(item.severity))}</span>
+    </div>`)}</div>` : h`<p class="small muted">Brak aktywnych pozycji wymagających uwagi${unavailable ? '; część źródeł jest niedostępna — sprawdź Action Center' : ''}.</p>`}
+    <div class="row mt-18"><a class="btn btn-secondary btn-sm" href="/admin/action-center">Otwórz Action Center</a><a class="link small" href="/admin/action-center?severity=P0">Pokaż tylko P0</a></div>
+  `, {
+    sub: 'Oczekiwane usługi, SSL, kopie, poczta, limity, DNS, 2FA, automatyzacja i logowania',
+    actions: [h`<a class="link small" href="/admin/action-center">Wszystkie →</a>`],
+  });
+}
+
+function serviceTone(state) {
+  return state === 'running' ? 'ok' : state === 'failed' ? 'danger' : state === 'inactive-by-design' ? 'muted' : 'warn';
+}
+
 export function registerAdminRoutes(router) {
   registerWebServer(router);
   registerMariaDb(router);
@@ -168,19 +237,40 @@ export function registerAdminRoutes(router) {
   registerPostgres(router);
   registerMultiServer(router);
   registerAutomation(router);
+  registerActionCenter(router);
   router.get('/admin', (ctx) => adminDashboard(ctx));
 
   /* ------------------------------------------------------------ system info */
   router.get('/admin/system-info', (ctx) => {
-    const memTotal = os.totalmem();
-    const memFree = os.freemem();
     const load = os.loadavg();
     const uptime = os.uptime();
+    const metrics = new MetricsService();
+    const memory = metrics.memory();
+    const disk = metrics.disk('/');
+    const domains = all('SELECT * FROM domains');
+    const accountCount = all('SELECT * FROM users').length;
+    const domainDiskBytes = domains.reduce((sum, domain) => sum + Number(domain.disk_mb || 0) * 1024 * 1024, 0);
+    const metricDetail = (metric) => metric.available
+      ? `${formatBytesIEC(metric.usedBytes)} z ${formatBytesIEC(metric.totalBytes)} · ${metric.source} · ${formatDate(metric.timestamp, { time: true })}`
+      : `${metric.reason || 'niedostępne'} · ${metric.source}`;
     const body = h`
       <div class="stat-grid">
         ${statCard({ label: 'Uptime', value: `${Math.floor(uptime / 86400)}d ${Math.floor((uptime % 86400) / 3600)}h`, sub: 'since last reboot', icon: 'clock' })}
         ${statCard({ label: 'Load average', value: load[0].toFixed(2), sub: `${load[1].toFixed(2)} · ${load[2].toFixed(2)}`, icon: 'cpu', tone: 'warn' })}
-        ${statCard({ label: 'Memory', value: `${Math.round(((memTotal - memFree) / memTotal) * 100)}%`, sub: `${formatBytes((memTotal - memFree) / 1024 / 1024)} used`, icon: 'monitor' })}
+        ${statCard({
+          label: 'Memory',
+          value: memory.available ? `${memory.percent}%` : 'Niedostępne',
+          sub: metricDetail(memory),
+          icon: 'monitor',
+          tone: memory.percent > 85 ? 'danger' : memory.percent > 70 ? 'warn' : memory.available ? 'ok' : 'warn',
+        })}
+        ${statCard({
+          label: 'Disk',
+          value: disk.available ? `${disk.percent}%` : 'Niedostępne',
+          sub: metricDetail(disk),
+          icon: 'database',
+          tone: disk.percent > 90 ? 'danger' : disk.percent > 75 ? 'warn' : disk.available ? 'ok' : 'warn',
+        })}
         ${statCard({ label: 'CPU cores', value: String(os.cpus().length), sub: os.cpus()[0]?.model?.split(' ').slice(0, 3).join(' ') || '', icon: 'server', tone: 'ok' })}
       </div>
       <div class="grid grid-2">
@@ -204,32 +294,38 @@ export function registerAdminRoutes(router) {
           ['License', 'Unlimited · free'],
         ])}`)}
       </div>
-      ${card('Disk usage', h`${(() => {
-        const doms = all('SELECT * FROM domains');
-        const total = doms.reduce((a, d) => a + d.disk_mb, 0);
-        return h`<div class="spread"><span class="stat-value">${formatBytes(total)}</span><span class="small muted">${doms.length} domains · ${all('SELECT * FROM users').length} accounts</span></div>${progress(total, Math.max(total * 1.4, 102400), { showText: false })}`;
-      })()}`)}`;
+      ${card('Disk usage', h`
+        <div class="spread"><span class="stat-value">${disk.available ? `${disk.percent}%` : 'Niedostępne'}</span><span class="small muted">${disk.available ? `${formatBytesIEC(disk.usedBytes)} z ${formatBytesIEC(disk.totalBytes)}` : disk.reason}</span></div>
+        ${disk.available ? progress(disk.usedBytes, disk.totalBytes, { showText: false }) : ''}
+        <p class="small muted">${metricDetail(disk)}</p>
+        <div class="spread" style="margin-top:14px"><span class="stat-value">${formatBytesIEC(domainDiskBytes)}</span><span class="small muted">${domains.length} domen · ${accountCount} kont</span></div>
+        ${progress(domainDiskBytes, Math.max(domainDiskBytes * 1.4, disk.totalBytes || 102400), { showText: false })}
+        <p class="small muted">Wartość sumowana z metadanych kont (disk_mb) w bajtach; nie jest to zajętość całego dysku.</p>
+      `)}`;
     return page(ctx, { title: 'System Information', subtitle: 'Hardware, operating system and panel details', body });
   });
 
   /* -------------------------------------------------------------- services */
   router.get('/admin/services', (ctx) => {
     const provider = systemProvider();
-    const services = all('SELECT * FROM services ORDER BY name').map((s) => {
-      const live = provider.serviceStatus(s.name);
-      return { ...s, effective: live?.status || s.status, simulated: !live?.status };
+    const activeEngine = setting('web_server', 'nginx');
+    const services = serviceStateRows({
+      rows: all('SELECT * FROM services ORDER BY name'),
+      provider,
+      activeEngine,
     });
+    const summary = summarizeServiceStates(services);
     const body = h`${provider.id === 'sandbox' ? alert('Sandbox provider: service state is simulated and stored by the panel. Run with <code>OA_PROVIDER=linux</code> as root to read systemd.', 'info') : ''}
       ${card('Service monitor', h`${services.map((s) => h`<div class="service-row">
-      <span class="service-dot ${s.effective === 'running' ? 'on' : 'off'}"></span>
-      <strong>${s.name}</strong><span class="small muted">${serviceMeta(s.name)}</span>
+      <span class="service-dot ${s.state === 'running' ? 'on' : s.state === 'failed' ? 'off' : ''}"></span>
+      <strong>${s.name}</strong><span class="small muted">${serviceMeta(s.name)} · ${s.detail}</span>
       <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
-        ${badge(s.effective, s.effective === 'running' ? 'ok' : 'danger', { dot: true })}${s.simulated ? badge('simulated', 'muted') : ''}
+        ${badge(s.label, serviceTone(s.state), { dot: true })}${s.simulated ? badge('simulated', 'muted') : ''}
         <form method="post" action="/admin/services/${encodeURIComponent(s.name)}/toggle" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
           <button class="btn btn-secondary btn-sm" type="submit">${s.status === 'running' ? 'Stop' : 'Start'}</button></form>
         <form method="post" action="/admin/services/${encodeURIComponent(s.name)}/restart" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
           <button class="btn btn-ghost btn-sm" type="submit">${icon('refresh', { size: 14 })} Restart</button></form>
-      </div></div>`)}`, { sub: `${services.filter((s) => s.status === 'running').length} of ${services.length} running` })}`;
+      </div></div>`)}`, { sub: `${summary.running} z ${summary.expected} oczekiwanych działa · ${summary.inactiveByDesign} nieaktywnych zgodnie z konfiguracją · ${summary.failed} błędów` })}`;
     return page(ctx, { title: 'Service Monitor', subtitle: 'Start, stop and restart server daemons', body });
   });
 
@@ -442,7 +538,8 @@ export function registerAdminRoutes(router) {
     const username = String(ctx.body.username || '').trim().toLowerCase();
     if (!/^[a-z0-9][a-z0-9_.-]{1,31}$/.test(username)) return ctx.redirect(`${A}/resellers/create?flash=Invalid%20username&type=error`);
     if (get('SELECT id FROM users WHERE lower(username) = ?', username)) return ctx.redirect(`${A}/resellers/create?flash=Username%20exists&type=error`);
-    if (String(ctx.body.password || '').length < 8) return ctx.redirect(`${A}/resellers/create?flash=Password%20too%20short&type=error`);
+    const policyError = passwordPolicyError(String(ctx.body.password || ''));
+    if (policyError) return ctx.redirect(`${A}/resellers/create?flash=${encodeURIComponent(policyError)}&type=error`);
     const r = run(`INSERT INTO users(username, password, email, level, package, domain, ip, created_at) VALUES(?,?,?,?,?,?,?,?)`,
       username, hashPassword(String(ctx.body.password)), String(ctx.body.email || ''), 'reseller',
       String(ctx.body.package || 'reseller_default'), String(ctx.body.domain || ''), String(ctx.body.ip || setting('server_ip', '')), nowIso());
@@ -553,13 +650,31 @@ export function registerAdminRoutes(router) {
     if (!u) return ctx.redirect(`${A}/users?flash=Not%20found&type=error`);
     return deleteUser(ctx, { path: `${A}/users`, target: u });
   });
+  router.get('/admin/users/:id/login-as', (ctx) => {
+    const u = get('SELECT * FROM users WHERE id = ?', Number(ctx.params.id));
+    if (!u || u.level === 'admin') return ctx.redirect(`${A}/users?flash=${encodeURIComponent('Nie można podejrzeć tego konta.')}&type=error`);
+    const body = h`${card('Podgląd konta klienta', h`
+      <p>Otworzysz panel użytkownika <strong>${u.username}</strong> w trybie tylko do odczytu.</p>
+      ${alert('Ta operacja zostanie zapisana w audycie jako administrator + konto klienta. Podgląd wygasa automatycznie; zakończ go przyciskiem w banerze.', 'warn')}
+      <div class="row mt-18"><form method="post" action="${A}/users/${u.id}/login-as" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <button class="btn btn-primary" type="submit">${icon('logout', { size: 16 })} Podglądaj ${u.username}</button></form>
+        <a class="btn btn-ghost" href="${A}/users/${u.id}">Anuluj</a></div>
+    `)}`;
+    return page(ctx, { title: 'Podgląd konta', subtitle: u.username, body, counts: countForNav(ctx.user, 'admin') });
+  });
   router.post('/admin/users/:id/login-as', (ctx) => {
     const u = get('SELECT * FROM users WHERE id = ?', Number(ctx.params.id));
-    if (!u || u.level === 'admin') return ctx.redirect(`${A}/users?flash=Cannot%20impersonate%20this%20account&type=error`);
-    const s = createSession(u, { ip: ctx.ip, ua: ctx.req.headers['user-agent'] });
-    ctx.res.setHeader('Set-Cookie', `OA_SESSION=${s.token}; Path=/; HttpOnly; SameSite=Lax`);
-    audit(ctx.user.username, 'admin', 'user.impersonate', u.username, ctx.ip);
-    return ctx.redirect('/' + u.level + '?flash=' + encodeURIComponent(`Signed in as ${u.username}`));
+    if (!u || u.level === 'admin') return ctx.redirect(`${A}/users?flash=${encodeURIComponent('Nie można podejrzeć tego konta.')}&type=error`);
+    const actor = ctx.cookies['OA_SESSION'];
+    const result = startImpersonation(ctx.user, u.id, {
+      ip: ctx.ip, ua: ctx.req.headers['user-agent'], actorSessionToken: actor, readOnly: true,
+    });
+    if (!result.ok) return ctx.redirect(`${A}/users?flash=${encodeURIComponent(result.error)}&type=error`);
+    ctx.res.setHeader('Set-Cookie', [
+      serializeCookie(result.token, { secure: config.https }),
+      previewActorCookie(actor, { secure: config.https }),
+    ]);
+    return ctx.redirect(`/${u.level}?flash=${encodeURIComponent(`Podglądasz konto ${u.username} (tylko do odczytu)`)}`);
   });
   router.get('/admin/user-packages', (ctx) => packagesPage(ctx, { type: 'user', path: `${A}/user-packages` }));
   router.get('/admin/user-packages/create', (ctx) => packageForm(ctx, { path: `${A}/user-packages`, type: 'user' }));
@@ -901,9 +1016,9 @@ ${setting('ns2', 'ns2')}.   3600  IN  A  ${setting('server_ip', '127.0.0.1')}</p
     const templates = ['header.html', 'footer.html', 'login.html'];
     const body = h`${card('Templates', h`${table({
       columns: [
-        { label: 'Template', render: (t) => h`<span class="cell-mono">${t}</span>` },
-        { label: 'Applied to', render: (t) => (t === 'header.html' ? 'panel pages (top)' : t === 'footer.html' ? 'panel pages (bottom)' : 'sign-in page') },
-        { label: 'Overridden', render: (t) => (get('SELECT value FROM settings WHERE key = ?', `template:${t}`) ? badge('yes', 'warn') : badge('default', 'muted')) },
+        { label: 'Template', render: (row) => h`<span class="cell-mono">${row.t}</span>` },
+        { label: 'Applied to', render: (row) => (row.t === 'header.html' ? 'panel pages (top)' : row.t === 'footer.html' ? 'panel pages (bottom)' : 'sign-in page') },
+        { label: 'Overridden', render: (row) => (get('SELECT value FROM settings WHERE key = ?', `template:${row.t}`) ? badge('yes', 'warn') : badge('default', 'muted')) },
       ],
       rows: templates.map((t) => ({ t })),
       actions: [{ label: 'Edit', href: (t) => `${A}/templates/${encodeURIComponent(t.t)}`, icon: 'edit' }],

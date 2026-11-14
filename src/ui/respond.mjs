@@ -2,9 +2,11 @@
 import { html as h, raw } from '../util.mjs';
 import { renderPage } from './layout.mjs';
 import { navFor } from './nav.mjs';
+import { enhanceFormA11y } from './a11y.mjs';
 
 export function sendHtml(res, markup, status = 200) {
-  const body = markup && markup.__raw ? markup.value : String(markup ?? '');
+  const rawBody = markup && markup.__raw ? markup.value : String(markup ?? '');
+  const body = enhanceFormA11y(rawBody);
   res.writeHead(status, {
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),

@@ -15,8 +15,14 @@ import { SERVERS, activeServer } from '../webserver.mjs';
 import {
   createSite, createZone, cleanupDomainFiles, applySsl, redeploySite, lastProvision,
   saveSiteStatus, phpVersions, normalizeEngine, engineChoices, removeVhost, provisionSubdomainRoot,
+  retrySiteSteps, recommendedDefaults, rememberChoices, siteMonitoring, checkSiteMonitoring,
 } from '../provisioning.mjs';
+import {
+  templates as dnsTemplates, previewZoneChange, applyZonePlan, rollbackZoneChange,
+  lastZoneSnapshot, publicZoneInfo, importBind, exportBind, setTemplateBinding,
+} from '../dnsops.mjs';
 import { enginePicker, sslModeSelect, provisioningSteps } from './webserver.mjs';
+import { purgeAcmeForDomain } from '../autossl.mjs';
 
 export { createZone };
 
@@ -71,61 +77,156 @@ export function domainCreatePage(ctx, error = '', values = {}) {
   const domains = visibleDomains(ctx.user);
   const q = quota(ctx.user, 'domains');
   const phpList = phpOptions();
-  const selectedPhp = values.phpVersion || ctx.body?.php_version || setting('php_default', '8.3');
-  const selectedEngine = values.engine || ctx.body?.engine || '';
+  const defaults = recommendedDefaults({ actor: ctx.user, kind: 'domain' });
+  const selectedPhp = values.phpVersion || ctx.body?.php_version || defaults.phpVersion || setting('php_default', '8.3');
+  const selectedEngine = values.engine || ctx.body?.engine || defaults.engine || '';
   const createDns = values.createDns !== undefined
     ? !!values.createDns
     : ctx.body?.create_dns !== undefined
       ? !!(ctx.body.create_dns === '1' || ctx.body.create_dns === 'on' || ctx.body.create_dns === true)
-      : true;
+      : defaults.createDns;
   const selectedSsl = values.sslMode
-    || (ctx.body?.ssl !== undefined ? (ctx.body.ssl === '1' || ctx.body.ssl === 'on' ? 'selfsigned' : 'none') : 'selfsigned');
+    || (ctx.body?.ssl_mode !== undefined ? String(ctx.body.ssl_mode) : ctx.body?.ssl !== undefined ? (ctx.body.ssl === '1' || ctx.body.ssl === 'on' ? 'selfsigned' : 'none') : defaults.sslMode || 'selfsigned');
   const chosen = engineChoices().find((engine) => engine.id === selectedEngine);
+  const templates = (() => { try { return all('SELECT * FROM dns_templates ORDER BY name'); } catch { return []; } })();
+  const selectedTemplate = String(values.dnsTemplate ?? ctx.body?.dns_template ?? defaults.dnsTemplateId ?? '');
+  const createMailbox = values.createMailbox !== undefined ? !!values.createMailbox : ctx.body ? ctx.body.create_mailbox === '1' : defaults.createMailbox;
+  const createBackup = values.backup !== undefined ? !!values.backup : ctx.body ? ctx.body.create_backup === '1' : defaults.backup;
+  const createMonitoring = values.monitoring !== undefined ? !!values.monitoring : ctx.body ? ctx.body.create_monitoring === '1' : defaults.monitoring;
+  const selectedApp = String(values.app ?? ctx.body?.app ?? 'none');
+  const expert = setting(`dns_expert:${ctx.user.username}`, '0') === '1';
   const body = h`${error ? alert(error, 'danger') : ''}
     ${!q.ok ? alert(`You have reached your domain limit (${q.used}/${q.limit}). Remove a domain or ask your reseller for a larger package.`, 'warn') : ''}
-    ${card('Add a domain', h`
-      <form method="post" action="/user/domains/create" class="oa-form">
-        <input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <div class="form-grid">
-          <div class="field field-full"><label class="field-label" for="dname">Domain name <span class="req">*</span></label>
-            <input id="dname" name="domain" type="text" required placeholder="example.com" value="${values.domain || ctx.body.domain || ''}" ${!q.ok ? 'disabled' : ''}>
-            <p class="field-help">Enter the domain without http:// or a trailing slash.</p></div>
-          <div class="field field-full"><label class="field-label">Web engine</label>
-            ${enginePicker({ selected: selectedEngine, name: 'engine' })}
-            <p class="field-help">${chosen ? `Selected: ${chosen.label}. ` : ''}The choice is stored per domain as web_server:&lt;domain&gt; and used for vhost generation.</p></div>
-          <div class="field"><label class="field-label" for="php">PHP version</label>
-            <select id="php" name="php_version">${phpList.map((v) => h`<option value="${v}" ${v === selectedPhp ? 'selected' : ''}>PHP ${v}</option>`)}</select></div>
-          <div class="field"><label class="field-label" for="domain-ssl">SSL mode</label>
-            ${sslModeSelect({ selected: selectedSsl, name: 'ssl_mode', id: 'domain-ssl' })}
-            <p class="field-help">Let's Encrypt needs public DNS; the panel falls back to self-signed and says so in the result.</p></div>
-          <div class="field field-full"><label class="check-field"><input type="checkbox" name="create_dns" value="1" ${createDns ? 'checked' : ''}><span>Create a DNS zone with default A, MX, SPF, DMARC and NS records</span></label></div>
-        </div>
-        <p class="small muted">Creating the domain runs the same provisioning pipeline as the website wizard: domain row, docroot, engine override, DNS, SSL and vhost generation.</p>
-        <div class="form-actions">
-          <button class="btn btn-primary" type="submit" ${!q.ok ? 'disabled' : ''}>${icon('plus', { size: 16 })}<span>Create domain</span></button>
-          <a class="btn btn-ghost" href="/user/domains">Cancel</a>
-        </div>
-      </form>`)}
+    <form method="post" action="/user/domains/create" class="oa-form" id="domain-provision-wizard" data-wizard>
+      <input type="hidden" name="_csrf" value="${ctx.csrf}">
+      <input type="hidden" name="wizard" value="1">
+      <ol class="wizard-steps" data-wizard-indicator aria-label="Kroki dodawania domeny">
+        ${[['Domena i silnik', 'adres i serwer WWW'], ['Document root i DNS', 'strefa i szablon'], ['Vhost i SSL', 'certyfikat i ponowienie'], ['Poczta i aplikacja', 'skrzynka podstawowa'], ['Backup i podsumowanie', 'monitoring i zapis']].map(([label, hint], index) => h`<li class="wizard-step ${index === 0 ? 'is-active' : ''}" data-wizard-indicator-step="${index + 1}">
+          <span class="wizard-step-marker">${index + 1}</span><span class="wizard-step-copy"><strong>${label}</strong><small>${hint}</small></span>
+        </li>`)}
+      </ol>
+
+      <div data-wizard-step="1" data-wizard-title="Domena i silnik">
+        ${card('Krok 1 z 5 · Domena i silnik WWW', h`
+          <div class="form-grid">
+            <div class="field field-full"><label class="field-label" for="dname">Domain name <span class="req">*</span></label>
+              <input id="dname" name="domain" type="text" required placeholder="example.com" value="${values.domain || ctx.body?.domain || ''}" ${!q.ok ? 'disabled' : ''}>
+              <p class="field-help">Bez http:// i końcowego ukośnika. Istniejąca domena na Twoim koncie zostanie bezpiecznie zrekoncyliowana (idempotentnie).</p></div>
+            <div class="field field-full"><label class="field-label">Web engine</label>
+              ${enginePicker({ selected: selectedEngine, name: 'engine' })}
+              <p class="field-help">${chosen ? `Selected: ${chosen.label}. ` : ''}The choice is stored per domain as web_server:&lt;domain&gt; and used for vhost generation.</p></div>
+            <div class="field"><label class="field-label" for="php">PHP version</label>
+              <select id="php" name="php_version">${phpList.map((v) => h`<option value="${v}" ${v === selectedPhp ? 'selected' : ''}>PHP ${v}</option>`)}</select></div>
+            <div class="field"><label class="field-label" for="domain-ssl">SSL mode</label>
+              ${sslModeSelect({ selected: selectedSsl, name: 'ssl_mode', id: 'domain-ssl' })}
+              <p class="field-help">Let's Encrypt needs public DNS; the panel falls back to self-signed and can retry ACME after DNS propagation.</p></div>
+          </div>`)}
+        <div class="wizard-actions"><button type="button" class="btn btn-primary" data-wizard-next>Dalej: katalog i DNS →</button></div>
+      </div>
+
+      <div data-wizard-step="2" data-wizard-title="Document root i DNS">
+        ${card('Krok 2 z 5 · Document root i DNS', h`
+          <div class="form-grid">
+            <div class="field field-full"><label class="check-field"><input type="checkbox" name="docroot" value="1" ${values.docroot === undefined || values.docroot ? 'checked' : ''}> <span>Utwórz document root i stronę startową</span></label>
+              <p class="field-help">Domyślnie <code>/home/${ctx.user.username}/domains/&lt;domena&gt;/public_html</code> — tak jak w DirectAdmin.</p></div>
+            <div class="field field-full"><label class="check-field"><input type="checkbox" name="create_dns" value="1" ${createDns ? 'checked' : ''}><span>Utwórz strefę DNS z rekordami A/AAAA/MX/SPF/DKIM/DMARC i autodiscover</span></label>
+              <p class="field-help">Rekordy generuje szablon pakietu/resellera lub wbudowany zestaw automatyczny. Ścieżka pliku strefy pozostaje ukryta poza trybem eksperckim.</p></div>
+            <div class="field"><label class="field-label" for="domain-dns-template">Szablon DNS</label>
+              <select id="domain-dns-template" name="dns_template"><option value="">Automatyczny (pakiet/reseller/domyślny)</option>
+                ${templates.map((template) => h`<option value="${template.id}" ${selectedTemplate === String(template.id) ? 'selected' : ''}>${template.name}</option>`)}
+              </select></div>
+            <div class="field"><label class="field-label" for="domain-ip">IP (opcjonalnie)</label><input id="domain-ip" name="ip" value="${values.ip || ctx.body?.ip || ''}" placeholder="${setting('server_ip', '127.0.0.1')}"></div>
+            <div class="field field-full"><label class="check-field"><input type="checkbox" name="check_delegation" value="1" ${values.checkDelegation ? 'checked' : ''}> <span>Sprawdź delegację DNS po utworzeniu domeny</span></label>
+              <p class="field-help">Sprawdzenie używa publicznego resolvera. Delegacja w toku nie blokuje utworzenia strony — wynik można ponowić.</p></div>
+          </div>`)}
+        <div class="wizard-actions"><button type="button" class="btn btn-ghost" data-wizard-back>← Wstecz</button><button type="button" class="btn btn-primary" data-wizard-next>Dalej: vhost i SSL →</button></div>
+      </div>
+
+      <div data-wizard-step="3" data-wizard-title="Vhost i SSL">
+        ${card('Krok 3 z 5 · Vhost, PHP i ponowienie ACME', h`
+          <div class="form-grid">
+            <div class="field field-full"><label class="check-field"><input type="checkbox" name="vhost" value="1" ${values.vhost === undefined || values.vhost ? 'checked' : ''}> <span>Wygeneruj i wdróż vhost</span></label></div>
+            <div class="field field-full"><label class="check-field"><input type="checkbox" name="php_step" value="1" ${values.php === undefined || values.php ? 'checked' : ''}> <span>Ustaw runtime PHP</span></label></div>
+            <div class="field field-full"><label class="check-field"><input type="checkbox" name="retry_ssl_after_dns" value="1" ${values.retrySslAfterDns === undefined || values.retrySslAfterDns ? 'checked' : ''}> <span>Jeśli Let's Encrypt nie może wystawić certyfikatu, ponów ACME po propagacji DNS</span></label>
+              <p class="field-help">Panel zainstaluje wtedy przejściowy certyfikat self-signed i doda zadanie do kolejki AutoSSL. Retry ma backoff i alert dopiero po wyczerpaniu prób.</p></div>
+            <div class="field field-full"><label class="check-field"><input type="checkbox" name="ssl" value="1" ${selectedSsl !== 'none' ? 'checked' : ''}> <span>Włącz HTTPS (zgodność ze starym formularzem)</span></label></div>
+          </div>`)}
+        <div class="wizard-actions"><button type="button" class="btn btn-ghost" data-wizard-back>← Wstecz</button><button type="button" class="btn btn-primary" data-wizard-next>Dalej: poczta i aplikacja →</button></div>
+      </div>
+
+      <div data-wizard-step="4" data-wizard-title="Poczta i aplikacja">
+        ${card('Krok 4 z 5 · Skrzynka podstawowa i aplikacja', h`
+          <div class="form-grid">
+            <div class="field"><label class="field-label" for="domain-mailbox">Skrzynka podstawowa</label>
+              <input id="domain-mailbox" name="mailbox_local" value="${values.mailboxLocal || ctx.body?.mailbox_local || 'postmaster'}" pattern="[a-z0-9][a-z0-9._-]{0,63}">
+              <label class="check-field" style="margin-top:6px"><input type="checkbox" name="create_mailbox" value="1" ${createMailbox ? 'checked' : ''}> <span>Utwórz skrzynkę</span></label>
+              <p class="field-help">Bez hasła panel wygeneruje je bezpiecznie; ustawisz je później w module Poczta.</p></div>
+            <div class="field"><label class="field-label" for="domain-mailbox-quota">Limit skrzynki (MB)</label>
+              <input id="domain-mailbox-quota" name="mailbox_quota_mb" type="number" min="0" value="${values.mailboxQuotaMb || ctx.body?.mailbox_quota_mb || 1024}"></div>
+            <div class="field"><label class="field-label" for="domain-app">Aplikacja</label>
+              <select id="domain-app" name="app">${[['none', 'Brak — pusta strona'], ['wordpress', 'WordPress'], ['nextcloud', 'Nextcloud']].map(([value, label]) => h`<option value="${value}" ${selectedApp === value ? 'selected' : ''}>${label}</option>`)}</select></div>
+            <div class="field"><label class="field-label" for="domain-app-title">Tytuł strony</label><input id="domain-app-title" name="app_title" value="${values.appTitle || ''}"></div>
+            <div class="field"><label class="field-label" for="domain-app-user">Login administratora aplikacji</label><input id="domain-app-user" name="app_admin_user" value="${values.appUser || 'admin'}"></div>
+            <div class="field"><label class="field-label" for="domain-app-email">E-mail administratora</label><input id="domain-app-email" name="app_admin_email" type="email" value="${values.appEmail || ctx.user.email || ''}"></div>
+            <div class="field field-full"><label class="field-label" for="domain-app-pass">Hasło administratora aplikacji</label><input id="domain-app-pass" name="app_admin_password" type="password" minlength="8" autocomplete="new-password" placeholder="min. 8 znaków — tylko przy instalacji"><p class="field-help">Hasło aplikacji pojawi się jednorazowo w wyniku instalacji i nie jest zapisywane w statusie wdrożenia.</p></div>
+          </div>`)}
+        <div class="wizard-actions"><button type="button" class="btn btn-ghost" data-wizard-back>← Wstecz</button><button type="button" class="btn btn-primary" data-wizard-next>Dalej: backup i podsumowanie →</button></div>
+      </div>
+
+      <div data-wizard-step="5" data-wizard-title="Backup i podsumowanie">
+        ${card('Krok 5 z 5 · Backup, monitoring i podsumowanie', h`
+          <div class="form-grid">
+            <div class="field field-full"><label class="check-field"><input type="checkbox" name="create_backup" value="1" ${createBackup ? 'checked' : ''}> <span>Dzienny profil backupu dla konta i tej domeny</span></label>
+              <p class="field-help">Tworzy realny job w Backup Center (harmonogram, retencja) — nie dekoracyjny przełącznik.</p></div>
+            <div class="field field-full"><label class="check-field"><input type="checkbox" name="create_monitoring" value="1" ${createMonitoring ? 'checked' : ''}> <span>Monitoring dostępności strony</span></label>
+              <p class="field-help">Zapisuje profil monitoringu; test HTTP uruchomisz przyciskiem „Sprawdź teraz” w edycji domeny.</p></div>
+          </div>
+          <p class="small muted">Zapis uruchomi preflight i atomowe wdrożenie. Jeżeli którakolwiek operacja kluczowa zawiedzie, utworzona w tym żądaniu domena zostanie wycofana.</p>
+          <div class="form-actions" data-wizard-fallback style="margin-top:14px">
+            <button class="btn btn-primary" type="submit" ${!q.ok ? 'disabled' : ''}>${icon('plus', { size: 16 })}<span>Create domain</span></button>
+            <a class="btn btn-ghost" href="/user/domains">Cancel</a>
+          </div>`)}
+          <div class="wizard-actions"><button type="button" class="btn btn-ghost" data-wizard-back>← Wstecz</button><button type="button" class="btn btn-primary" data-wizard-submit>Create domain</button></div>
+      </div>
+    </form>
     ${card('Existing domains', h`${domains.length ? kvList(domains.map((d) => [d.name, d.docroot || '—']), { cols: 1 }) : emptyState('None yet')}`)}`;
-  return page(ctx, { title: 'Add domain', subtitle: 'Create a new domain on your account and choose its web engine', body, wide: true });
+  return page(ctx, { title: 'Add domain', subtitle: 'Jeden przepływ: document root → DNS → vhost → PHP → SSL → poczta → aplikacja → backup', body, wide: true });
 }
 
 export function registerDomainsPost(router) {
   router.post('/user/domains/create', (ctx) => {
+    const body = ctx.body || {};
+    const wizard = body.wizard === '1';
     const values = {
-      domain: String(ctx.body.domain || '').trim().toLowerCase(),
-      engine: String(ctx.body.engine || '').trim().toLowerCase(),
-      phpVersion: String(ctx.body.php_version || setting('php_default', '8.3')),
-      createDns: ctx.body.create_dns === '1' || ctx.body.create_dns === 'on' || ctx.body.create_dns === true,
-      sslMode: ctx.body.ssl_mode !== undefined
-        ? String(ctx.body.ssl_mode)
-        : (ctx.body.ssl !== undefined ? (ctx.body.ssl === '1' || ctx.body.ssl === 'on' ? 'selfsigned' : 'none') : 'selfsigned'),
+      domain: String(body.domain || '').trim().toLowerCase(),
+      engine: String(body.engine || '').trim().toLowerCase(),
+      phpVersion: String(body.php_version || setting('php_default', '8.3')),
+      createDns: wizard ? body.create_dns === '1' : body.create_dns === '1' || body.create_dns === 'on' || body.create_dns === true,
+      sslMode: body.ssl_mode !== undefined
+        ? String(body.ssl_mode)
+        : (body.ssl !== undefined ? (body.ssl === '1' || body.ssl === 'on' ? 'selfsigned' : 'none') : 'selfsigned'),
+      docroot: wizard ? body.docroot === '1' : true,
+      vhost: wizard ? body.vhost === '1' : true,
+      php: wizard ? body.php_step === '1' : true,
+      dnsTemplate: String(body.dns_template || ''),
+      checkDelegation: wizard ? body.check_delegation === '1' : false,
+      retrySslAfterDns: wizard ? body.retry_ssl_after_dns === '1' : false,
+      createMailbox: wizard ? body.create_mailbox === '1' : false,
+      mailboxLocal: String(body.mailbox_local || 'postmaster').trim().toLowerCase(),
+      mailboxQuotaMb: Number(body.mailbox_quota_mb ?? 1024),
+      app: String(body.app || 'none').trim().toLowerCase(),
+      appTitle: String(body.app_title || ''),
+      appUser: String(body.app_admin_user || 'admin'),
+      appEmail: String(body.app_admin_email || ctx.user.email || ''),
+      appPassword: String(body.app_admin_password || ''),
+      backup: wizard ? body.create_backup === '1' : false,
+      monitoring: wizard ? body.create_monitoring === '1' : false,
     };
-    // Preserve the previous behaviour of the domain page: creating an existing
-    // domain is an error here, even though createSite() itself is idempotent.
-    if (isDomain(values.domain) && get('SELECT id FROM domains WHERE name = ?', values.domain)) {
+    const existing = isDomain(values.domain) ? get('SELECT * FROM domains WHERE name = ?', values.domain) : null;
+    if (existing && existing.user_id !== ctx.user.id) {
       return domainCreatePage(ctx, 'That domain already exists on the server.', values);
     }
+    // A repeat submission for the same domain is a safe reconcile, not an error.
     let result;
     try {
       result = createSite({
@@ -135,10 +236,26 @@ export function registerDomainsPost(router) {
         phpVersion: values.phpVersion,
         sslMode: values.sslMode,
         createDns: values.createDns,
-        ip: ctx.ip,
+        dnsTemplate: values.dnsTemplate || null,
+        ip: String(body.ip || ''),
+        docroot: values.docroot,
+        vhost: values.vhost,
+        php: values.php,
+        checkDelegation: values.checkDelegation,
+        retrySslAfterDns: values.retrySslAfterDns,
+        mailbox: values.createMailbox ? {
+          local: values.mailboxLocal, quotaMb: values.mailboxQuotaMb,
+        } : null,
+        app: values.app === 'none' ? null : {
+          type: values.app, title: values.appTitle, adminUser: values.appUser,
+          adminEmail: values.appEmail, adminPassword: values.appPassword,
+        },
+        backup: values.backup,
+        monitoring: values.monitoring,
+        rollbackOnFailure: true,
       });
-    } catch (e) {
-      return domainCreatePage(ctx, `Provisioning failed: ${e.message}`, values);
+    } catch (error) {
+      return domainCreatePage(ctx, `Provisioning failed: ${error.message}`, values);
     }
     if (!result.ok && !result.created) {
       const message = (result.errors || []).map((err) => err.message).join(' ') || 'Could not create the domain.';
@@ -149,13 +266,51 @@ export function registerDomainsPost(router) {
       return domainCreatePage(ctx, `${message} The partially created domain was rolled back.`, values);
     }
     try { runHooks('domain.create', { domain: values.domain, username: ctx.user.username, php: result.phpVersion, engine: result.engine }); } catch { /* ignore */ }
+    try {
+      rememberChoices(ctx.user, 'domain', {
+        engine: values.engine, phpVersion: result.phpVersion, sslMode: values.sslMode,
+        dnsTemplateId: values.dnsTemplate ? Number(values.dnsTemplate) || '' : '',
+        createDns: values.createDns, createMailbox: values.createMailbox,
+        mailboxLocal: values.mailboxLocal, mailboxQuotaMb: values.mailboxQuotaMb,
+        backup: values.backup, monitoring: values.monitoring, delegationCheck: values.checkDelegation,
+        retrySslAfterDns: values.retrySslAfterDns, docroot: values.docroot, php: values.php, vhost: values.vhost,
+      });
+    } catch { /* preferences are best effort */ }
     if (!result.ok) {
       return ctx.redirect(`/user/domains/${result.domainId}/edit`, {
-        flash: `Domain ${values.domain} was created, but provisioning reported warnings. Review the deployment steps.`,
+        flash: `Domain ${values.domain} was created, but provisioning reported warnings. Review the deployment steps and retry only failed ones.`,
         type: 'error',
       });
     }
-    return ctx.redirect('/user/domains?flash=' + encodeURIComponent(`Domain ${values.domain} created on ${result.engineLabel}`));
+    return ctx.redirect(`/user/domains/${result.domainId}/edit?created=1&flash=` + encodeURIComponent(
+      result.created ? `Domain ${values.domain} created on ${result.engineLabel}` : `Domain ${values.domain} already existed — components reconciled`,
+    ));
+  });
+
+  router.post('/user/domains/:id/retry', (ctx) => {
+    const d = domainFor(ctx.user, ctx.params.id);
+    if (!d) return ctx.redirect('/user/domains?flash=Domain%20not%20found&type=error');
+    const raw = ctx.body.steps ?? ctx.body['steps[]'] ?? [];
+    const steps = (Array.isArray(raw) ? raw : [raw]).map(String).filter(Boolean);
+    const result = retrySiteSteps({ user: ctx.user, domain: d.name, steps, ip: ctx.ip });
+    return ctx.redirect(`/user/domains/${d.id}/edit`, {
+      flash: result.ok
+        ? `Ponowiono tylko kroki: ${result.retried.map((step) => step.key).join(', ') || 'brak'} — wszystkie kluczowe kroki są OK.`
+        : `Ponowienie zakończyło się błędami: ${result.errors.map((error) => error.message).join(' ') || 'sprawdź status'}`,
+      type: result.ok ? 'ok' : 'error',
+    });
+  });
+
+  router.post('/user/domains/:id/monitor', async (ctx) => {
+    const d = domainFor(ctx.user, ctx.params.id);
+    if (!d) return ctx.redirect('/user/domains?flash=Domain%20not%20found&type=error');
+    const result = await checkSiteMonitoring(d.name);
+    return ctx.redirect(`/user/domains/${d.id}/edit`, {
+      flash: result.ok
+        ? `Monitoring: ${result.result.ok ? `HTTP ${result.result.status}` : `błąd ${result.result.error || 'połączenia'}`}`
+        : result.error,
+      type: result.ok && result.result.ok ? 'ok' : 'error',
+    });
   });
 
   router.get('/user/domains/:id/logs', (ctx) => {
@@ -183,14 +338,24 @@ export function registerDomainsPost(router) {
     if ((d.php_version || '') && !phpList.includes(d.php_version)) phpList.push(d.php_version);
     const status = lastProvision(d.name);
     const server = SERVERS[currentEngine] || activeServer();
+    const failedSteps = (status?.steps || []).filter((step) => !step.ok && !step.skipped);
+    const retryable = failedSteps.filter((step) => ['docroot', 'engine', 'php', 'dns', 'delegation', 'ssl', 'mailbox', 'backup', 'monitoring', 'vhost'].includes(step.key));
     const statusBody = status
       ? h`
         ${status.warnings?.length ? alert(h`${status.warnings.map((w) => h`<div>${w}</div>`)}`, 'warn', { title: 'Warnings' }) : ''}
         ${alert(status.ok ? 'Last deployment completed.' : 'Last deployment completed with warnings or errors.', status.ok ? 'ok' : 'warn')}
         <div class="small muted" style="margin-bottom:10px">${formatDate(status.at, { time: true })} · ${SERVERS[status.engine]?.label || status.engine || '—'} · PHP ${status.phpVersion || '—'}</div>
-        ${provisioningSteps(status.steps || [])}`
+        ${provisioningSteps(status.steps || [])}
+        ${retryable.length ? h`<form method="post" action="/user/domains/${d.id}/retry" class="oa-form" style="margin-top:14px">
+          <input type="hidden" name="_csrf" value="${ctx.csrf}">
+          <p class="field-label">Ponów tylko nieudane kroki</p>
+          <div class="radio-row">${retryable.map((step) => h`<label class="check-field"><input type="checkbox" name="steps[]" value="${step.key}" checked> <span>${step.label || step.key}</span></label>`)}</div>
+          <div class="form-actions"><button class="btn btn-secondary" type="submit">${icon('refresh', { size: 16 })} Ponów zaznaczone kroki</button></div>
+        </form>` : ''}`
       : '';
+    const monitoring = siteMonitoring(d.name);
     const body = h`
+      ${ctx.query.created === '1' ? alert('Domena została utworzona lub zrekoncyliowana. Poniżej rzeczywiste wyniki i możliwość ponowienia tylko nieudanych kroków.', status?.ok === false ? 'warn' : 'ok') : ''}
       ${ctx.query.updated === '1' ? alert('Domain saved. The vhost was regenerated and the deployment result is shown below.', status?.ok === false ? 'warn' : 'ok') : ''}
       ${card(`Edit domain · ${d.name}`, h`<form method="post" action="/user/domains/${d.id}/update" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -208,7 +373,17 @@ export function registerDomainsPost(router) {
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Save and redeploy</button><a class="btn btn-ghost" href="/user/domains">Cancel</a></div>
       </form>`, { sub: 'Changing the engine, PHP or SSL updates the domain and re-runs vhost generation automatically.' })}
-      ${status ? card('Deployment status', statusBody, { id: 'last-provision-status', sub: 'Result of the last domain create or edit' }) : ''}`;
+      ${status ? card('Deployment status', statusBody, { id: 'last-provision-status', sub: 'Result of the last domain create or edit' }) : ''}
+      ${monitoring ? card('Monitoring i backup', h`
+        ${kvList([
+          ['Monitoring', monitoring.enabled ? badge('włączony', 'ok') : badge('wyłączony', 'muted')],
+          ['URL', h`<code>${monitoring.url}</code>`],
+          ['Ostatni test', monitoring.lastCheck ? `${monitoring.lastCheck.ok ? badge(`HTTP ${monitoring.lastCheck.status}`, 'ok') : badge('błąd', 'danger')} ${formatDate(monitoring.lastCheck.at, { time: true })} ${monitoring.lastCheck.error || ''}` : 'jeszcze nie uruchomiony'],
+        ])}
+        <form method="post" action="/user/domains/${d.id}/monitor" style="margin-top:10px"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+          <button class="btn btn-secondary btn-sm" type="submit">${icon('refresh', { size: 14 })} Sprawdź teraz</button>
+          <a class="btn btn-ghost btn-sm" href="/user/backups">Profil backupu w Backup Center</a>
+        </form>`, { sub: 'Realny test HTTP; profil monitoringu jest zapisany dla tej domeny.' }) : ''}`;
     return page(ctx, { title: 'Edit domain', subtitle: d.name, body, wide: true });
   });
 
@@ -274,6 +449,10 @@ export function registerDomainsPost(router) {
     if (!d) return ctx.redirect('/user/domains?flash=Domain%20not%20found&type=error');
     run('DELETE FROM ssl_certs WHERE domain = ?', d.name);
     run('DELETE FROM settings WHERE key = ?', `site_provision_last:${d.name}`);
+    run('DELETE FROM settings WHERE key = ?', `site_monitoring:${d.name}`);
+    run('DELETE FROM settings WHERE key = ?', `web_server:${d.name}`);
+    try { purgeAcmeForDomain(d.name); } catch { /* queue cleanup is best effort */ }
+    try { run('DELETE FROM backup_jobs WHERE name = ? AND target_user = ?', `site:${d.name}`, d.username); } catch { /* best effort */ }
     try { fs.rmSync(zonePath(d.name), { force: true }); } catch { /* ignore */ }
     // Remove files before the row so subdomain vhosts can still be resolved.
     try { cleanupDomainFiles({ user: ctx.user, domain: d.name }); } catch { /* cleanup is best effort */ }
@@ -366,6 +545,93 @@ export function registerDomainsPost(router) {
     apply({ dns: true });
     audit(ctx.user.username, ctx.user.level, 'dns.update', `${d.name} #${r.id}`, ctx.ip);
     return ctx.redirect('/user/dns?domain=' + encodeURIComponent(d.name) + '&flash=Record%20updated');
+  });
+
+  router.post('/user/dns/expert', (ctx) => {
+    const enabled = String(ctx.body.enabled || '') === '1' ? '1' : '0';
+    setSetting(`dns_expert:${ctx.user.username}`, enabled);
+    return ctx.redirect(`/user/dns${ctx.body.domain ? `?domain=${encodeURIComponent(ctx.body.domain)}` : ''}`);
+  });
+
+  router.post('/user/dns/template/apply', (ctx) => {
+    const d = domainFor(ctx.user, ctx.body.domain);
+    if (!d) return ctx.redirect('/user/dns?flash=Domain%20not%20found&type=error');
+    const owner = get('SELECT * FROM users WHERE id = ?', d.user_id);
+    const result = applyZonePlan(d.name, { templateId: ctx.body.template || null, packageName: owner?.package || '', reseller: owner?.owner || '', actor: ctx.user.username });
+    if (!result.ok) {
+      return ctx.redirect(`/user/dns?domain=${encodeURIComponent(d.name)}&flash=${encodeURIComponent(result.error || result.errors?.[0]?.message || 'Szablon odrzucony')}&type=error`);
+    }
+    const scope = String(ctx.body.bind_scope || '');
+    let bound = '';
+    if (scope) {
+      let allowed = false;
+      let key = '';
+      if (scope === 'domain') { allowed = true; key = d.name; }
+      else if (scope === 'package' && owner?.package) {
+        const pkg = get('SELECT * FROM packages WHERE name = ?', owner.package);
+        if (ctx.user.level === 'admin' || pkg?.owner === ctx.user.username) { allowed = true; key = owner.package; }
+      } else if (scope === 'reseller' && owner?.owner) {
+        allowed = ctx.user.level === 'admin' || ctx.user.level === 'reseller';
+        key = owner.owner;
+      }
+      if (allowed) {
+        const binding = setTemplateBinding({ scope, key, templateId: ctx.body.template || null, actor: ctx.user.username });
+        if (binding.ok) bound = `; zapisano jako domyślny dla ${scope}:${key}`;
+      }
+    }
+    return ctx.redirect(`/user/dns?domain=${encodeURIComponent(d.name)}&flash=${encodeURIComponent(`Szablon zastosowany (${result.diff?.counts.added || 0} dodanych, ${result.diff?.counts.changed || 0} zmienionych)${bound}. Punkt przywracania: ${result.snapshotId || '—'}`)}`);
+  });
+
+  router.post('/user/dns/rollback', (ctx) => {
+    const d = domainFor(ctx.user, ctx.body.domain);
+    if (!d) return ctx.redirect('/user/dns?flash=Domain%20not%20found&type=error');
+    const result = rollbackZoneChange(d.name, ctx.body.snapshot, { actor: ctx.user.username });
+    return ctx.redirect(`/user/dns?domain=${encodeURIComponent(d.name)}&flash=${encodeURIComponent(result.ok ? `Przywrócono ${result.restored} rekordów strefy` : result.error)}${result.ok ? '' : '&type=error'}`);
+  });
+
+  router.post('/user/dns/import', (ctx) => {
+    const d = domainFor(ctx.user, ctx.body.domain);
+    if (!d) return ctx.redirect('/user/dns?flash=Domain%20not%20found&type=error');
+    const text = String(ctx.body.text || '');
+    if (Buffer.byteLength(text, 'utf8') > 512 * 1024) {
+      return ctx.redirect(`/user/dns?domain=${encodeURIComponent(d.name)}&flash=Plik%20strefy%20jest%20za%20du%C5%BCy&type=error`);
+    }
+    const dryRun = ctx.body.dry_run === '1';
+    const result = importBind(d.name, text, { dryRun, actor: ctx.user.username });
+    if (!result.ok && !dryRun) {
+      return ctx.redirect(`/user/dns?domain=${encodeURIComponent(d.name)}&flash=${encodeURIComponent(result.error || result.errors?.[0]?.message || 'Import odrzucony')}&type=error`);
+    }
+    if (!result.ok) {
+      const body = h`${card('Import BIND — błędy', h`<ul class="doc-list">${(result.errors || []).map((error) => h`<li><strong>${error.line ? `linia ${error.line}: ` : ''}</strong>${error.message}</li>`)}</ul>
+        <a class="btn btn-ghost" href="/user/dns?domain=${encodeURIComponent(d.name)}">Wróć</a>`)}`;
+      return page(ctx, { title: 'Import BIND', subtitle: 'Walidacja nie powiodła się', body });
+    }
+    if (dryRun) {
+      const body = h`${card('Import BIND — podgląd diffu', h`
+        ${alert('Nic nie zapisano. Sprawdź diff i zatwierdź import.', 'info')}
+        ${kvList([['Dodane', String(result.diff.counts.added)], ['Usunięte', String(result.diff.counts.removed)], ['Zmienione', String(result.diff.counts.changed)]])}
+        <div class="grid grid-2" style="margin-top:12px">
+          <div><h3 class="form-section">Dodane</h3>${result.diff.added.length ? h`<ul class="doc-list">${result.diff.added.map((r) => h`<li><strong>+ ${r.type} ${r.name}</strong> → <code>${r.value}</code></li>`)}</ul>` : '<p class="small muted">Brak.</p>'}</div>
+          <div><h3 class="form-section">Usunięte</h3>${result.diff.removed.length ? h`<ul class="doc-list">${result.diff.removed.map((r) => h`<li><strong>− ${r.type} ${r.name}</strong> → <code>${r.value}</code></li>`)}</ul>` : '<p class="small muted">Brak.</p>'}</div>
+        </div>
+        <form method="post" action="/user/dns/import" class="oa-form" style="margin-top:12px"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+          <input type="hidden" name="domain" value="${d.name}"><input type="hidden" name="dry_run" value="0">
+          <div class="field field-full"><label class="field-label" for="dns-import-confirm">Strefa BIND do importu</label><textarea id="dns-import-confirm" name="text" rows="8">${text}</textarea></div>
+          <div class="form-actions"><button class="btn btn-primary" type="submit">Zatwierdź import</button><a class="btn btn-ghost" href="/user/dns?domain=${encodeURIComponent(d.name)}">Anuluj</a></div>
+        </form>`, { sub: `${d.name} · strefa jest walidowana przed zapisem` })}`;
+      return page(ctx, { title: 'Import BIND', subtitle: d.name, body, wide: true });
+    }
+    return ctx.redirect(`/user/dns?domain=${encodeURIComponent(d.name)}&flash=${encodeURIComponent(`Zaimportowano strefę: +${result.diff.counts.added} / −${result.diff.counts.removed} / ~${result.diff.counts.changed}`)}`);
+  });
+
+  router.get('/user/dns/export', (ctx) => {
+    const d = domainFor(ctx.user, ctx.query.domain);
+    if (!d) return ctx.redirect('/user/dns?flash=Domain%20not%20found&type=error');
+    const exported = exportBind(d.name);
+    if (!exported.ok) return ctx.redirect(`/user/dns?domain=${encodeURIComponent(d.name)}&flash=${encodeURIComponent(exported.error)}&type=error`);
+    ctx.res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    ctx.res.setHeader('Content-Disposition', `attachment; filename="${d.name}.zone"`);
+    ctx.res.end(exported.text);
   });
 
   router.post('/user/dns/rebuild', (ctx) => {
@@ -480,13 +746,30 @@ export function register(router) {
     const domains = visibleDomains(ctx.user);
     const selected = ctx.query.domain || domains[0]?.name;
     const d = domains.find((x) => x.name === selected) || domains[0];
-    const records = d ? all('SELECT * FROM dns_records WHERE domain_id = ? ORDER BY type, name', d.id) : [];
+    const owner = d ? get('SELECT * FROM users WHERE id = ?', d.user_id) : null;
+    const expert = ctx.query.expert === '1'
+      || (ctx.query.expert === undefined && setting(`dns_expert:${ctx.user.username}`, '0') === '1');
+    const info = d ? publicZoneInfo(d.name, { expert }) : null;
+    const records = info?.records || [];
     const editing = ctx.query.edit ? records.find((r) => String(r.id) === String(ctx.query.edit)) : null;
+    const templateRows = dnsTemplates();
+    const selectedTemplate = String(ctx.query.template || '');
+    const preview = d && selectedTemplate && ctx.query.preview === '1'
+      ? previewZoneChange(d.name, { templateId: selectedTemplate, packageName: owner?.package || '', reseller: owner?.owner || '' })
+      : null;
+    const snapshot = d ? lastZoneSnapshot(d.name) : null;
     const body = h`
       ${!domains.length ? alert('Add a domain first to manage its DNS zone.', 'warn') : ''}
       ${d ? domainSelect(domains, d.name, { action: '/user/dns' }) : ''}
+      ${d ? h`
+        <div class="row" style="justify-content:flex-end;margin-bottom:8px">
+          <form method="post" action="/user/dns/expert"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+            <input type="hidden" name="enabled" value="${expert ? '0' : '1'}">
+            <button class="btn btn-ghost btn-sm" type="submit">${expert ? 'Wyłącz tryb ekspercki' : 'Tryb ekspercki'}</button></form>
+        </div>` : ''}
       ${d ? card(`DNS zone · ${d.name}`, h`
-        ${alert(`Zone file: <code>${zoneMeta(d.name)?.file || zonePath(d.name)}</code> · ${zoneMeta(d.name)?.checked ? 'validated' : 'not validated yet'}`, 'info')}
+        ${alert(info?.checked ? 'Strefa jest zwalidowana.' : 'Strefa nie została jeszcze zwalidowana.', info?.checked ? 'ok' : 'warn')}
+        ${expert && info?.file ? alert(h`Ścieżka pliku strefy (tylko tryb ekspercki): <code>${info.file}</code>`, 'info') : '<p class="small muted">Ścieżki plików strefy są ukryte. Włącz tryb ekspercki, jeśli potrzebujesz jej do diagnostyki.</p>'}
         <div class="table-wrap"><table class="data-table">
           <thead><tr><th>Name</th><th>Type</th><th>Value</th><th>Priority</th><th>TTL</th><th class="col-actions">Actions</th></tr></thead>
           <tbody>${records.map((r) => h`<tr>
@@ -496,40 +779,102 @@ export function register(router) {
             <td>${r.priority ?? '—'}</td>
             <td>${r.ttl}</td>
             <td class="col-actions"><div class="row-actions">
-              <a class="icon-btn" href="/user/dns?domain=${d.name}&edit=${r.id}" title="Edit">${icon('edit', { size: 16 })}</a>
+              <a class="icon-btn" href="/user/dns?domain=${encodeURIComponent(d.name)}&edit=${r.id}" title="Edit">${icon('edit', { size: 16 })}</a>
               <form method="post" action="/user/dns/${r.id}/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
                 <button class="icon-btn danger" type="submit" title="Delete" onclick="return confirm('Delete this record?')">${icon('trash', { size: 16 })}</button></form>
             </div></td>
           </tr>`)}
           </tbody>
         </table></div>`, { padded: false, actions: [h`<form method="post" action="/user/dns/rebuild" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}"><button class="btn btn-secondary btn-sm" type="submit">Rebuild zone</button></form>`] }) : ''}
+
+      ${d ? card('Szablon DNS i podgląd diffu', h`
+        <form method="get" action="/user/dns" class="row" style="align-items:flex-end;gap:10px;flex-wrap:wrap">
+          <input type="hidden" name="domain" value="${d.name}">
+          <input type="hidden" name="preview" value="1">
+          <div class="field"><label class="field-label" for="dns-template-select">Szablon</label>
+            <select id="dns-template-select" name="template"><option value="">Automatyczny (pakiet/reseller/domyślny)</option>
+              ${templateRows.map((template) => h`<option value="${template.id}" ${selectedTemplate === String(template.id) ? 'selected' : ''}>${template.name}</option>`)}
+            </select></div>
+          <button class="btn btn-secondary" type="submit">Pokaż diff strefy</button>
+        </form>
+        ${preview ? h`
+          ${!preview.ok ? alert(h`<ul class="doc-list">${(preview.errors || []).map((error) => h`<li>${error.message}</li>`)}</ul>`, 'danger', { title: 'Szablon odrzucony przez walidację' }) : ''}
+          ${preview.ok ? h`
+            ${kvList([
+              ['Dodane', String(preview.diff.counts.added)],
+              ['Usunięte', String(preview.diff.counts.removed)],
+              ['Zmienione', String(preview.diff.counts.changed)],
+              ['Bez zmian', String(preview.diff.counts.unchanged)],
+              ['Źródło', preview.template ? `szablon ${preview.template.name}` : (preview.source === 'builtin' ? 'wbudowane rekordy automatyczne' : preview.source)],
+            ])}
+            <div class="grid grid-2" style="margin-top:12px">
+              <div><h3 class="form-section">Dodane / zmienione</h3>
+                ${(preview.diff.added.length || preview.diff.changed.length) ? h`<ul class="doc-list">${preview.diff.added.map((r) => h`<li><strong>+ ${r.type} ${r.name}</strong> → <code>${r.value}</code></li>`)}${preview.diff.changed.map((entry) => h`<li><strong>~ ${entry.after.type} ${entry.after.name}</strong> <code>${entry.before.value}</code> → <code>${entry.after.value}</code></li>`)}</ul>` : '<p class="small muted">Brak nowych rekordów.</p>'}
+              </div>
+              <div><h3 class="form-section">Usunięte</h3>
+                ${preview.diff.removed.length ? h`<ul class="doc-list">${preview.diff.removed.map((r) => h`<li><strong>− ${r.type} ${r.name}</strong> → <code>${r.value}</code></li>`)}</ul>` : '<p class="small muted">Brak usuwanych rekordów.</p>'}
+              </div>
+            </div>
+            <form method="post" action="/user/dns/template/apply" class="oa-form" style="margin-top:12px">
+              <input type="hidden" name="_csrf" value="${ctx.csrf}">
+              <input type="hidden" name="domain" value="${d.name}">
+              <input type="hidden" name="template" value="${selectedTemplate}">
+              <div class="form-grid">
+                <div class="field"><label class="field-label" for="dns-bind-scope">Zapisz wybór jako domyślny</label>
+                  <select id="dns-bind-scope" name="bind_scope"><option value="">Tylko ta operacja</option><option value="domain">Dla tej domeny</option>
+                    ${owner ? h`<option value="package">Dla pakietu ${owner.package || 'default'}</option>` : ''}
+                    ${owner?.owner ? h`<option value="reseller">Dla resellera ${owner.owner}</option>` : ''}
+                  </select></div>
+              </div>
+              <p class="small muted">Zastosowanie tworzy punkt przywracania; rollback przywróci poprzednie rekordy strefy.</p>
+              <div class="form-actions"><button class="btn btn-primary" type="submit">Zastosuj szablon</button></div>
+            </form>` : ''}
+          ${snapshot ? h`<form method="post" action="/user/dns/rollback" style="margin-top:10px"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+            <input type="hidden" name="domain" value="${d.name}"><input type="hidden" name="snapshot" value="${snapshot.id}">
+            <button class="btn btn-ghost btn-sm" type="submit">Cofnij ostatnią zmianę strefy (${snapshot.count} rekordów)</button></form>` : ''}
+        ` : '<p class="small muted">Wybierz szablon i pokaż diff przed zapisem — walidacja składni i konfliktów odbywa się przed mutacją.</p>'}`) : ''}
+
+      ${d ? card('Import / eksport BIND', h`
+        <div class="row" style="flex-wrap:wrap;gap:8px">
+          <a class="btn btn-secondary btn-sm" href="/user/dns/export?domain=${encodeURIComponent(d.name)}">Eksportuj strefę BIND</a>
+          <span class="small muted">Eksport obejmuje tylko tę domenę (scope).</span>
+        </div>
+        <form method="post" action="/user/dns/import" class="oa-form" style="margin-top:12px">
+          <input type="hidden" name="_csrf" value="${ctx.csrf}">
+          <input type="hidden" name="domain" value="${d.name}">
+          <div class="field field-full"><label class="field-label" for="dns-import-text">Import BIND (SOA/NS pomijane, walidacja przed zapisem)</label>
+            <textarea id="dns-import-text" name="text" rows="7" placeholder="@ 3600 IN A 192.0.2.10&#10;www 3600 IN CNAME @"></textarea></div>
+          <label class="check-field"><input type="checkbox" name="dry_run" value="1" checked> <span>Najpierw pokaż diff (dry-run)</span></label>
+          <div class="form-actions"><button class="btn btn-secondary" type="submit">Importuj</button></div>
+        </form>`) : ''}
+
       ${d && editing ? card(`Edit record · ${editing.type} ${editing.name}`, h`<form method="post" action="/user/dns/${editing.id}/update" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <div class="form-grid">
-          <div class="field"><label class="field-label">Name</label><input name="name" value="${editing.name}" required></div>
-          <div class="field"><label class="field-label">Type</label><select name="type">
+          <div class="field"><label class="field-label" for="dns-edit-name">Name</label><input id="dns-edit-name" name="name" value="${editing.name}" required></div>
+          <div class="field"><label class="field-label" for="dns-edit-type">Type</label><select id="dns-edit-type" name="type">
             ${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((t) => h`<option ${t === editing.type ? 'selected' : ''}>${t}</option>`)}
           </select></div>
-          <div class="field field-full"><label class="field-label">Value</label><input name="value" value="${editing.value}" required></div>
-          <div class="field"><label class="field-label">Priority</label><input name="priority" type="number" value="${editing.priority ?? ''}"></div>
-          <div class="field"><label class="field-label">TTL</label><input name="ttl" type="number" value="${editing.ttl}"></div>
+          <div class="field field-full"><label class="field-label" for="dns-edit-value">Value</label><input id="dns-edit-value" name="value" value="${editing.value}" required></div>
+          <div class="field"><label class="field-label" for="dns-edit-priority">Priority</label><input id="dns-edit-priority" name="priority" type="number" value="${editing.priority ?? ''}"></div>
+          <div class="field"><label class="field-label" for="dns-edit-ttl">TTL</label><input id="dns-edit-ttl" name="ttl" type="number" value="${editing.ttl}"></div>
         </div>
-        <div class="form-actions"><button class="btn btn-primary" type="submit">Save record</button><a class="btn btn-ghost" href="/user/dns?domain=${d.name}">Cancel</a></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Save record</button><a class="btn btn-ghost" href="/user/dns?domain=${encodeURIComponent(d.name)}">Cancel</a></div>
       </form>`) : ''}
       ${d ? card('Add DNS record', h`<form method="post" action="/user/dns/add" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}">
         <div class="form-grid">
-          <div class="field"><label class="field-label">Name</label><input name="name" value="@" placeholder="@ or www"></div>
-          <div class="field"><label class="field-label">Type</label><select name="type">
+          <div class="field"><label class="field-label" for="dns-add-name">Name</label><input id="dns-add-name" name="name" value="@" placeholder="@ or www"></div>
+          <div class="field"><label class="field-label" for="dns-add-type">Type</label><select id="dns-add-type" name="type">
             ${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((t) => h`<option>${t}</option>`)}
           </select></div>
-          <div class="field field-full"><label class="field-label">Value</label><input name="value" placeholder="192.0.2.1 or target.example.com." required></div>
-          <div class="field"><label class="field-label">Priority (MX/SRV)</label><input name="priority" type="number" min="0" max="65535"></div>
-          <div class="field"><label class="field-label">TTL</label><input name="ttl" type="number" value="3600" min="60"></div>
+          <div class="field field-full"><label class="field-label" for="dns-add-value">Value</label><input id="dns-add-value" name="value" placeholder="192.0.2.1 or target.example.com." required></div>
+          <div class="field"><label class="field-label" for="dns-add-priority">Priority (MX/SRV)</label><input id="dns-add-priority" name="priority" type="number" min="0" max="65535"></div>
+          <div class="field"><label class="field-label" for="dns-add-ttl">TTL</label><input id="dns-add-ttl" name="ttl" type="number" value="3600" min="60"></div>
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('plus', { size: 16 })} Add record</button></div>
       </form>`) : ''}`;
-    return page(ctx, { title: 'DNS Management', subtitle: d ? `Zone file for ${d.name}` : 'Manage DNS records', body });
+    return page(ctx, { title: 'DNS Management', subtitle: d ? `Zone for ${d.name}` : 'Manage DNS records', body, wide: true });
   });
 
   router.get('/user/pointers', (ctx) => {

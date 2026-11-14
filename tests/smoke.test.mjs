@@ -237,9 +237,12 @@ test('admin can switch level without losing access', async () => {
   }
 });
 
-test('logout invalidates the session', async () => {
+test('logout invalidates the session (POST + CSRF only)', async () => {
   const cookie = await loginAs('demouser');
-  const res = await fetch(base + '/logout', { headers: { Cookie: cookie }, redirect: 'manual' });
+  const page = await (await fetch(base + '/user', { headers: { Cookie: cookie } })).text();
+  const token = /name="_csrf" value="([^"]+)"/.exec(page)?.[1];
+  assert.ok(token, 'user page must expose a CSRF token');
+  const res = await form('/logout', { _csrf: token }, cookie);
   assert.equal(res.status, 302);
   const afterLogout = await fetch(base + '/user', { headers: { Cookie: cookie }, redirect: 'manual' });
   assert.equal(afterLogout.status, 302, 'stale cookie must not grant access');

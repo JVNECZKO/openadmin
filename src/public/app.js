@@ -353,7 +353,16 @@
       {
         label: 'Sign out', group: 'Actions', icon: 'logout', hint: 'logout',
         keywords: 'logout sign out wyloguj',
-        href: '/logout',
+        run: async () => {
+          const meta = document.querySelector('meta[name="csrf-token"]');
+          await fetch('/logout', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ _csrf: meta?.content || '' }),
+          }).catch(() => {});
+          window.location.href = '/login';
+        },
       },
     ];
     return actions;

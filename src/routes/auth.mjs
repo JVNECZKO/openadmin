@@ -4,13 +4,27 @@ import crypto from 'node:crypto';
 import { setting, run, audit, get, all, verifyPassword, hashPassword, nowIso } from '../db.mjs';
 import { requestPasswordReset, verifyResetToken, consumeResetToken } from '../passwordreset.mjs';
 import { verifyTotp } from '../twofa.mjs';
-import { login, createSession, destroySession, findUser } from '../auth.mjs';
-import { serializeCookie, clearCookie } from '../auth.mjs';
+import { login, createSession, destroySession, findUser, checkCsrf } from '../auth.mjs';
+import { serializeCookie, clearCookie, hashSessionToken } from '../auth.mjs';
+import { passwordPolicyError } from '../security.mjs';
+import { openTotp, sealTotp } from '../secrets.mjs';
+import { stopImpersonation, resolvePreviewActor } from '../secrets.mjs';
+import { clearPreviewActorCookie } from '../apps.mjs';
 import { renderLogin } from '../ui/layout.mjs';
 import { page } from '../ui/respond.mjs';
 import { html as h, raw, e, isEmail } from '../util.mjs';
 import { card, form, alert, btn, kvList } from '../ui/components.mjs';
 import { icon as ic } from '../ui/icons.mjs';
+
+
+function requestedLocale(ctx) {
+  const raw = String(ctx.query.lang || ctx.query.hl || ctx.cookies.oa_lang || '').toLowerCase();
+  if (raw.startsWith('pl')) return 'pl';
+  if (raw.startsWith('en')) return 'en';
+  const header = String(ctx.req.headers['accept-language'] || '').toLowerCase();
+  if (header.split(',').some((part) => part.trim().startsWith('pl'))) return 'pl';
+  return 'en';
+}
 
 export function registerAuthRoutes(router) {
   router.get('/', (ctx) => {
@@ -21,7 +35,10 @@ export function registerAuthRoutes(router) {
   router.get('/login', (ctx) => {
     if (ctx.user) return ctx.redirect('/' + ctx.user.level);
     const next = ctx.query.next ? decodeURIComponent(ctx.query.next) : '';
+    const locale = requestedLocale(ctx);
+    if (ctx.query.lang || ctx.query.hl) ctx.res.setHeader('Set-Cookie', `oa_lang=${locale}; Path=/; Max-Age=31536000; SameSite=Lax${config.https ? '; Secure' : ''}`);
     const markup = renderLogin({
+      locale,
       csrf: ctx.session?.csrf || '',
       serverName: setting('server_name', config.defaults.serverName),
       demo: config.demo || setting('demo_mode') === '1',
@@ -39,14 +56,15 @@ export function registerAuthRoutes(router) {
       const markup = renderLogin({
         csrf: '', serverName: setting('server_name', config.defaults.serverName),
         demo: config.demo || setting('demo_mode') === '1', error: result.error, message: String(next),
+        locale: requestedLocale(ctx),
       });
       return { status: 401, html: markup };
     }
     if (result.user.twofa_enabled) {
       const pending = crypto.randomBytes(24).toString('hex');
-      run('INSERT INTO twofa_pending(token, user_id, expires_at) VALUES(?,?,?)', pending, result.user.id,
+      run('INSERT INTO twofa_pending(token, user_id, expires_at) VALUES(?,?,?)', hashSessionToken(pending), result.user.id,
         new Date(Date.now() + 5 * 60 * 1000).toISOString());
-      ctx.res.setHeader('Set-Cookie', `OA_2FA=${pending}; Path=/; HttpOnly; SameSite=Lax; Max-Age=300`);
+      ctx.res.setHeader('Set-Cookie', `OA_2FA=${pending}; Path=/; HttpOnly; SameSite=Strict; Max-Age=300${config.https ? '; Secure' : ''}`);
       return ctx.redirect('/login/2fa');
     }
     const s = createSession(result.user, { ip: ctx.ip, ua: ctx.req.headers['user-agent'] });
@@ -59,7 +77,7 @@ export function registerAuthRoutes(router) {
     return ctx.redirect(target);
   });
 
-  const twofaPage = (error = '') => h`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Two-factor authentication · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"></head>
+  const twofaPage = (error = '') => h`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Two-factor authentication · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"><script src="/assets/i18n.js?v=${VERSION}" defer></script></head>
 <body class="login-body"><div class="wm-login"><div class="wm-login-card">
   <h1>Two-factor authentication</h1>
   <p class="small muted">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
@@ -74,18 +92,21 @@ export function registerAuthRoutes(router) {
   router.get('/login/2fa', (ctx) => {
     run("DELETE FROM twofa_pending WHERE expires_at < ?", nowIso());
     const pending = ctx.cookies.OA_2FA;
-    const row = pending ? get('SELECT * FROM twofa_pending WHERE token = ?', pending) : null;
+    const pendingHash = pending ? hashSessionToken(pending) : '';
+    const row = pendingHash ? get('SELECT * FROM twofa_pending WHERE token = ?', pendingHash) : null;
     if (!row || new Date(row.expires_at) < new Date()) return ctx.redirect('/login?error=' + encodeURIComponent('Two-factor session expired'));
     return { status: 200, html: twofaPage() };
   });
 
   router.post('/login/2fa', (ctx) => {
     const pending = ctx.cookies.OA_2FA;
-    const row = pending ? get('SELECT * FROM twofa_pending WHERE token = ?', pending) : null;
+    const pendingHash = pending ? hashSessionToken(pending) : '';
+    const row = pendingHash ? get('SELECT * FROM twofa_pending WHERE token = ?', pendingHash) : null;
     if (!row || new Date(row.expires_at) < new Date()) return ctx.redirect('/login?error=' + encodeURIComponent('Two-factor session expired'));
     const user = get('SELECT * FROM users WHERE id = ?', row.user_id);
     const code = String(ctx.body.code || '').replace(/\s/g, '');
-    let ok = user?.twofa_secret ? verifyTotp(user.twofa_secret, code) : false;
+    let ok = user?.twofa_secret ? verifyTotp(openTotp(user.twofa_secret), code) : false;
+    if (ok && user?.twofa_secret && !String(user.twofa_secret).startsWith('v1:')) run('UPDATE users SET twofa_secret = ? WHERE id = ?', sealTotp(openTotp(user.twofa_secret)), user.id);
     if (!ok && user) {
       const codes = all('SELECT * FROM twofa_recovery WHERE user_id = ? AND used_at IS NULL', user.id);
       for (const c of codes) {
@@ -97,33 +118,50 @@ export function registerAuthRoutes(router) {
       }
     }
     if (!ok) {
-      run('UPDATE twofa_pending SET attempts = attempts + 1 WHERE token = ?', pending);
-      const after = get('SELECT * FROM twofa_pending WHERE token = ?', pending);
+      run('UPDATE twofa_pending SET attempts = attempts + 1 WHERE token = ?', pendingHash);
+      const after = get('SELECT * FROM twofa_pending WHERE token = ?', pendingHash);
       if (!after || after.attempts >= 5) {
-        run('DELETE FROM twofa_pending WHERE token = ?', pending);
-        ctx.res.setHeader('Set-Cookie', 'OA_2FA=; Path=/; Max-Age=0');
+        run('DELETE FROM twofa_pending WHERE token = ?', pendingHash);
+        ctx.res.setHeader('Set-Cookie', `OA_2FA=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${config.https ? '; Secure' : ''}`);
         return ctx.redirect('/login?error=' + encodeURIComponent('Too many invalid codes. Sign in again.'));
       }
       return { status: 401, html: twofaPage('Invalid authentication code.') };
     }
-    run('DELETE FROM twofa_pending WHERE token = ?', pending);
+    run('DELETE FROM twofa_pending WHERE token = ?', pendingHash);
     const s = createSession(user, { ip: ctx.ip, ua: ctx.req.headers['user-agent'] });
     audit(user.username, user.level, 'login.2fa', '', ctx.ip);
-    ctx.res.setHeader('Set-Cookie', [serializeCookie(s.token, { secure: config.https }), 'OA_2FA=; Path=/; Max-Age=0']);
+    ctx.res.setHeader('Set-Cookie', [serializeCookie(s.token, { secure: config.https }), `OA_2FA=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${config.https ? '; Secure' : ''}`]);
     return ctx.redirect('/' + user.level);
   });
 
+  // SEC-018: logout is a state-changing operation and must never run on GET.
+  // The sidebar form posts here with the session CSRF token; the server-wide
+  // POST+CSRF gate rejects cross-site submissions before this handler.
   router.get('/logout', (ctx) => {
-    const token = ctx.cookies['OA_SESSION'];
-    if (token) destroySession(token);
-    if (ctx.user) audit(ctx.user.username, ctx.user.level, 'logout', '', ctx.ip);
-    ctx.res.setHeader('Set-Cookie', clearCookie());
-    return ctx.redirect('/login');
+    ctx.res.setHeader('Allow', 'POST');
+    return { status: 405, raw: 'Use POST /logout with a CSRF token', type: 'text' };
   });
 
   router.post('/logout', (ctx) => {
     const token = ctx.cookies['OA_SESSION'];
-    if (token) destroySession(token);
+    if (token) {
+      const stopped = stopImpersonation(token, { ip: ctx.ip });
+      if (stopped.ok) {
+        const actor = resolvePreviewActor(ctx.cookies['OA_PREVIEW_ACTOR'], stopped.actorId);
+        if (actor) {
+          ctx.res.setHeader('Set-Cookie', [
+            serializeCookie(actor.token, { secure: config.https }),
+            clearPreviewActorCookie({ secure: config.https }),
+          ]);
+          return ctx.redirect(`/admin?flash=${encodeURIComponent(`Zakończono podgląd konta ${stopped.subject}`)}`);
+        }
+        destroySession(token);
+        ctx.res.setHeader('Set-Cookie', [clearCookie(), clearPreviewActorCookie({ secure: config.https })]);
+        return ctx.redirect('/login?expired=1');
+      }
+      destroySession(token);
+    }
+    if (ctx.user) audit(ctx.user.username, ctx.user.level, 'logout', '', ctx.ip);
     ctx.res.setHeader('Set-Cookie', clearCookie());
     return ctx.redirect('/login');
   });
@@ -135,7 +173,7 @@ export function registerAuthRoutes(router) {
         <p class="small muted">If you believe this is a mistake, contact your hosting provider and quote your username.</p>
         <div class="row mt-18"><a class="btn btn-secondary" href="/login">Back to sign in</a></div>`)}
     </div>`;
-    return { status: 403, html: h`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Account disabled · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"></head><body class="login-body">${body}</body></html>` };
+    return { status: 403, html: h`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Account disabled · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"><script src="/assets/i18n.js?v=${VERSION}" defer></script></head><body class="login-body">${body}</body></html>` };
   });
 
   router.get('/login/license-expired', (ctx) => {
@@ -145,7 +183,7 @@ export function registerAuthRoutes(router) {
         ${kvList([['Edition', 'Community'], ['Expires', 'Never'], ['Accounts', 'Unlimited'], ['Cost', '€0.00']], { cols: 1 })}
         <div class="row mt-18"><a class="btn btn-primary" href="/login">Continue to sign in</a></div>`)}
     </div>`;
-    return { status: 200, html: h`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>License · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"></head><body class="login-body">${body}</body></html>` };
+    return { status: 200, html: h`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>License · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"><script src="/assets/i18n.js?v=${VERSION}" defer></script></head><body class="login-body">${body}</body></html>` };
   });
 
   router.get('/login/lost-password', (ctx) => ctx.redirect('/lost-password'));
@@ -163,10 +201,10 @@ export function registerAuthRoutes(router) {
           <a class="btn btn-ghost" href="/login">Back to sign in</a></div>
         </form>`, { sub: 'Request a password reset from your provider' })}
     </div>`;
-    return { status: 200, html: h`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reset password · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"></head><body class="login-body">${body}</body></html>` };
+    return { status: 200, html: h`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reset password · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"><script src="/assets/i18n.js?v=${VERSION}" defer></script></head><body class="login-body">${body}</body></html>` };
   });
 
-  const resetPage = (token, error = '') => h`<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ustaw nowe hasło · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"></head><body class="login-body"><div class="login-wrap single"><div class="login-card">
+  const resetPage = (token, error = '') => h`<!DOCTYPE html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ustaw nowe hasło · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"><script src="/assets/i18n.js?v=${VERSION}" defer></script></head><body class="login-body"><div class="login-wrap single"><div class="login-card">
     <h1>Ustaw nowe hasło</h1>
     ${error ? h`<div class="alert alert-danger">${error}</div>` : ''}
     <form method="post" action="/reset-password" class="oa-form">
@@ -189,7 +227,8 @@ export function registerAuthRoutes(router) {
     const row = verifyResetToken(token);
     if (!row) return { status: 400, html: resetPage('', 'Link wygasł lub jest nieprawidłowy. Poproś o nowy.') };
     const password = String(ctx.body.password || '');
-    if (password.length < 8) return { status: 400, html: resetPage(token, 'Hasło musi mieć co najmniej 8 znaków.') };
+    const policyError = passwordPolicyError(password);
+    if (policyError) return { status: 400, html: resetPage(token, policyError) };
     if (password !== String(ctx.body.password2 || '')) return { status: 400, html: resetPage(token, 'Hasła nie są identyczne.') };
     const user = get('SELECT * FROM users WHERE id = ?', row.user_id);
     if (!user) return { status: 400, html: resetPage('', 'Konto nie istnieje.') };
@@ -230,10 +269,20 @@ export function registerAuthRoutes(router) {
     return page(ctx, { title: 'Documentation', subtitle: 'OpenAdmin help and reference', body });
   });
 
+  // SEC-018: skin preference is stored state; mutations must use POST + CSRF.
   router.get('/switch-skin', (ctx) => {
+    ctx.res.setHeader('Allow', 'POST');
+    return { status: 405, raw: 'Use POST /switch-skin with a CSRF token', type: 'text' };
+  });
+
+  router.post('/switch-skin', (ctx) => {
     if (!ctx.user) return ctx.redirect('/login');
-    const skin = ctx.query.skin === 'enhanced' ? 'enhanced' : 'evolution';
+    if (!checkCsrf(ctx.session, ctx.body._csrf || ctx.req.headers['x-csrf-token'])) {
+      return { status: 403, raw: 'Invalid security token', type: 'text' };
+    }
+    const skin = ctx.body.skin === 'enhanced' ? 'enhanced' : 'evolution';
     run('UPDATE users SET skin = ? WHERE id = ?', skin, ctx.user.id);
+    audit(ctx.user.username, ctx.user.level, 'skin.switch', skin, ctx.ip);
     return ctx.redirect(ctx.req.headers.referer ? new URL(ctx.req.headers.referer).pathname : '/' + ctx.user.level);
   });
 
@@ -245,7 +294,8 @@ export function registerAuthRoutes(router) {
   });
 
   // Simple public status endpoint used by installers.
-  router.get('/version', () => ({ json: { product: 'OpenAdmin', version: VERSION, license: 'AGPL-3.0', edition: 'Community' } }));
+  // SEC-016: public installer probe, no build/version fingerprint.
+  router.get('/version', () => ({ json: { ok: true, product: 'OpenAdmin', edition: 'Community' } }));
 }
 
 export function docList(items) {

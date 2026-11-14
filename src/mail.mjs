@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { config } from './config.mjs';
-import { all, get, run, setting } from './db.mjs';
+import { all, get, run, nowIso, setting } from './db.mjs';
 import { systemProvider } from './providers/index.mjs';
 import { userHome, mailHome, virtualMailRoot } from './paths.mjs';
 
@@ -68,6 +68,62 @@ export function mailAccounts() {
   return all(`SELECT e.*, d.name AS domain_name, d.user_id, u.username
               FROM email_accounts e JOIN domains d ON d.id = e.domain_id JOIN users u ON u.id = d.user_id
               ORDER BY e.domain, e.local_part`);
+}
+
+/**
+ * One tenant-scoped predicate used by counts and lists. Dashboard, health,
+ * mailbox lists and API handlers must all pass the same scope here so a
+ * counter can never disagree with the list it summarises.
+ */
+export function mailboxScope({ userId = null, domain = null } = {}) {
+  const where = [];
+  const params = [];
+  if (domain) {
+    where.push('e.domain = ?');
+    params.push(String(domain));
+  }
+  if (userId) {
+    where.push('d.user_id = ?');
+    params.push(Number(userId));
+  }
+  return { clause: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
+}
+
+/** COUNT(*) uses the same JOIN/filters as mailboxList(); `get()` is an object. */
+export function mailboxCount(options = {}) {
+  const scope = mailboxScope(options);
+  const row = get(`SELECT COUNT(*) AS n FROM email_accounts e
+                   JOIN domains d ON d.id = e.domain_id ${scope.clause}`, ...scope.params);
+  return Number(row?.n) || 0;
+}
+
+export function mailboxList(options = {}) {
+  const scope = mailboxScope(options);
+  return all(`SELECT e.*, d.name AS domain_name, d.user_id, u.username
+              FROM email_accounts e JOIN domains d ON d.id = e.domain_id
+              JOIN users u ON u.id = d.user_id
+              ${scope.clause}
+              ORDER BY e.domain, e.local_part`, ...scope.params);
+}
+
+/**
+ * The single mailbox summary used by dashboard/health/list/API callers.
+ * `total` is the length of the same scoped list, never a fabricated `0`.
+ */
+export function mailSummary(options = {}) {
+  const rows = mailboxList(options);
+  return {
+    total: rows.length,
+    accounts: rows.length,
+    active: rows.filter((row) => !row.suspended).length,
+    suspended: rows.filter((row) => row.suspended).length,
+    scope: {
+      userId: options.userId ? Number(options.userId) : null,
+      domain: options.domain ? String(options.domain) : null,
+    },
+    source: 'email_accounts JOIN domains',
+    timestamp: nowIso(),
+  };
 }
 
 /** Rebuild every mail configuration file from the database. */
@@ -250,15 +306,22 @@ export function deployMail() {
   };
 }
 
-export function mailStatus() {
+export function mailStatus({ userId = null, domain = null } = {}) {
   const dir = mailRoot();
   const files = ['passwd', 'domains', 'aliases', 'autoreplies', 'catchall']
     .filter((f) => fs.existsSync(path.join(dir, f)))
     .map((f) => ({ name: f, bytes: fs.statSync(path.join(dir, f)).size }));
+  const summary = mailSummary({ userId, domain });
   return {
     directory: dir,
     files,
-    accounts: get('SELECT COUNT(*) n FROM email_accounts')[0]?.n || 0,
+    configBytes: files.reduce((sum, file) => sum + file.bytes, 0),
+    accounts: summary.total,
+    activeAccounts: summary.active,
+    suspendedAccounts: summary.suspended,
+    scope: summary.scope,
+    source: 'email_accounts',
+    timestamp: nowIso(),
     skipped: Number(setting('mail_skipped_accounts', '0')) || 0,
     lastSync: setting('mail_last_sync', ''),
     deployable: systemProvider().id === 'linux',

@@ -2,14 +2,49 @@
 // Without a server the panel records the database metadata and says so.
 import { all, get, run, nowIso, hashPassword, audit } from '../db.mjs';
 import { limitsFor } from '../auth.mjs';
-import { html as h, formatBytes, formatDate } from '../util.mjs';
+import { html as h, formatBytes, formatDate, randomPassword } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, badge, alert, kvList, btn, emptyState } from '../ui/components.mjs';
 import { listCard } from '../ui/pages/list.mjs';
 import { quota } from '../core/access.mjs';
 import { detect, listDatabases, databaseSizes, createDatabase, dropDatabase, createAccount, dropAccount } from '../mariadb.mjs';
-import { encryptSecret, ssoToken } from '../secrets.mjs';
-import { status as appStatus, phpMyAdminSsoEnabled } from '../apps.mjs';
+import { encryptSecret, ssoToken, ssoErrorMessage, impersonationForSession } from '../secrets.mjs';
+import { status as appStatus, phpMyAdminSsoEnabled, pmaSignonCookie } from '../apps.mjs';
+
+/** Availability of the phpMyAdmin hand-off, with a reason for the UI. */
+function pmaState() {
+  const app = appStatus('phpmyadmin');
+  const installed = !!app?.installed;
+  const running = !!app?.running;
+  const sso = installed && phpMyAdminSsoEnabled();
+  let reason = '';
+  if (!installed) reason = 'phpMyAdmin nie jest zainstalowany. Administrator może go zainstalować w Admin → Web Apps.';
+  else if (!sso) reason = 'Jednokrotne logowanie nie jest skonfigurowane. Administrator może je włączyć w Admin → Web Apps.';
+  else if (!running) reason = 'phpMyAdmin jest zainstalowany, ale nie działa. Uruchom go w Admin → Web Apps.';
+  return { app, installed, running, sso, reason };
+}
+
+function pmaCell(ctx, row, state) {
+  if (!state.installed) return h`<span class="small muted" title="${state.reason}">niedostępne</span>`;
+  if (!state.sso) return h`<span class="small muted" title="${state.reason}">SSO wyłączone</span>`;
+  if (!state.running) return h`<span class="small muted" title="${state.reason}">zatrzymane</span>`;
+  if (!row.id || !row.password_enc) {
+    return h`<span class="small muted" title="Brak zapisanego hasła bazy — ustaw hasło, aby otworzyć phpMyAdmin bez drugiego logowania.">brak hasła</span>`;
+  }
+  return h`<form method="post" action="/user/databases/${row.id}/phpmyadmin" class="inline">
+    <button class="btn btn-secondary btn-sm" type="submit" title="Otwórz phpMyAdmin dla ${row.db_name} — jednorazowe logowanie">phpMyAdmin</button></form>`;
+}
+
+function pmaErrorNotice(ctx, rows) {
+  const code = String(ctx.query.pma_error || '');
+  if (!code) return '';
+  const requested = String(ctx.query.pma_db || '');
+  const row = requested ? rows.find((r) => r.db_name === requested) : null;
+  const retry = row?.id
+    ? h` <form method="post" action="/user/databases/${row.id}/phpmyadmin" class="inline"><button class="btn btn-secondary btn-sm" type="submit">Spróbuj ponownie</button></form>`
+    : h` <a class="btn btn-secondary btn-sm" href="/user/databases">Spróbuj ponownie</a>`;
+  return alert(h`<strong>Nie udało się otworzyć phpMyAdmin.</strong> ${ssoErrorMessage(code)}${retry}`, 'danger');
+}
 
 export function register(router) {
   router.get('/user/databases', (ctx) => {
@@ -27,10 +62,14 @@ export function register(router) {
     const q = String(ctx.query.q || '').trim().toLowerCase();
     const filtered = q ? rows.filter((r) => `${r.db_name} ${r.db_user}`.toLowerCase().includes(q)) : rows;
     const shown = filtered.slice(0, 100);
+    const pma = pmaState();
     const body = h`
+      ${pmaErrorNotice(ctx, rows)}
       ${mst.connected
         ? alert(h`Connected to <strong>MariaDB ${mst.version}</strong> as <code>${mst.currentUser}</code>. Databases are created on the server immediately.`, 'ok')
         : alert(h`MariaDB is not reachable from the panel, so new databases are recorded but not created on a server. Install it on the host (the installer supports <code>--with-mariadb</code>) or set <code>OA_MYSQL_ADMIN_USER</code> / <code>OA_MYSQL_ADMIN_PASSWORD</code>.`, 'warn')}
+      ${pma.installed && !pma.sso ? alert(h`${pma.reason} ${ctx.user.level === 'admin' ? h`<a class="link" href="/admin/web-apps">Przejdź do Admin → Web Apps</a>` : 'Poproś administratora o włączenie jednokrotnego logowania.'}`, 'info') : ''}
+      ${!pma.installed ? alert(pma.reason, 'info') : ''}
       ${listCard({
         title: 'Databases', sub: `${filtered.length} z ${lim.databases || '∞'} · ${formatBytes(total)} · ${mst.connected ? 'serwer live' : 'tylko metadane'}`, footer: h`<form method="get" action="/user/databases" class="row"><input name="q" value="${q}" placeholder="Szukaj bazy lub użytkownika" style="flex:1;max-width:320px"><button class="btn btn-secondary btn-sm" type="submit">Filtruj</button></form>`,
         columns: [
@@ -38,14 +77,12 @@ export function register(router) {
           { label: 'State', render: (r) => (mst.connected ? (r.live ? badge('on server', 'ok') : badge('missing', 'danger')) : badge('recorded', 'muted')) },
           { label: 'Size', render: (r) => formatBytes(r.size), align: 'right' },
           { label: 'Created', render: (r) => (r.created_at ? formatDate(r.created_at) : '—') },
+          { label: 'phpMyAdmin', render: (r) => pmaCell(ctx, r, pma) },
         ],
         rows: shown,
         empty: q ? 'Brak baz pasujących do filtra.' : 'No databases yet.',
         createHref: '/user/databases/create', createLabel: 'Create database',
         actions: [
-          { label: 'phpMyAdmin', href: (r) => (r.password_enc && appStatus('phpmyadmin').installed && phpMyAdminSsoEnabled()
-            ? `/phpmyadmin/signon.php?token=${encodeURIComponent(ssoToken({ userId: ctx.user.id, db: r.db_name }))}`
-            : `/phpmyadmin/?db=${encodeURIComponent(r.db_name)}`), icon: 'database' },
           { label: 'Hasło', href: (r) => (r.id ? `/user/databases/${r.id}/password` : '#'), icon: 'key', show: (r) => !!r.id },
           { label: 'Delete', form: (r) => `/user/databases/${r.id}/delete`, confirm: 'Delete this database and all its tables?', icon: 'trash', danger: true, show: (r) => !!r.id },
         ],
@@ -56,11 +93,13 @@ export function register(router) {
           ['Port', '3306'],
           ['Server', mst.connected ? mst.version : 'not connected'],
           ['Account prefix', ctx.user.username + '_'],
-          ['phpMyAdmin', h`<a class="link" href="/phpmyadmin/">/phpmyadmin/</a>`],
+          ['phpMyAdmin', pma.sso && pma.running
+            ? h`<span class="badge badge-ok">jednokrotne logowanie</span>`
+            : h`<span class="small muted">niedostępne — ${pma.reason || 'brak zapisanego hasła bazy'}</span>`],
         ])}`)}
         ${card('Client access', h`<pre class="code-block">mysql -h localhost -u ${ctx.user.username}_app -p
 SHOW DATABASES;</pre>
-        <p class="small muted mt-12">Use the password set when the database was created. phpMyAdmin is available at <code>/phpmyadmin/</code>.</p>`)}
+        <p class="small muted mt-12">Use the password set when the database was created. The phpMyAdmin button opens the database without a second login only when a credential is stored for it.</p>`)}
       </div>`;
     return page(ctx, { title: 'Databases', subtitle: 'MySQL / MariaDB databases', body });
   });
@@ -80,9 +119,10 @@ SHOW DATABASES;</pre>
         <div class="field"><label class="field-label">Database user</label>
           <div class="field-control"><span class="field-suffix" style="left:11px;right:auto">${ctx.user.username}_</span>
             <input name="db_user" pattern="[a-zA-Z0-9_]{1,32}" style="padding-left:${ctx.user.username.length + 2}ch" placeholder="app"></div></div>
-        <div class="field"><label class="field-label">Password <span class="req">*</span></label>
-          <div class="field-control"><input id="dbpass" name="password" type="password" required minlength="8">
-            <button class="btn btn-secondary btn-sm" type="button" data-genpass="#dbpass" style="margin-left:8px">Generate</button></div></div>
+        <div class="field"><label class="field-label">Password</label>
+          <div class="field-control"><input id="dbpass" name="password" type="password" minlength="8" placeholder="Pozostaw puste, aby wygenerować" autocomplete="new-password">
+            <button class="btn btn-secondary btn-sm" type="button" data-genpass="#dbpass" style="margin-left:8px">Generate</button></div>
+          <p class="field-help">Jeśli pozostawisz puste, panel wygeneruje silne hasło i pokaże je tylko raz.</p></div>
         <div class="field"><label class="field-label">Character set</label><select name="charset"><option>utf8mb4</option><option>utf8</option><option>latin1</option></select></div>
       </div>
       <div class="form-actions"><button class="btn btn-primary" type="submit" ${!q.ok ? 'disabled' : ''}>Create database</button><a class="btn btn-ghost" href="/user/databases">Cancel</a></div>
@@ -98,8 +138,7 @@ SHOW DATABASES;</pre>
     const dbName = `${ctx.user.username}_${name}`;
     const dbUser = `${ctx.user.username}_${String(ctx.body.db_user || name).replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32)}`;
     if (get('SELECT id FROM databases WHERE db_name = ?', dbName)) return ctx.redirect('/user/databases?flash=Database%20already%20exists&type=error');
-    const password = String(ctx.body.password || '');
-    if (password.length < 8) return ctx.redirect('/user/databases?flash=Password%20must%20be%20at%20least%208%20characters&type=error');
+    const password = String(ctx.body.password || '') || randomPassword(20);
     const mst = detect();
     if (mst.connected) {
       const created = createDatabase(dbName);
@@ -113,7 +152,38 @@ SHOW DATABASES;</pre>
     run('INSERT INTO databases(user_id, db_name, db_user, password, password_enc, size_mb, created_at) VALUES(?,?,?,?,?,?,?)',
       ctx.user.id, dbName, dbUser, hashPassword(password), encryptSecret(password), 0, nowIso());
     audit(ctx.user.username, ctx.user.level, 'database.create', dbName, ctx.ip);
-    return ctx.redirect('/user/databases?flash=' + encodeURIComponent(`Database ${dbName} created${mst.connected ? ' on the server' : ' (recorded only)'}`));
+    const body = h`<div class="grid grid-2">
+      ${card('Baza danych utworzona', h`${alert(h`Baza <strong>${dbName}</strong> jest gotowa${mst.connected ? ' na serwerze MariaDB' : ' (zapisana lokalnie — MariaDB jest niedostępna)'}.`, 'ok')}
+        ${kvList([['Baza', dbName], ['Użytkownik', dbUser], ['Host', 'localhost'], ['Hasło', h`<code>${password}</code>`]])}
+        <p class="small muted">Hasło jest widoczne tylko teraz. Zapisz je w menedżerze haseł. Możesz je później zmienić w liście baz.</p>
+        <div class="row mt-18"><a class="btn btn-primary" href="/user/databases">Wróć do baz danych</a><a class="btn btn-secondary" href="/user/databases/create">Utwórz kolejną</a></div>`)}
+      ${card('Połączenie', h`<pre class="code-block">mysql -h localhost -u ${dbUser} -p
+SHOW DATABASES;</pre><p class="small muted mt-12">Użyj powyższego hasła. phpMyAdmin otworzy tę bazę jednym kliknięciem, jeśli administrator włączył SSO.</p>`)}
+    </div>`;
+    return page(ctx, { title: 'Baza danych utworzona', subtitle: dbName, body });
+  });
+
+  /* --------------------------------------------------- phpMyAdmin SSO hand-off */
+  router.post('/user/databases/:id/phpmyadmin', (ctx) => {
+    const db = get('SELECT * FROM databases WHERE id = ? AND user_id = ?', Number(ctx.params.id), ctx.user.id);
+    if (!db) return ctx.redirect('/user/databases?pma_error=db_missing');
+    if (ctx.session?.support || impersonationForSession(ctx.cookies['OA_SESSION'])?.readOnly) {
+      return ctx.redirect('/user/databases?pma_error=read_only');
+    }
+    const pma = pmaState();
+    if (!pma.installed) return ctx.redirect('/user/databases?pma_error=unavailable&pma_db=' + encodeURIComponent(db.db_name));
+    if (!pma.sso || !pma.running) return ctx.redirect('/user/databases?pma_error=sso_disabled&pma_db=' + encodeURIComponent(db.db_name));
+    if (!db.password_enc) return ctx.redirect('/user/databases?pma_error=no_credential&pma_db=' + encodeURIComponent(db.db_name));
+    // One-time, session-bound nonce. It is delivered to phpMyAdmin as an
+    // HttpOnly cookie scoped to /phpmyadmin — never as a URL parameter.
+    const token = ssoToken({
+      userId: ctx.user.id,
+      db: db.db_name,
+      sessionToken: ctx.cookies['OA_SESSION'],
+    });
+    ctx.res.setHeader('Set-Cookie', pmaSignonCookie(token, { req: ctx.req }));
+    audit(ctx.user.username, ctx.user.level, 'database.phpmyadmin.sso', db.db_name, ctx.ip);
+    return ctx.redirect('/phpmyadmin/signon.php?db=' + encodeURIComponent(db.db_name));
   });
 
   router.get('/user/databases/:id/password', (ctx) => {

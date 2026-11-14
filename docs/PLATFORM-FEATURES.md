@@ -177,7 +177,7 @@ translation resources, but claiming complete translations would be false.
 
 ## Verification
 
-- `node --test tests/` — 154/154 passing locally and on the Debian container.
+- `node --test tests/*.test.mjs` — 290/290 passing locally and on the Debian container.
 - Live checks: Security Center tabs, Mail diagnosis 100%, queue/events, backup
   job + dry-run restore, backup actual restore in test DB, PHP-FPM hard-limit
   unit (CPU 50%, memory 256 MB, TasksMax 40), API key + MCP, support read-only,

@@ -404,7 +404,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,
   support INTEGER NOT NULL DEFAULT 0,
-  support_token TEXT
+  support_token TEXT,
+  token_hash TEXT,
+  last_seen TEXT
 );
 
 CREATE TABLE IF NOT EXISTS login_attempts (
@@ -858,6 +860,25 @@ export function getDb() {
     const sessCols = db.prepare('PRAGMA table_info(sessions)').all();
     if (sessCols.length && !sessCols.some((c) => c.name === 'support')) db.exec('ALTER TABLE sessions ADD COLUMN support INTEGER NOT NULL DEFAULT 0');
     if (sessCols.length && !sessCols.some((c) => c.name === 'support_token')) db.exec('ALTER TABLE sessions ADD COLUMN support_token TEXT');
+    if (sessCols.length && !sessCols.some((c) => c.name === 'token_hash')) db.exec('ALTER TABLE sessions ADD COLUMN token_hash TEXT');
+    if (sessCols.length && !sessCols.some((c) => c.name === 'last_seen')) db.exec('ALTER TABLE sessions ADD COLUMN last_seen TEXT');
+    // SEC-010: sessions store only a SHA-256 token hash. Existing databases are
+    // migrated in place so open browser sessions keep working: the cookie value
+    // remains the raw token, while the row key becomes its hash.
+    const sessionRows = db.prepare('SELECT rowid, token, token_hash, created_at FROM sessions').all();
+    const updateSession = db.prepare('UPDATE sessions SET token = ?, token_hash = ?, last_seen = COALESCE(last_seen, ?) WHERE rowid = ?');
+    for (const row of sessionRows) {
+      const current = String(row.token || '');
+      const hash = row.token_hash ? String(row.token_hash) : crypto.createHash('sha256').update(current).digest('hex');
+      if (current === hash && row.token_hash === hash) {
+        if (!row.created_at) updateSession.run(hash, hash, nowIso(), row.rowid);
+        continue;
+      }
+      // We cannot know the last activity of a pre-migration session; grant a
+      // fresh idle window instead of logging every existing user out on deploy.
+      updateSession.run(hash, hash, nowIso(), row.rowid);
+    }
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash) WHERE token_hash IS NOT NULL');
   } catch { /* table created by schema */ }
   return db;
 }

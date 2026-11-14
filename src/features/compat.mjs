@@ -9,7 +9,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { all, get, run, nowIso, setting, setSetting, audit, hashPassword, transaction } from '../db.mjs';
 import { config, VERSION, ROOT } from '../config.mjs';
-import { html as h, formatDate, formatBytes, timeAgo, safeJson } from '../util.mjs';
+import { html as h, formatDate, timeAgo, safeJson } from '../util.mjs';
+import { MetricsService, classifyServiceState, formatBytesIEC } from '../metrics.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, table, btn, badge, alert, emptyState, kvList, progress, statCard } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
@@ -18,6 +19,7 @@ import { visibleDomains, visibleUsers, quota } from '../core/access.mjs';
 import { systemProvider, providerExtras } from '../providers/index.mjs';
 import { sendMail, mtaStatus } from '../mta.mjs';
 import { mailStatus, deployMail, syncMail } from '../mail.mjs';
+import { normalizeAddress } from '../mailops.mjs';
 import { createZone } from './domains.mjs';
 import { provisionDomain, homeDir, resolveUserPath } from './files.mjs';
 
@@ -42,12 +44,25 @@ const settingJson = (key, fallback) => safeJson(setting(key, JSON.stringify(fall
 
 function servicePanel(ctx, name, label, meta = '', { admin = false, returnTo = '' } = {}) {
   const svc = svcRow(name);
-  const running = svc?.status === 'running';
+  let live = null;
+  try { live = systemProvider().serviceStatus(name); } catch { live = null; }
+  const state = svc
+    ? classifyServiceState({
+      name,
+      storedStatus: svc.status,
+      liveStatus: live?.status || null,
+      activeWebEngine: setting('web_server', 'nginx'),
+      simulated: !!live?.simulated,
+    })
+    : null;
+  const running = state?.state === 'running';
+  const tone = running ? 'ok' : state?.state === 'inactive-by-design' ? 'muted' : state?.state === 'unknown' ? 'warn' : svc ? 'danger' : 'muted';
+  const badgeLabel = state?.state === 'inactive-by-design' ? state.detail : state?.label || 'not installed';
   return h`<div class="service-row">
-    <span class="service-dot ${running ? 'on' : 'off'}"></span>
+    <span class="service-dot ${running ? 'on' : state?.state === 'failed' ? 'off' : ''}"></span>
     <strong>${label}</strong><span class="small muted">${meta}</span>
     <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
-      ${badge(running ? 'running' : (svc ? 'stopped' : 'not installed'), running ? 'ok' : (svc ? 'danger' : 'muted'), { dot: true })}
+      ${badge(badgeLabel, tone, { dot: true })}
       ${admin && svc ? h`<form method="post" action="/compat/service/${encodeURIComponent(name)}" class="inline">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <input type="hidden" name="return" value="${returnTo}">
@@ -144,8 +159,8 @@ export function register(router) {
     const body = h`
       <div class="stat-grid">
         ${statCard({ label: 'Hosting databases', value: String(dbs.length), sub: 'across all accounts', icon: 'database' })}
-        ${statCard({ label: 'Reported data size', value: formatBytes(total), sub: 'per-database usage', icon: 'chart', tone: 'ok' })}
-        ${statCard({ label: 'Panel database', value: formatBytes(panelDb / 1024 / 1024), sub: 'SQLite · openadmin.db', icon: 'server' })}
+        ${statCard({ label: 'Reported data size', value: formatBytesIEC(total * 1024 * 1024), sub: 'per-database usage', icon: 'chart', tone: 'ok' })}
+        ${statCard({ label: 'Panel database', value: formatBytesIEC(panelDb), sub: 'SQLite · openadmin.db', icon: 'server' })}
         ${statCard({ label: 'Engine', value: 'SQLite', sub: 'panel store · WAL', icon: 'cpu' })}
       </div>
       ${listCard({
@@ -153,12 +168,12 @@ export function register(router) {
         columns: [
           { label: 'Database', render: (d) => h`<span class="cell-mono">${d.db_name}</span>` },
           { label: 'Owner', render: (d) => d.username },
-          { label: 'Size', render: (d) => formatBytes(d.size_mb), align: 'right' },
+          { label: 'Size', render: (d) => formatBytesIEC(Number(d.size_mb || 0) * 1024 * 1024), align: 'right' },
           { label: 'Created', render: (d) => formatDate(d.created_at) },
         ],
         rows: dbs, empty: 'No hosting databases yet.',
       })}
-      ${card('Panel store', h`${kvList([['File', dbFile], ['Size', formatBytes(panelDb / 1024 / 1024)], ['Journal mode', get('PRAGMA journal_mode')?.journal_mode || 'wal'], ['Tables', String(get("SELECT COUNT(*) n FROM sqlite_master WHERE type='table'").n)]])}`)}`;
+      ${card('Panel store', h`${kvList([['File', dbFile], ['Size', formatBytesIEC(panelDb)], ['Journal mode', get('PRAGMA journal_mode')?.journal_mode || 'wal'], ['Tables', String(get("SELECT COUNT(*) n FROM sqlite_master WHERE type='table'").n)]])}`)}`;
     return titled(ctx, 'DB Monitor', 'Database inventory and server health', body);
   });
 
@@ -171,8 +186,8 @@ export function register(router) {
       columns: [
         { label: 'Domain', render: (r) => h`<span class="cell-strong">${r.name}</span>` },
         { label: 'Mailboxes', render: (r) => r.accounts, align: 'right' },
-        { label: 'Used', render: (r) => formatBytes(r.used), align: 'right' },
-        { label: 'Quota', render: (r) => formatBytes(r.quota), align: 'right' },
+        { label: 'Used', render: (r) => formatBytesIEC(Number(r.used || 0) * 1024 * 1024), align: 'right' },
+        { label: 'Quota', render: (r) => formatBytesIEC(Number(r.quota || 0) * 1024 * 1024), align: 'right' },
         { label: 'Utilisation', render: (r) => h`<div style="min-width:120px">${progress(r.used, r.quota || 1, { showText: false })}</div>` },
       ],
       rows, empty: 'No mail domains yet.',
@@ -180,9 +195,9 @@ export function register(router) {
     ${(() => { const st = mailStatus(); return card('Mail stack', h`
       ${alert(st.lastSync ? `Configuration synced ${formatDate(st.lastSync, { time: true })} · ${st.accounts} mailbox(es), ${st.skipped} without a Dovecot hash` : 'Mail configuration has not been synced yet.', st.lastSync ? 'info' : 'warn')}
       ${kvList([
-        ['Dovecot passwd', st.files.find((f) => f.name === 'passwd')?.bytes + ' bytes' || 'missing'],
-        ['Domains file', st.files.find((f) => f.name === 'domains')?.bytes + ' bytes' || 'missing'],
-        ['Aliases file', st.files.find((f) => f.name === 'aliases')?.bytes + ' bytes' || 'missing'],
+        ['Dovecot passwd', st.files.find((f) => f.name === 'passwd') ? `${formatBytesIEC(st.files.find((f) => f.name === 'passwd').bytes)} (${st.files.find((f) => f.name === 'passwd').bytes} B)` : 'missing'],
+        ['Domains file', st.files.find((f) => f.name === 'domains') ? `${formatBytesIEC(st.files.find((f) => f.name === 'domains').bytes)} (${st.files.find((f) => f.name === 'domains').bytes} B)` : 'missing'],
+        ['Aliases file', st.files.find((f) => f.name === 'aliases') ? `${formatBytesIEC(st.files.find((f) => f.name === 'aliases').bytes)} (${st.files.find((f) => f.name === 'aliases').bytes} B)` : 'missing'],
         ['Dovecot service', st.dovecot || 'unknown'],
       ])}
       <div class="row mt-18">
@@ -213,8 +228,8 @@ export function register(router) {
       ${alert('Tracked messages come from the panel queue table and the mailbox inventory. Live MTA log parsing is performed by the Linux provider.', 'info')}
       ${card('Queued messages', h`${table({
         columns: [
-          { label: 'From', render: (r) => h`<span class="cell-mono">${r.sender || '—'}</span>` },
-          { label: 'To', render: (r) => h`<span class="cell-mono">${r.recipient}</span>` },
+          { label: 'From', render: (r) => h`<span class="cell-mono">${normalizeAddress(r.sender) || '—'}</span>` },
+          { label: 'To', render: (r) => h`<span class="cell-mono">${normalizeAddress(r.recipient) || '—'}</span>` },
           { label: 'Subject', render: (r) => r.subject || '—' },
           { label: 'Status', render: (r) => badge(r.status, r.status === 'sent' ? 'ok' : 'warn') },
           { label: 'Time', render: (r) => formatDate(r.created_at, { time: true }) },
@@ -224,8 +239,8 @@ export function register(router) {
       ${card('Mailboxes', h`${table({
         columns: [
           { label: 'Mailbox', render: (r) => h`<span class="cell-mono">${r.local_part}@${r.domain}</span>` },
-          { label: 'Storage', render: (r) => formatBytes(r.used_mb), align: 'right' },
-          { label: 'Quota', render: (r) => (r.quota_mb ? formatBytes(r.quota_mb) : 'unlimited'), align: 'right' },
+          { label: 'Storage', render: (r) => formatBytesIEC(Number(r.used_mb || 0) * 1024 * 1024), align: 'right' },
+          { label: 'Quota', render: (r) => (r.quota_mb ? formatBytesIEC(Number(r.quota_mb) * 1024 * 1024) : 'unlimited'), align: 'right' },
         ],
         rows: all('SELECT * FROM email_accounts ORDER BY used_mb DESC LIMIT 50'), empty: 'No mailboxes.',
       })}`)}`;
@@ -247,10 +262,10 @@ export function register(router) {
       ${card('Mail queue', h`${rows.length ? table({
         columns: [
           { label: 'ID', render: (r) => h`<span class="cell-mono">${r.id}</span>` },
-          { label: 'From', render: (r) => h`<span class="cell-mono">${r.sender || '—'}</span>` },
-          { label: 'To', render: (r) => h`<span class="cell-mono">${r.recipient}</span>` },
+          { label: 'From', render: (r) => h`<span class="cell-mono">${normalizeAddress(r.sender) || '—'}</span>` },
+          { label: 'To', render: (r) => h`<span class="cell-mono">${normalizeAddress(r.recipient) || '—'}</span>` },
           { label: 'Subject', render: (r) => r.subject || '—' },
-          { label: 'Size', render: (r) => formatBytes(r.size_kb / 1024), align: 'right' },
+          { label: 'Size', render: (r) => formatBytesIEC(Number(r.size_kb || 0) * 1024), align: 'right' },
           { label: 'Status', render: (r) => badge(r.status, r.status === 'sent' ? 'ok' : 'warn') },
         ],
         rows,
@@ -487,13 +502,30 @@ export function register(router) {
   router.get('/compat/admin/netdata', (ctx) => {
     const deny = guard(ctx, 'admin'); if (deny) return deny;
     const info = systemProvider().systemInfo();
+    const metrics = new MetricsService();
+    const memory = metrics.memory();
+    const disk = metrics.disk('/');
     const body = h`
       ${servicePanel(ctx, 'netdata', 'Netdata agent', 'port 19999', { admin: true, returnTo: '/compat/admin/netdata' })}
       <div class="stat-grid mt-18">
         ${statCard({ label: 'CPU load', value: (info.load?.[0] || 0).toFixed(2), sub: `${info.cpuCount} cores`, icon: 'cpu' })}
-        ${statCard({ label: 'Memory', value: `${Math.round(((info.memoryTotalMb - info.memoryFreeMb) / Math.max(info.memoryTotalMb, 1)) * 100)}%`, sub: `${formatBytes(info.memoryFreeMb / 1024)} free`, icon: 'monitor', tone: 'warn' })}
+        ${statCard({
+          label: 'Memory',
+          value: memory.percent === null ? 'Niedostępne' : `${memory.percent}%`,
+          sub: memory.available
+            ? `${formatBytesIEC(memory.freeBytes)} free · ${formatBytesIEC(memory.totalBytes)} total · ${memory.source}`
+            : memory.reason,
+          icon: 'monitor',
+          tone: memory.percent > 85 ? 'danger' : memory.percent > 70 ? 'warn' : 'ok',
+        })}
         ${statCard({ label: 'Uptime', value: `${Math.floor((info.uptimeSeconds || 0) / 86400)}d`, sub: 'since last boot', icon: 'clock' })}
-        ${statCard({ label: 'Disk free', value: info.disk ? formatBytes(info.disk.freeMb / 1024) : '—', sub: info.disk ? `of ${formatBytes(info.disk.totalMb / 1024)}` : 'unknown', icon: 'database', tone: 'ok' })}
+        ${statCard({
+          label: 'Disk free',
+          value: disk.available ? formatBytesIEC(disk.freeBytes) : 'Niedostępne',
+          sub: disk.available ? `of ${formatBytesIEC(disk.totalBytes)} · ${disk.source}` : disk.reason,
+          icon: 'database',
+          tone: disk.percent > 90 ? 'danger' : disk.percent > 75 ? 'warn' : 'ok',
+        })}
       </div>
       ${card('Agent', h`${kvList([['Endpoint', 'http://127.0.0.1:19999'], ['Status', svcRow('netdata')?.status === 'running' ? badge('running', 'ok') : badge('stopped', 'muted')], ['Provider', systemProvider().id]])}`)}`;
     return titled(ctx, 'Netdata server metrics', 'Real-time host monitoring', body);
@@ -501,7 +533,7 @@ export function register(router) {
 
   router.get('/compat/admin/rspamd', (ctx) => {
     const deny = guard(ctx, 'admin'); if (deny) return deny;
-    const rules = all('SELECT COUNT(*) n FROM email_filters').n;
+    const rules = get('SELECT COUNT(*) n FROM email_filters')?.n || 0;
     const domains = all('SELECT name FROM domains ORDER BY name');
     const body = h`
       ${servicePanel(ctx, 'rspamd', 'Rspamd', 'spam engine', { admin: true, returnTo: '/compat/admin/rspamd' })}
@@ -703,7 +735,7 @@ export function register(router) {
       }
     };
     walk(root);
-    const report = `scanned ${files} files (${formatBytes(bytes / 1024 / 1024)}) at ${nowIso()}\nthreats: 0\npath: /home/${ctx.user.username}`;
+    const report = `scanned ${files} files (${formatBytesIEC(bytes)}) at ${nowIso()}\nthreats: 0\npath: /home/${ctx.user.username}`;
     setSetting(`clamav_scan:${ctx.user.username}`, report);
     audit(ctx.user.username, ctx.user.level, 'clamav.scan', `${files} files`, ctx.ip);
     return ctx.redirect('/compat/user/clamav?flash=Scan%20complete');
@@ -715,14 +747,14 @@ export function register(router) {
     const body = h`${card('Mailboxes', h`${table({
       columns: [
         { label: 'Mailbox', render: (r) => h`<span class="cell-mono">${r.local_part}@${r.domain}</span>` },
-        { label: 'Storage', render: (r) => formatBytes(r.used_mb), align: 'right' },
-        { label: 'Quota', render: (r) => (r.quota_mb ? formatBytes(r.quota_mb) : 'unlimited'), align: 'right' },
+        { label: 'Storage', render: (r) => formatBytesIEC(Number(r.used_mb || 0) * 1024 * 1024), align: 'right' },
+        { label: 'Quota', render: (r) => (r.quota_mb ? formatBytesIEC(Number(r.quota_mb) * 1024 * 1024) : 'unlimited'), align: 'right' },
       ],
       rows, empty: 'No mailboxes yet.',
     })}`)}
     ${card('Tracked messages', h`${table({
       columns: [
-        { label: 'To', render: (r) => h`<span class="cell-mono">${r.recipient}</span>` },
+        { label: 'To', render: (r) => h`<span class="cell-mono">${normalizeAddress(r.recipient) || '—'}</span>` },
         { label: 'Subject', render: (r) => r.subject || '—' },
         { label: 'Status', render: (r) => badge(r.status, r.status === 'sent' ? 'ok' : 'warn') },
         { label: 'Time', render: (r) => formatDate(r.created_at, { time: true }) },

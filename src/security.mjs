@@ -386,14 +386,23 @@ export function saveModsec(body, actor = 'admin') {
 export function securitySummary() {
   const caps = capabilities();
   const blocks = blockRows();
+  const ssh = getSsh();
+  const fork = getForkBomb();
+  const smtp = smtpRestrictions();
+  const mod = modsecStatus();
+  const keys = listRootKeys();
+  const posture = [
+    { key: 'firewall', priority: 'P0', label: 'Firewall nftables', ok: !!caps.nft, evidence: caps.nft ? 'nft dostępny' : 'brak nftables', impact: 'Brak filtrowania ruchu na hoście', action: '?tab=firewall', fix: 'Zainstaluj nftables i wdróż reguły' },
+    { key: 'ssh-password', priority: 'P0', label: 'Logowanie SSH hasłem', ok: !ssh.password_authentication, evidence: ssh.password_authentication ? 'PasswordAuthentication yes' : 'wyłączone', impact: 'Zwiększone ryzyko brute force SSH', action: '?tab=ssh', fix: 'Wyłącz hasła, używaj kluczy' },
+    { key: 'root-keys', priority: 'P1', label: 'Klucze roota', ok: keys.length > 0, evidence: `${keys.length} klucz(y)`, impact: 'Brak awaryjnego dostępu po kluczu', action: '?tab=keys', fix: 'Dodaj klucz publiczny roota' },
+    { key: 'forkbomb', priority: 'P1', label: 'Ochrona fork bomb', ok: !!fork.enabled, evidence: fork.enabled ? `nproc=${fork.nproc}` : 'wyłączona', impact: 'Jeden proces może wyczerpać PID-y', action: '?tab=groups', fix: 'Włącz limity nproc/nofile' },
+    { key: 'smtp-restrictions', priority: 'P1', label: 'Ograniczenia SMTP', ok: !!smtp.enabled, evidence: smtp.enabled ? 'aktywne' : 'wyłączone', impact: 'Możliwy spam wychodzący z kont', action: '?tab=mail', fix: 'Włącz ograniczenia egress' },
+    { key: 'modsecurity', priority: 'P2', label: 'ModSecurity / WAF', ok: !!mod.supported, evidence: mod.supported ? mod.engine : 'niedostępny', impact: 'Brak reguł WAF dla aplikacji WWW', action: '?tab=waf', fix: 'Zainstaluj mod_security2 lub WAF nginx' },
+  ];
+  const passed = posture.filter((x) => x.ok).length;
   return {
-    caps,
-    blocks: blocks.length,
-    countries: all('SELECT * FROM country_blocks').length,
-    password: getPasswordPolicy(),
-    forkbomb: getForkBomb(),
-    ssh: getSsh(),
-    smtp: smtpRestrictions(),
-    modsec: modsecStatus(),
+    caps, blocks: blocks.length, countries: all('SELECT * FROM country_blocks').length,
+    password: getPasswordPolicy(), forkbomb: fork, ssh, smtp, modsec: mod,
+    posture, score: Math.round((passed / posture.length) * 100), passed, total: posture.length,
   };
 }

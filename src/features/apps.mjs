@@ -1,11 +1,42 @@
 // Admin page and fallbacks for the bundled web applications.
+import crypto from 'node:crypto';
 import { html as h, formatDate } from '../util.mjs';
 import { audit, setting } from '../db.mjs';
+import { panelSecret } from '../config.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, btn, badge, alert, kvList, table, emptyState } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
 import { listCard } from '../ui/pages/list.mjs';
+import { consumeSsoToken } from '../secrets.mjs';
 import { APPS, status, statusAll, install, start, stop, logs, phpFpmConfigs, deployPhpFpm, enablePhpMyAdminSso, phpMyAdminSsoEnabled, roundcubePreflight, setRoundcubeImapHost } from '../apps.mjs';
+
+function safeEqual(left, right) {
+  const a = Buffer.from(String(left ?? ''));
+  const b = Buffer.from(String(right ?? ''));
+  return a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
+}
+
+/** Loopback check based on the actual socket, not a spoofable header. */
+function fromLoopback(ctx) {
+  const address = String(ctx.req.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+  return address === '127.0.0.1' || address === '::1';
+}
+
+/** SEC-011 handshake: validate the service secret, then atomically consume. */
+function phpMyAdminCredentials(ctx) {
+  if (!fromLoopback(ctx)) return { status: 403, json: { ok: false, code: 'loopback', error: 'Loopback only' } };
+  if (!safeEqual(ctx.req.headers['x-openadmin-secret'], panelSecret())) {
+    return { status: 403, json: { ok: false, code: 'service', error: 'Invalid service secret' } };
+  }
+  const result = consumeSsoToken(String(ctx.body.token || ''), {
+    sessionToken: ctx.body.session ? String(ctx.body.session) : null,
+  });
+  if (!result.ok) {
+    const statusCode = result.code === 'db_missing' ? 404 : result.code === 'no_credential' ? 409 : 403;
+    return { status: statusCode, json: { ok: false, code: result.code, error: result.error } };
+  }
+  return { json: { ok: true, username: result.username, password: result.password, db: result.db } };
+}
 
 function appRow(ctx, st) {
   const runnable = st.installed && !st.missingExtensions.length;
@@ -58,6 +89,18 @@ function fallbackPage(ctx, id) {
 }
 
 export function register(router) {
+  // Registered before routes/api.mjs (admin routes are mounted first). This is
+  // the only handler allowed to exchange a phpMyAdmin nonce for credentials.
+  router.post('/api/phpmyadmin/credentials', (ctx) => phpMyAdminCredentials(ctx));
+
+  // Probe used by the generated nginx fragment (`auth_request`) so a PHP-FPM
+  // deployment cannot bypass the panel session gate for /phpmyadmin/.
+  router.get('/api/phpmyadmin/session', (ctx) => {
+    if (!ctx.user) return { status: 401, json: { ok: false, error: 'Panel session required' } };
+    if (ctx.session?.support) return { status: 403, json: { ok: false, error: 'Read-only session' } };
+    return { json: { ok: true, user: ctx.user.username, level: ctx.user.level } };
+  });
+
   router.get('/admin/web-apps', (ctx) => {
     const all = statusAll();
     const body = h`
@@ -73,10 +116,27 @@ export function register(router) {
         ]);
       })()}`)}
       ${all.phpmyadmin?.installed ? card('phpMyAdmin single sign-on', h`
-        ${phpMyAdminSsoEnabled() ? alert('SSO is enabled: the Databases page opens phpMyAdmin without a second login for databases created with a stored credential.', 'ok') : alert('Enable SSO to open phpMyAdmin directly from the Databases page using encrypted, one-time credentials.', 'info')}
+        ${phpMyAdminSsoEnabled()
+          ? alert('SSO is enabled: the Databases page opens phpMyAdmin for a database with a stored credential. Every hand-off uses a random nonce stored only as a hash, expires after 60 seconds and is consumed exactly once.', 'ok')
+          : alert('Enable SSO to open phpMyAdmin directly from the Databases page. The hand-off uses a one-time nonce, never a reusable URL token.', 'info')}
         <form method="post" action="/admin/web-apps/phpmyadmin/sso"><input type="hidden" name="_csrf" value="${ctx.csrf}">
           <button class="btn btn-primary btn-sm" type="submit">${phpMyAdminSsoEnabled() ? 'Regenerate SSO configuration' : 'Enable SSO'}</button></form>`)
         : ''}
+      ${card('Webmail sign-in', h`
+        ${alert('Standardowe wejście do webmaila z listy skrzynek otwiera formularz logowania i wymaga hasła skrzynki. Panel pokazuje ostrzeżenie przed przejściem i nie obiecuje logowania bez hasła; Roundcube również wymaga hasła skrzynki.', 'warn')}
+        <p class="small muted">Jeśli skrzynka ma inne hasło niż konto panelu, użyj hasła skrzynki. Administrator/reseller może je zresetować w liście skrzynek.</p>
+        <div class="row mt-12">
+          <a class="btn btn-secondary btn-sm" href="/webmail" target="_blank" rel="noopener">Otwórz webmail</a>
+          ${all.roundcube?.installed ? h`<a class="btn btn-ghost btn-sm" href="/roundcube/" target="_blank" rel="noopener">Otwórz Roundcube</a>` : ''}
+        </div>`)}
+      ${card('Proxy i nagłówki', h`
+        <p class="small muted mb-12">Aplikacje działają na loopbacku, a panel jest jedynym punktem wejścia. Proxy wymaga sesji panelu, usuwa nagłówki hop-by-hop oraz wewnętrzne, nie ujawnia <code>X-Powered-By</code>/<code>Server</code> i przekazuje aplikacji zewnętrzny host oraz schemat.</p>
+        ${kvList([
+          ['Sesja panelu', badge('wymagana', 'ok')],
+          ['Cookie panelu w aplikacji', badge('usuwane', 'ok')],
+          ['Nagłówki wewnętrzne', badge('filtrowane', 'ok')],
+          ['SSO phpMyAdmin', phpMyAdminSsoEnabled() ? badge('włączone', 'ok') : badge('wyłączone', 'muted')],
+        ])}`)}
       ${card('PHP-FPM deployment', h`<p class="small muted mb-12">For production, run phpMyAdmin through PHP-FPM instead of PHP's development server. Generate a pool and nginx snippet, then deploy on Linux as root.</p>
         <div class="row">
           <form method="post" action="/admin/web-apps/fpm/generate" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">

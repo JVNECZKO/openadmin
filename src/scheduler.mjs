@@ -1,13 +1,21 @@
-// Background housekeeping: scheduled backups, retention, automation and alerts.
+// Durable scheduler. SQLite is the source of truth: next_run_at, leases and run
+// history survive restarts; timers only wake the process up. Multiple panel
+// instances coordinate through scheduler_leases and operation job leases, so a
+// second instance never duplicates a scheduled run.
 import fs from 'node:fs';
+import os from 'node:os';
 import { all, get, run, nowIso, setting, setSetting } from './db.mjs';
-import { createServerBackup, backupPath } from './backups.mjs';
-import { runDueJobs } from './backupcenter.mjs';
+import { createServerBackup, backupPath, ensureJobSchema, processQueuedJobs, recoverInterruptedJobs } from './backups.mjs';
+import { enqueueDueJobs, ensureBackupScheduleSchema, recoverStaleBackupLeases, schedulerTimezone } from './backupcenter.mjs';
 import { sendMail, mtaStatus } from './mta.mjs';
 import { dispatch, channels, addNotification, notifyAutomationFailure } from './notifications.mjs';
 import { automationTick, seedAutomationJobs, recoverInterruptedRuns } from './automation.mjs';
 
 export { automationStatus } from './automation.mjs';
+
+export const SCHEDULER_TICK_MS = Math.max(5000, Number(process.env.OA_AUTOMATION_TICK_MS) || 20 * 1000);
+const AUTOMATION_LEASE = 'automation.tick';
+const LEASE_TTL_MS = 30 * 60 * 1000;
 
 export function notifyAdmin(subject, body) {
   const admin = get("SELECT * FROM users WHERE level = 'admin' ORDER BY id LIMIT 1");
@@ -31,6 +39,7 @@ export function backupSettings() {
     keep: Number(setting('backup_keep', '3')) || 3,
     notifyEmail: setting('notify_email', ''),
     lastRun: setting('backup_last_run', ''),
+    timezone: schedulerTimezone(),
   };
 }
 
@@ -46,7 +55,7 @@ export function runBackupJob({ force = false } = {}) {
     const backup = createServerBackup(admin, 'all');
     setSetting('backup_last_run', nowIso());
     pruneBackups(cfg);
-    return { ok: true, filename: backup.filename, size: backup.size };
+    return { ok: true, filename: backup.filename, size: backup.size, jobId: backup.jobId, sha256: backup.sha256 };
   } catch (e) {
     notifyAdmin('Kopia zapasowa nie powiodła się', `Błąd: ${e.message}`);
     return { ok: false, error: e.message };
@@ -78,49 +87,161 @@ export function checkCertificateExpiry() {
   setSetting('cert_notify_date', day);
 }
 
-let timer = null;
-let legacyTimer = null;
+/* -------------------------------------------------------------------------- */
+/* Leases                                                                     */
+/* -------------------------------------------------------------------------- */
 
-const AUTOMATION_TICK_MS = Math.max(5000, Number(process.env.OA_AUTOMATION_TICK_MS) || 20 * 1000);
+export function ensureSchedulerSchema() {
+  ensureJobSchema();
+}
+
+function leaseOwner() {
+  return `${os.hostname()}:${process.pid}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Atomic single-winner lease; expired leases are taken over. */
+export function claimSchedulerLease(name, { owner = leaseOwner(), ttlMs = LEASE_TTL_MS } = {}) {
+  ensureSchedulerSchema();
+  const now = new Date();
+  const acquiredAt = now.toISOString();
+  const expiresAt = new Date(now.getTime() + Math.max(1000, ttlMs)).toISOString();
+  run(
+    `INSERT INTO scheduler_leases(name, owner, acquired_at, heartbeat_at, expires_at)
+     VALUES(?,?,?,?,?)
+     ON CONFLICT(name) DO UPDATE SET owner = excluded.owner, acquired_at = excluded.acquired_at,
+       heartbeat_at = excluded.heartbeat_at, expires_at = excluded.expires_at
+     WHERE scheduler_leases.owner = excluded.owner OR scheduler_leases.expires_at < excluded.acquired_at`,
+    name, owner, acquiredAt, acquiredAt, expiresAt,
+  );
+  const row = get('SELECT * FROM scheduler_leases WHERE name = ?', name);
+  return row?.owner === owner ? { ok: true, owner, expires_at: expiresAt } : { ok: false, owner: row?.owner || null, expires_at: row?.expires_at || null };
+}
+
+export function releaseSchedulerLease(name, owner) {
+  if (!owner) return 0;
+  return run('DELETE FROM scheduler_leases WHERE name = ? AND owner = ?', name, owner).changes;
+}
+
+export function schedulerStatus({ now = Date.now() } = {}) {
+  ensureSchedulerSchema();
+  ensureBackupScheduleSchema();
+  const instant = new Date(Number(now) || Date.now()).toISOString();
+  const leases = all('SELECT * FROM scheduler_leases ORDER BY name');
+  const operation = all("SELECT status, COUNT(*) AS n FROM operation_jobs GROUP BY status");
+  const nextBackups = all(
+    `SELECT id, name, schedule, timezone, schedule_time, next_run_at, enabled, last_status, last_run_at
+     FROM backup_jobs ORDER BY COALESCE(next_run_at, '') ASC LIMIT 10`,
+  );
+  return {
+    timezone: schedulerTimezone(),
+    tick_ms: SCHEDULER_TICK_MS,
+    now: instant,
+    leases,
+    operation_jobs: operation,
+    next_backup_jobs: nextBackups,
+    automation: automationJobSummary(),
+  };
+}
+
+function automationJobSummary() {
+  try {
+    const rows = all('SELECT key, enabled, next_run_at, last_status, run_count, fail_count FROM automation_jobs ORDER BY key');
+    return rows;
+  } catch { return []; }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tick                                                                       */
+/* -------------------------------------------------------------------------- */
+
+let lastTick = null;
+
+/**
+ * One durable scheduler tick. Safe to call from any instance: every state
+ * transition is a database compare-and-set (leases / next_run_at), the timer is
+ * only a wake-up source.
+ */
+export async function schedulerTick({ now = Date.now(), limit = 2 } = {}) {
+  ensureSchedulerSchema();
+  const started = Date.now();
+  const recoveredJobs = recoverInterruptedJobs({ now });
+  const recoveredAutomation = recoverInterruptedRuns();
+  const staleLeases = recoverStaleBackupLeases({ now });
+  const due = enqueueDueJobs({ now, owner: `scheduler:${os.hostname()}:${process.pid}` });
+  const queue = processQueuedJobs({ limit, now, inline: process.env.OA_JOB_INLINE === '1' });
+
+  let automation = null;
+  const lease = claimSchedulerLease(AUTOMATION_LEASE, { ttlMs: LEASE_TTL_MS });
+  if (lease.ok) {
+    try {
+      automation = await automationTick({ now });
+    } catch (error) {
+      automation = { enabled: false, due: 0, ran: [], error: error.message };
+    } finally {
+      releaseSchedulerLease(AUTOMATION_LEASE, lease.owner);
+    }
+  } else {
+    automation = { enabled: false, due: 0, ran: [], skipped: 'lease-held-by-other-instance' };
+  }
+
+  lastTick = { at: nowIso(), duration_ms: Date.now() - started, due: due.queued.length, spawned: queue.spawned.length, recovered: recoveredJobs.length };
+  return {
+    now: new Date(now).toISOString(),
+    timezone: schedulerTimezone(),
+    recovered: { jobs: recoveredJobs, automation: recoveredAutomation, backup_leases: staleLeases },
+    enqueued: due.queued,
+    skipped: due.skipped,
+    queue,
+    automation,
+    duration_ms: lastTick.duration_ms,
+  };
+}
+
+let timer = null;
+let kickTimer = null;
 
 export function startScheduler() {
   if (timer) return timer;
   try {
+    ensureSchedulerSchema();
     seedAutomationJobs();
     recoverInterruptedRuns();
+    recoverInterruptedJobs();
+    recoverStaleBackupLeases();
   } catch (e) {
-    console.warn('[openadmin] automation init:', e.message);
+    console.warn('[openadmin] scheduler init:', e.message);
   }
 
-  // Fast tick: durable automation jobs due by next_run_at. Every error is
-  // contained here so a failing job can never take the HTTP server down.
-  const tick = () => {
-    automationTick().catch((e) => console.warn('[openadmin] automation:', e.message));
-  };
-  setTimeout(tick, Math.min(3000, AUTOMATION_TICK_MS)).unref?.();
-  timer = setInterval(tick, AUTOMATION_TICK_MS);
-  timer.unref?.();
+  // Resume an update that deliberately restarted the panel. The pending state
+  // file and the durable job (not the old process) own the transaction.
+  import('./updates.mjs')
+    .then((updates) => {
+      if (typeof updates.resumePendingUpdate === 'function') return updates.resumePendingUpdate();
+      return null;
+    })
+    .catch((e) => console.warn('[openadmin] update resume:', e.message));
 
-  // Legacy hourly housekeeping is kept for the Backup Center scheduler jobs
-  // and the daily certificate-expiry notification. Automatic server backups
-  // themselves now run through the durable backup.daily automation job.
-  const legacyTick = () => {
-    try {
-      for (const result of runDueJobs()) {
-        if (result && result.ok === false) {
-          void notifyAutomationFailure({
-            source: 'backup-center',
-            title: 'Backup Center job failed',
-            body: result.error || 'Backup job failed',
-            link: '/admin/backup-center',
-          }).catch(() => {});
-        }
-      }
-    } catch (e) { console.warn('[openadmin] backup jobs:', e.message); }
-    try { checkCertificateExpiry(); } catch (e) { console.warn('[openadmin] certs:', e.message); }
+  const tick = () => {
+    schedulerTick().catch((e) => console.warn('[openadmin] scheduler:', e.message));
   };
-  setTimeout(legacyTick, 60 * 1000).unref?.();
-  legacyTimer = setInterval(legacyTick, 60 * 60 * 1000);
-  legacyTimer.unref?.();
+  // A long custom interval (used by tests) intentionally suppresses the early
+  // wake-up; the durable queue is still processed on the regular interval.
+  const initialDelay = SCHEDULER_TICK_MS >= 600000 ? SCHEDULER_TICK_MS : Math.min(5000, SCHEDULER_TICK_MS);
+  kickTimer = setTimeout(tick, initialDelay);
+  kickTimer.unref?.();
+  timer = setInterval(tick, SCHEDULER_TICK_MS);
+  timer.unref?.();
   return timer;
+}
+
+/** Stop the wake-up timers (state remains durable in SQLite). */
+export function stopScheduler() {
+  if (timer) clearInterval(timer);
+  if (kickTimer) clearTimeout(kickTimer);
+  timer = null;
+  kickTimer = null;
+}
+
+export function schedulerLastTick() {
+  return lastTick;
 }

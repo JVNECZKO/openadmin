@@ -29,7 +29,8 @@ export function badge(text, tone = 'muted', { dot = false } = {}) {
 }
 
 export function statusBadge(status) {
-  const s = String(status || '').toLowerCase();
+  const rawStatus = typeof status === 'string' || typeof status === 'number' ? String(status) : '';
+  const s = rawStatus.toLowerCase();
   const map = {
     active: ['ok', 'Active'], running: ['ok', 'Running'], complete: ['ok', 'Complete'], enabled: ['ok', 'Enabled'],
     open: ['brand', 'Open'], 'in progress': ['warn', 'In progress'], answered: ['ok', 'Answered'],
@@ -37,7 +38,7 @@ export function statusBadge(status) {
     pending: ['warn', 'Pending'], warning: ['warn', 'Warning'], free: ['muted', 'Free'],
     shared: ['brand', 'Shared'], server: ['ok', 'Server'], closed: ['muted', 'Closed'], expired: ['danger', 'Expired'],
   };
-  const [tone, label] = map[s] || ['muted', status || '—'];
+  const [tone, label] = map[s] || ['muted', rawStatus || '—'];
   return badge(label, tone, { dot: true });
 }
 
@@ -73,28 +74,68 @@ export function progress(used, total, { label = '', tone = '', showText = true }
   </div>`;
 }
 
-export function table({ columns, rows, empty = 'Nothing here yet', rowKey = 'id', actions = [], selectable = false, label = 'Data table' }) {
-  if (!rows.length) return emptyState(empty);
+const FORBIDDEN_EMPTY = /^(Nothing here yet|Nothing yet|No results)\.?$/i;
+
+function safeEmptyMessage(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const text = typeof value === 'string' ? value : (value && value.__raw ? String(value.value) : '');
+  if (!text.trim()) return '';
+  if (FORBIDDEN_EMPTY.test(text.trim()) || /^Brak:\s/i.test(text.trim())) return '';
+  return value;
+}
+
+function tableCell(value) {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'number' && Number.isNaN(value)) return '—';
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') return value.__raw ? value : '—';
+  return value;
+}
+
+export function table({
+  columns,
+  rows,
+  empty = '',
+  emptyTitle = '',
+  emptyAction = null,
+  emptyKey = 'empty.table',
+  rowKey = 'id',
+  actions = [],
+  selectable = false,
+  label = 'Tabela danych',
+  actionsLabel = 'Akcje',
+  selectAllLabel = 'Zaznacz wszystkie wiersze',
+  selectRowLabel = 'Zaznacz wiersz',
+}) {
+  if (!rows.length) {
+    const message = safeEmptyMessage(empty);
+    return emptyState(message, {
+      title: emptyTitle,
+      action: emptyAction,
+      key: message ? '' : emptyKey,
+    });
+  }
   return html`<div class="table-wrap" tabindex="0" role="region" aria-label="${label}">
     <table class="data-table">
       <thead><tr>
-        ${selectable ? html`<th class="col-check"><input type="checkbox" data-check-all></th>` : ''}
-        ${columns.map((c) => html`<th class="${c.align === 'right' ? 'ta-r' : ''}" ${c.width ? raw(`style="width:${e(c.width)}"`) : ''}>${c.label}</th>`)}
-        ${actions.length ? html`<th class="col-actions">Actions</th>` : ''}
+        ${selectable ? html`<th scope="col" class="col-check"><input type="checkbox" data-check-all aria-label="${selectAllLabel}"></th>` : ''}
+        ${columns.map((c) => html`<th scope="col" class="${c.align === 'right' ? 'ta-r' : ''}" ${c.width ? raw(`style="width:${e(c.width)}"`) : ''}>${c.label}</th>`)}
+        ${actions.length ? html`<th scope="col" class="col-actions">${actionsLabel}</th>` : ''}
       </tr></thead>
       <tbody>
-        ${rows.map((row) => html`<tr>
-          ${selectable ? html`<td class="col-check"><input type="checkbox" name="selected[]" value="${row[rowKey]}"></td>` : ''}
-          ${columns.map((c) => html`<td class="${c.align === 'right' ? 'ta-r' : ''} ${c.cls || ''}">${c.render ? c.render(row) : (row[c.key] ?? '—')}</td>`)}
+        ${rows.map((row, rowIndex) => html`<tr>
+          ${selectable ? html`<td class="col-check"><input type="checkbox" name="selected[]" value="${row[rowKey]}" aria-label="${selectRowLabel} ${rowIndex + 1}"></td>` : ''}
+          ${columns.map((c) => html`<td class="${c.align === 'right' ? 'ta-r' : ''} ${c.cls || ''}">${tableCell(c.render ? c.render(row) : row[c.key])}</td>`)}
           ${actions.length ? html`<td class="col-actions"><div class="row-actions">${actions.map((a) => {
             if (a.show && !a.show(row)) return '';
+            const actionLabel = a.label || actionsLabel;
             if (a.form) {
               const confirmText = typeof a.confirm === 'function' ? a.confirm(row) : a.confirm;
               return html`<form method="post" action="${a.form(row)}" class="inline" ${confirmText ? raw(`data-confirm="${e(confirmText)}"`) : ''}>
-                <button type="submit" class="icon-btn ${a.danger ? 'danger' : ''}" title="${a.label}" aria-label="${a.label}">${icon(a.icon || 'trash', { size: 16 })}</button>
+                <button type="submit" class="icon-btn ${a.danger ? 'danger' : ''}" title="${actionLabel}" aria-label="${actionLabel}">${icon(a.icon || 'trash', { size: 16 })}</button>
               </form>`;
             }
-            return html`<a class="icon-btn${a.danger ? ' danger' : ''}" href="${typeof a.href === 'function' ? a.href(row) : a.href}" title="${a.label}" aria-label="${a.label}">${icon(a.icon || 'edit', { size: 16 })}</a>`;
+            return html`<a class="icon-btn${a.danger ? ' danger' : ''}" href="${typeof a.href === 'function' ? a.href(row) : a.href}" title="${actionLabel}" aria-label="${actionLabel}">${icon(a.icon || 'edit', { size: 16 })}</a>`;
           })}</div></td>` : ''}
         </tr>`)}
       </tbody>
@@ -102,13 +143,54 @@ export function table({ columns, rows, empty = 'Nothing here yet', rowKey = 'id'
   </div>`;
 }
 
-export function emptyState(message, { icon: ic = 'folder', action = null, title = '' } = {}) {
-  return html`<div class="empty" role="status">
+export function emptyState(message, { icon: ic = 'folder', action = null, title = '', key = '', titleKey = '', state = 'empty' } = {}) {
+  const safeMessage = safeEmptyMessage(message);
+  const fallback = safeMessage || 'Dane pojawią się po dodaniu pierwszego elementu.';
+  const messageKey = key || (safeMessage ? '' : 'empty.table');
+  return html`<div class="empty" role="status" data-state="${state}">
     <div class="empty-icon">${icon(ic, { size: 26 })}</div>
-    ${title ? html`<strong class="empty-title">${title}</strong>` : ''}
-    <p>${message}</p>
+    ${title ? html`<strong class="empty-title" ${titleKey ? raw(`data-i18n="${e(titleKey)}"`) : ''}>${title}</strong>` : ''}
+    <p ${messageKey ? raw(`data-i18n="${e(messageKey)}"`) : ''}>${fallback}</p>
     ${action ? html`<div class="empty-action">${action}</div>` : ''}
   </div>`;
+}
+
+/** Empty/loading/error/stale/partial state contract shared by feature pages.
+ *  Every variant has a stable `data-state`, an accessible role, a localized
+ *  message key and an optional recovery action. */
+export function statePanel(state, {
+  title = '',
+  message = '',
+  hint = '',
+  action = null,
+  retryHref = '',
+  retryLabel = 'Try again',
+  meta = '',
+  icon: ic = '',
+} = {}) {
+  const variants = {
+    loading: { icon: 'clock', role: 'status', live: 'polite', key: 'state.loading', hintKey: 'state.loadingHint', fallback: 'Ładowanie danych…', fallbackHint: 'Poczekaj, aż panel pobierze aktualny stan.' },
+    empty: { icon: 'folder', role: 'status', live: '', key: 'empty.table', hintKey: 'empty.tableHint', fallback: 'Dane pojawią się po dodaniu pierwszego elementu.', fallbackHint: 'Dodaj element lub zmień filtr, aby zobaczyć wyniki.' },
+    error: { icon: 'alertCircle', role: 'alert', live: '', key: 'state.error', hintKey: 'state.errorHint', fallback: 'Nie udało się pobrać danych.', fallbackHint: 'Spróbuj ponownie. Jeśli błąd się powtarza, sprawdź logi serwera.' },
+    unavailable: { icon: 'alertCircle', role: 'alert', live: '', key: 'state.unavailable', hintKey: 'state.unavailableHint', fallback: 'Dane są chwilowo niedostępne.', fallbackHint: 'Źródło danych nie odpowiedziało. Odśwież widok za chwilę.' },
+    permission: { icon: 'lock', role: 'alert', live: '', key: 'state.permission', hintKey: 'state.permissionHint', fallback: 'Nie masz uprawnień do tego widoku.', fallbackHint: 'Poproś administratora o odpowiedni zakres uprawnień.' },
+    dependency: { icon: 'plug', role: 'alert', live: '', key: 'state.dependency', hintKey: 'state.dependencyHint', fallback: 'Brak wymaganej zależności.', fallbackHint: 'Zainstaluj brakujący komponent lub skontaktuj się z administratorem.' },
+    stale: { icon: 'refresh', role: 'status', live: 'polite', key: 'state.stale', hintKey: 'state.staleHint', fallback: 'Dane mogą być nieaktualne.', fallbackHint: 'Ostatni pomiar jest starszy niż oczekiwany. Odśwież dane.' },
+    partial: { icon: 'alertCircle', role: 'status', live: 'polite', key: 'state.partial', hintKey: 'state.partialHint', fallback: 'Część danych jest niedostępna.', fallbackHint: 'Widok pokazuje tylko źródła, które odpowiedziały. Sprawdź szczegóły.' },
+  };
+  const variant = variants[state] ? state : 'unavailable';
+  const v = variants[variant];
+  const resolvedAction = action || (retryHref ? html`<a class="btn btn-secondary btn-sm" href="${retryHref}">${icon('refresh', { size: 15 })} <span>${retryLabel}</span></a>` : null);
+  const body = message || v.fallback;
+  const hintText = hint || v.fallbackHint;
+  return html`<section class="empty state-panel state-${variant}" role="${v.role}" data-state="${variant}" ${v.live ? raw(`aria-live="${v.live}"`) : ''} ${variant === 'loading' ? raw('aria-busy="true"') : ''}>
+    <div class="empty-icon">${icon(ic || v.icon, { size: 26 })}</div>
+    ${title ? html`<strong class="empty-title">${title}</strong>` : ''}
+    <p ${!message ? raw(`data-i18n="${v.key}"`) : ''}>${body}</p>
+    ${hintText ? html`<p class="small muted" ${!hint ? raw(`data-i18n="${v.hintKey}"`) : ''}>${hintText}</p>` : ''}
+    ${meta ? html`<p class="small muted">${meta}</p>` : ''}
+    ${resolvedAction ? html`<div class="empty-action">${resolvedAction}</div>` : ''}
+  </section>`;
 }
 
 /** Escape a plain alert string but restore the handful of inline tags that
@@ -135,70 +217,155 @@ export function alert(message, tone = 'info', { title = '' } = {}) {
     <div>${title ? html`<strong>${title}</strong>` : ''}<div>${body}</div></div></div>`;
 }
 
+let fieldSequence = 0;
+
+function fieldSlug(value) {
+  return String(value || 'field')
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32) || 'field';
+}
+
+function applyDescribedBy(attrs, describedBy) {
+  if (!describedBy) return attrs || '';
+  const base = String(attrs || '');
+  const existing = base.match(/aria-describedby\s*=\s*("([^"]*)"|'([^']*)')/i);
+  if (existing) {
+    const value = existing[2] !== undefined ? existing[2] : existing[3];
+    const merged = `${value} ${describedBy}`.trim();
+    return base.replace(existing[0], `aria-describedby="${e(merged)}"`);
+  }
+  return `${base} aria-describedby="${e(describedBy)}"`;
+}
+
 export function field(f) {
-  const id = `f_${f.name}`;
-  const common = raw(`id="${id}" name="${e(f.name)}" ${f.required ? 'required' : ''} ${f.disabled ? 'disabled' : ''} ${f.placeholder ? `placeholder="${e(f.placeholder)}"` : ''} ${f.attrs || ''}`);
+  const id = f.id ? String(f.id) : `f_${fieldSlug(f.name)}_${++fieldSequence}`;
+  const helpId = `${id}-help`;
+  const errorId = `${id}-error`;
+  const describedBy = [f.describedby, f.help ? helpId : '', f.error ? errorId : ''].filter(Boolean).join(' ');
+  const required = !!f.required;
+  const invalid = !!f.error;
+  let commonAttrs = [
+    f.attrs || '',
+    `id="${e(id)}"`,
+    `name="${e(f.name)}"`,
+    required ? 'required aria-required="true"' : '',
+    f.disabled ? 'disabled' : '',
+    f.placeholder ? `placeholder="${e(f.placeholder)}"` : '',
+    f.autocomplete && f.type !== 'password' ? `autocomplete="${e(f.autocomplete)}"` : '',
+    invalid ? 'aria-invalid="true"' : '',
+    invalid ? `aria-errormessage="${e(errorId)}"` : '',
+  ].filter(Boolean).join(' ');
+  commonAttrs = applyDescribedBy(commonAttrs, describedBy);
+
+  const help = f.help ? html`<p class="field-help" id="${helpId}">${f.help}</p>` : '';
+  const error = f.error ? html`<p class="field-error" id="${errorId}" role="alert">${f.error}</p>` : '';
+  const requiredMark = required ? html`<span class="req" aria-hidden="true">*</span>` : '';
+
+  if (f.type === 'hidden') {
+    return html`<input type="hidden" id="${id}" name="${e(f.name)}" value="${f.value ?? ''}" ${f.attrs ? raw(f.attrs) : ''}>`;
+  }
+
+  if (f.type === 'html') {
+    return html`<div class="field field-full">${f.value}</div>`;
+  }
+
+  if (f.type === 'static') {
+    return html`<div class="field ${f.full ? 'field-full' : ''} ${f.cls || ''}" data-field="${e(f.name || '')}">
+      <span class="field-label" id="${id}-label">${f.label}${requiredMark}</span>
+      <div class="field-control"><div class="static-value" aria-labelledby="${id}-label">${f.value ?? '—'}</div>${f.suffix ? html`<span class="field-suffix">${f.suffix}</span>` : ''}</div>
+      ${help}${error}
+    </div>`;
+  }
+
+  if (f.type === 'checkbox') {
+    return html`<div class="field ${f.full ? 'field-full' : ''} ${f.cls || ''}" data-field="${e(f.name || '')}">
+      <label class="check-field" for="${id}">
+        <input type="checkbox" ${raw(commonAttrs)} value="1" ${f.value ? raw('checked') : ''}>
+        <span>${f.label}${requiredMark}</span>
+      </label>
+      ${help}${error}
+    </div>`;
+  }
+
+  if (f.type === 'radio') {
+    const groupDescribedBy = applyDescribedBy('', describedBy);
+    return html`<fieldset id="${id}-group" class="field ${f.full ? 'field-full' : ''} ${f.cls || ''}" ${raw(groupDescribedBy)} data-field="${e(f.name || '')}">
+      <legend class="field-label">${f.label}${requiredMark}</legend>
+      <div class="radio-row">${(f.options || []).map((o, index) => {
+        const optionId = `${id}-${index + 1}`;
+        const value = typeof o === 'string' ? o : o.value;
+        const label = typeof o === 'string' ? o : o.label;
+        return html`<label class="radio" for="${optionId}"><input type="radio" id="${optionId}" name="${e(f.name)}" value="${e(value)}" ${String(f.value) === String(value) ? raw('checked') : ''} ${required ? raw('aria-required="true"') : ''}> <span>${label}</span></label>`;
+      })}</div>
+      ${help}${error}
+    </fieldset>`;
+  }
+
   let control;
   switch (f.type) {
     case 'textarea':
-      control = html`<textarea ${common} rows="${f.rows || 5}">${f.value ?? ''}</textarea>`;
+      control = html`<textarea ${raw(commonAttrs)} rows="${f.rows || 5}">${f.value ?? ''}</textarea>`;
       break;
     case 'select':
-      control = html`<select ${common}>
+      control = html`<select ${raw(commonAttrs)}>
         ${(f.options || []).map((o) => {
           const val = typeof o === 'string' ? o : o.value;
           const label = typeof o === 'string' ? o : o.label;
-          return html`<option value="${val}" ${String(f.value) === String(val) ? raw('selected') : ''}>${label}</option>`;
+          return html`<option value="${e(val)}" ${String(f.value) === String(val) ? raw('selected') : ''}>${label}</option>`;
         })}
       </select>`;
       break;
-    case 'checkbox':
-      return html`<label class="check-field" for="${id}">
-        <input type="checkbox" ${common} value="1" ${f.value ? raw('checked') : ''}>
-        <span>${f.label}</span>${f.help ? html`<em>${f.help}</em>` : ''}
-      </label>`;
-    case 'radio':
-      return html`<div class="field">
-        <label class="field-label">${f.label}</label>
-        <div class="radio-row">${(f.options || []).map((o) => html`<label class="radio"><input type="radio" name="${f.name}" value="${o.value}" ${String(f.value) === String(o.value) ? raw('checked') : ''}> <span>${o.label}</span></label>`)}</div>
-        ${f.help ? html`<p class="field-help">${f.help}</p>` : ''}
-      </div>`;
-    case 'static':
-      control = html`<div class="static-value">${f.value ?? '—'}</div>`;
-      break;
     case 'password':
-      control = html`<input type="password" ${common} value="${f.value ?? ''}" autocomplete="new-password">`;
+      control = html`<input type="password" ${raw(commonAttrs)} value="${f.value ?? ''}" autocomplete="new-password">`;
       break;
     case 'number':
-      control = html`<input type="number" ${common} value="${f.value ?? ''}" ${f.min !== undefined ? raw(`min="${f.min}"`) : ''} ${f.max !== undefined ? raw(`max="${f.max}"`) : ''} step="${f.step || 1}">`;
+      control = html`<input type="number" ${raw(commonAttrs)} value="${f.value ?? ''}" ${f.min !== undefined ? raw(`min="${f.min}"`) : ''} ${f.max !== undefined ? raw(`max="${f.max}"`) : ''} step="${f.step || 1}">`;
       break;
-    case 'hidden':
-      return html`<input type="hidden" ${common} value="${f.value ?? ''}">`;
-    case 'html':
-      return html`<div class="field field-full">${f.value}</div>`;
     default:
-      control = html`<input type="${f.type || 'text'}" ${common} value="${f.value ?? ''}" ${f.autocomplete ? raw(`autocomplete="${e(f.autocomplete)}"`) : ''}>`;
+      control = html`<input type="${f.type || 'text'}" ${raw(commonAttrs)} value="${f.value ?? ''}">`;
   }
-  return html`<div class="field ${f.full ? 'field-full' : ''} ${f.cls || ''}">
-    ${f.type !== 'hidden' ? html`<label class="field-label" for="${id}">${f.label}${f.required ? html`<span class="req">*</span>` : ''}</label>` : ''}
+
+  return html`<div class="field ${f.full ? 'field-full' : ''} ${f.cls || ''}" data-field="${e(f.name || '')}">
+    <label class="field-label" for="${id}">${f.label}${requiredMark}</label>
     <div class="field-control">${control}${f.suffix ? html`<span class="field-suffix">${f.suffix}</span>` : ''}</div>
-    ${f.help ? html`<p class="field-help">${f.help}</p>` : ''}
+    ${help}${error}
   </div>`;
 }
 
-export function form(fields, { action, method = 'post', csrf = '', submit = 'Save changes', cancel = '', enctype = '', cls = '' } = {}) {
-  return html`<form class="oa-form ${cls}" method="${method}" action="${action}" ${enctype ? raw(`enctype="${e(enctype)}"`) : ''}>
+export function form(fields, {
+  action,
+  method = 'post',
+  csrf = '',
+  submit = 'Save changes',
+  submitKey = '',
+  cancel = '',
+  cancelLabel = 'Cancel',
+  cancelKey = '',
+  enctype = '',
+  cls = '',
+  label = '',
+  errors = [],
+} = {}) {
+  const effectiveSubmitKey = submitKey || (submit === 'Save changes' ? 'common.saveChanges' : '');
+  const effectiveCancelKey = cancelKey || (cancelLabel === 'Cancel' ? 'common.cancel' : '');
+  const submitAttr = effectiveSubmitKey ? raw(`data-i18n="${e(effectiveSubmitKey)}"`) : '';
+  const cancelAttr = effectiveCancelKey ? raw(`data-i18n="${e(effectiveCancelKey)}"`) : '';
+  const hasRequired = fields.some((entry) => entry && (entry.required || (entry.__raw && /class="req"/.test(String(entry.value)))));
+  return html`<form class="oa-form ${cls}" method="${method}" action="${action}" ${label ? raw(`aria-label="${e(label)}"`) : ''} ${enctype ? raw(`enctype="${e(enctype)}"`) : ''}>
     ${csrf ? html`<input type="hidden" name="_csrf" value="${csrf}">` : ''}
+    ${errors.length ? html`<div class="alert alert-danger" role="alert"><strong data-i18n="form.errorSummary">Popraw zaznaczone pola.</strong><ul class="small">${errors.map((message) => html`<li>${message}</li>`)}</ul></div>` : ''}
+    ${hasRequired ? html`<p class="field-help small" data-i18n="form.requiredHint">Pola oznaczone gwiazdką są wymagane.</p>` : ''}
     <div class="form-grid">${fields.map((f) => (f && f.__raw ? f : field(f)))}</div>
     <div class="form-actions">
-      <button class="btn btn-primary" type="submit">${icon('save', { size: 16 })}<span>${submit}</span></button>
-      ${cancel ? html`<a class="btn btn-ghost" href="${cancel}">Cancel</a>` : ''}
+      <button class="btn btn-primary" type="submit">${icon('save', { size: 16 })}<span ${submitAttr}>${submit}</span></button>
+      ${cancel ? html`<a class="btn btn-ghost" href="${cancel}"><span ${cancelAttr}>${cancelLabel}</span></a>` : ''}
     </div>
   </form>`;
 }
 
-export function tabs(items, active, { base = '' } = {}) {
-  return html`<nav class="tabs" aria-label="Sections">${items.map((t) => html`<a class="tab ${t.key === active ? 'active' : ''}" href="${t.href || base + '?tab=' + t.key}" ${t.key === active ? raw('aria-current="page"') : ''}>${t.label}${t.count !== undefined ? html`<span class="tab-count">${t.count}</span>` : ''}</a>`)}</nav>`;
+export function tabs(items, active, { base = '', label = 'Sections' } = {}) {
+  return html`<nav class="tabs" aria-label="${label}" data-i18n-aria-label="a11y.sections">${items.map((t) => html`<a class="tab ${t.key === active ? 'active' : ''}" href="${t.href || base + '?tab=' + t.key}" ${t.key === active ? raw('aria-current="page"') : ''}>${t.label}${t.count !== undefined ? html`<span class="tab-count">${t.count}</span>` : ''}</a>`)}</nav>`;
 }
 
 export function toolbar(left = [], right = [], { sticky = false, cls = '' } = {}) {
@@ -215,7 +382,7 @@ export function sparkline(points, { width = 640, height = 120, color = 'var(--br
   const coords = data.map((v, i) => [i * stepX, height - ((v - min) / span) * (height - 16) - 8]);
   const path = coords.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
   const area = `${path} L${width},${height} L0,${height} Z`;
-  return raw(`<svg class="spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img">
+  return raw(`<svg class="spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Wykres trendu">
     <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="${color}" stop-opacity=".25"/><stop offset="100%" stop-color="${color}" stop-opacity="0"/>
     </linearGradient></defs>
@@ -247,12 +414,12 @@ export function kvList(pairs, { cols = 2 } = {}) {
   return html`<dl class="kv" style="--kv-cols:${cols}">${pairs.map(([k, v]) => html`<div class="kv-row"><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>`;
 }
 
-export function modal(id, title, body, { footer = '', size = '', sub = '' } = {}) {
+export function modal(id, title, body, { footer = '', size = '', sub = '', closeLabel = 'Close dialog' } = {}) {
   return html`<div class="modal-backdrop" id="${id}" hidden>
-    <div class="modal ${size}" role="dialog" aria-modal="true" aria-labelledby="${id}-title">
+    <div class="modal ${size}" role="dialog" aria-modal="true" aria-labelledby="${id}-title" ${sub ? raw(`aria-describedby="${id}-sub"`) : ''} tabindex="-1">
       <header class="modal-head">
-        <div><h3 id="${id}-title">${title}</h3>${sub ? html`<p class="modal-sub">${sub}</p>` : ''}</div>
-        <button class="icon-btn" type="button" data-close-modal aria-label="Close dialog">${icon('x', { size: 18 })}</button>
+        <div><h3 id="${id}-title">${title}</h3>${sub ? html`<p class="modal-sub" id="${id}-sub">${sub}</p>` : ''}</div>
+        <button class="icon-btn" type="button" data-close-modal aria-label="${closeLabel}" title="${closeLabel}" data-i18n-aria-label="a11y.closeDialog" data-i18n-title="a11y.closeDialog">${icon('x', { size: 18 })}</button>
       </header>
       <div class="modal-body">${body}</div>
       ${footer ? html`<footer class="modal-foot">${footer}</footer>` : ''}
@@ -260,12 +427,12 @@ export function modal(id, title, body, { footer = '', size = '', sub = '' } = {}
   </div>`;
 }
 
-export function drawer(id, title, body, { footer = '', side = 'right', width = '' } = {}) {
+export function drawer(id, title, body, { footer = '', side = 'right', width = '', closeLabel = 'Close panel' } = {}) {
   return html`<div class="drawer-backdrop" id="${id}" hidden data-drawer-side="${side}">
-    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="${id}-title" ${width ? raw(`style="--drawer-w:${e(width)}"`) : ''}>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="${id}-title" tabindex="-1" ${width ? raw(`style="--drawer-w:${e(width)}"`) : ''}>
       <header class="drawer-head">
         <h3 id="${id}-title">${title}</h3>
-        <button class="icon-btn" type="button" data-close-drawer aria-label="Close panel">${icon('x', { size: 18 })}</button>
+        <button class="icon-btn" type="button" data-close-drawer aria-label="${closeLabel}" title="${closeLabel}" data-i18n-aria-label="a11y.closePanel" data-i18n-title="a11y.closePanel">${icon('x', { size: 18 })}</button>
       </header>
       <div class="drawer-body">${body}</div>
       ${footer ? html`<footer class="drawer-foot">${footer}</footer>` : ''}
@@ -274,7 +441,8 @@ export function drawer(id, title, body, { footer = '', side = 'right', width = '
 }
 
 export function copyValue(value, label = '') {
-  return html`<span class="copy-value"><code>${value}</code><button class="icon-btn" type="button" data-copy="${value}" title="Copy ${label}" aria-label="Copy ${label || 'value'}">${icon('copy', { size: 14 })}</button></span>`;
+  const copyLabel = String(label || 'value');
+  return html`<span class="copy-value"><code>${value}</code><button class="icon-btn" type="button" data-copy="${value}" title="Copy ${copyLabel}" aria-label="Copy ${copyLabel}">${icon('copy', { size: 14 })}</button></span>`;
 }
 
 /* ------------------------------------------------------- guided flows */

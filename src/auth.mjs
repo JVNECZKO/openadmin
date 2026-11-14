@@ -3,8 +3,21 @@ import crypto from 'node:crypto';
 import { config } from './config.mjs';
 import { get, run, all, nowIso, setting, verifyPassword } from './db.mjs';
 import { safeJson, LEVELS } from './util.mjs';
+import { impersonationForSession } from './secrets.mjs';
 
 const COOKIE = 'OA_SESSION';
+const SESSION_TOUCH_MS = 30000;
+
+/** Session cookies are opaque to the browser; only their SHA-256 hash is stored. */
+export function hashSessionToken(token) {
+  return crypto.createHash('sha256').update(String(token ?? '')).digest('hex');
+}
+
+function sessionIdleMs() {
+  const minutes = Number.parseInt(process.env.OA_SESSION_IDLE_MINUTES ?? '', 10);
+  const bounded = Number.isFinite(minutes) && minutes > 0 ? Math.min(minutes, 10080) : 120;
+  return bounded * 60000;
+}
 
 export function findUser(username) {
   return get('SELECT * FROM users WHERE lower(username) = lower(?)', String(username || '').trim());
@@ -56,27 +69,84 @@ export function createSession(user, { ip = '', ua = '', support = false, support
   const token = crypto.randomBytes(32).toString('hex');
   const csrf = crypto.randomBytes(24).toString('hex');
   const hours = Math.min(config.sessionTtlHours, Math.max(1, Number(ttlHours || config.sessionTtlHours)));
+  const now = nowIso();
   const expires = new Date(Date.now() + hours * 3600 * 1000).toISOString();
-  run('INSERT INTO sessions(token, user_id, csrf, ip, ua, created_at, expires_at, support, support_token) VALUES(?,?,?,?,?,?,?,?,?)',
-    token, user.id, csrf, ip, String(ua).slice(0, 250), nowIso(), expires, support ? 1 : 0, supportToken);
+  const tokenHash = hashSessionToken(token);
+  // The token column is an opaque storage key (= hash). The raw cookie value is
+  // returned to the caller but is never persisted.
+  run('INSERT INTO sessions(token, user_id, csrf, ip, ua, created_at, expires_at, support, support_token, token_hash, last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+    tokenHash, user.id, csrf, ip, String(ua).slice(0, 250), now, expires, support ? 1 : 0, supportToken, tokenHash, now);
   return { token, csrf, expires };
+}
+
+function deleteSessionRow(session) {
+  if (!session) return;
+  run('DELETE FROM sessions WHERE token = ? OR token_hash = ?', session.token, session.token_hash || session.token);
 }
 
 export function getSession(token) {
   if (!token) return null;
-  const s = get('SELECT * FROM sessions WHERE token = ?', token);
+  const raw = String(token);
+  const tokenHash = hashSessionToken(raw);
+  let s = get('SELECT * FROM sessions WHERE token_hash = ?', tokenHash);
+  if (!s) {
+    // Compatibility path for pre-migration rows only. A stored hash must never
+    // be accepted as a bearer cookie: that would make a database dump usable.
+    s = get('SELECT * FROM sessions WHERE token = ? AND token_hash IS NULL', raw);
+    if (s) {
+      run('UPDATE sessions SET token = ?, token_hash = ?, last_seen = COALESCE(last_seen, created_at) WHERE token = ?',
+        tokenHash, tokenHash, s.token);
+      s = { ...s, token: tokenHash, token_hash: tokenHash };
+    }
+  }
   if (!s) return null;
-  if (new Date(s.expires_at).getTime() < Date.now()) {
-    run('DELETE FROM sessions WHERE token = ?', token);
+  const now = Date.now();
+  if (!Number.isFinite(Date.parse(s.expires_at)) || new Date(s.expires_at).getTime() < now) {
+    deleteSessionRow(s);
     return null;
   }
-  const user = userById(s.user_id);
-  if (!user || isSuspended(user)) return null;
-  return { session: s, user, support: s.support === 1 };
+  const lastSeen = Date.parse(s.last_seen || s.created_at);
+  if (!Number.isFinite(lastSeen) || now - lastSeen > sessionIdleMs()) {
+    deleteSessionRow(s);
+    return null;
+  }
+  if (now - lastSeen > SESSION_TOUCH_MS) {
+    run('UPDATE sessions SET last_seen = ? WHERE token_hash = ?', nowIso(), s.token_hash || tokenHash);
+    s.last_seen = nowIso();
+  }
+  let user = userById(s.user_id);
+  if (!user || isSuspended(user)) {
+    deleteSessionRow(s);
+    return null;
+  }
+  // A preview session carries explicit actor/subject state. Stale preview rows
+  // invalidate the session instead of silently downgrading to a normal login.
+  let impersonation = null;
+  try {
+    impersonation = impersonationForSession(raw);
+    if (!impersonation) {
+      const stale = get('SELECT expires_at FROM impersonations WHERE session_hash = ?', tokenHash);
+      if (stale) {
+        run('DELETE FROM impersonations WHERE session_hash = ?', tokenHash);
+        deleteSessionRow(s);
+        return null;
+      }
+    }
+  } catch { /* impersonations table not created yet */ }
+  if (impersonation) {
+    user = { ...user, impersonation };
+    s = { ...s, impersonation, read_only: impersonation.readOnly };
+  }
+  return { session: s, user, support: s.support === 1, impersonation };
 }
 
 export function destroySession(token) {
-  if (token) run('DELETE FROM sessions WHERE token = ?', token);
+  if (!token) return;
+  const raw = String(token);
+  const tokenHash = hashSessionToken(raw);
+  // Stored hashes are not valid credentials: the raw fallback applies only to
+  // pre-migration rows that never received a token_hash.
+  run('DELETE FROM sessions WHERE token_hash = ? OR (token = ? AND token_hash IS NULL)', tokenHash, raw);
 }
 
 export function destroyUserSessions(userId) {
@@ -85,7 +155,7 @@ export function destroyUserSessions(userId) {
 
 export function cookieName() { return COOKIE; }
 
-export function serializeCookie(token, { secure = false, maxAge = config.sessionTtlHours * 3600 } = {}) {
+export function serializeCookie(token, { secure = config.https, maxAge = config.sessionTtlHours * 3600 } = {}) {
   const parts = [`${COOKIE}=${token}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${maxAge}`];
   if (secure) parts.push('Secure');
   return parts.join('; ');
@@ -188,7 +258,9 @@ export function apiLogin(username, password, ip = '') {
 }
 
 export function activeSessions(userId) {
-  return all('SELECT * FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC', userId, nowIso());
+  const idleSince = new Date(Date.now() - sessionIdleMs()).toISOString();
+  return all('SELECT * FROM sessions WHERE user_id = ? AND expires_at > ? AND (last_seen IS NULL OR last_seen > ?) ORDER BY created_at DESC',
+    userId, nowIso(), idleSince);
 }
 
 export function serverName() {

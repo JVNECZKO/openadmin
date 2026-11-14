@@ -7,11 +7,11 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { all, get, run, nowIso, hashPassword, setting, audit, verifyPassword } from '../db.mjs';
 import { config, VERSION, ROOT } from '../config.mjs';
-import { basicAuth, findUser, apiLogin, limitsFor, checkCsrf } from '../auth.mjs';
+import { basicAuth, findUser, apiLogin, limitsFor, checkCsrf, rateLimited, recordFailure } from '../auth.mjs';
 import { keyFromRequest } from '../apikeys.mjs';
 import { handleMcp } from '../mcp.mjs';
 import { html as h, formatBytes, isDomain, isEmail } from '../util.mjs';
-import { homeDir, resolveUserPath, displayPath, provisionDomain } from '../features/files.mjs';
+import { homeDir, resolveUserPath, displayPath, provisionDomain, listTenantDir, writeTenantFile, validateEntryName } from '../features/files.mjs';
 import { createZone } from '../features/domains.mjs';
 import { visibleDomains, visibleUsers, canManageUser, quota, domainFor } from '../core/access.mjs';
 import { backupFor, backupPath } from '../backups.mjs';
@@ -22,8 +22,7 @@ import { apply } from '../apply.mjs';
 import { rebuildZone } from '../dns.mjs';
 import { systemProvider } from '../providers/index.mjs';
 import { checkDisk, enforceAll, quotaMeta } from '../quota.mjs';
-import { encryptSecret, verifySsoToken, decryptSecret } from '../secrets.mjs';
-import { panelSecret } from '../config.mjs';
+import { encryptSecret } from '../secrets.mjs';
 import { generateSelfSigned, installPem, issueLetsEncrypt, certPaths } from '../ssl.mjs';
 import { detect as mariadbDetect, createDatabase as mariaCreate, createAccount as mariaAccount, dropDatabase as mariaDrop, dropAccount as mariaDropAccount } from '../mariadb.mjs';
 import { providerExtras as providerExtrasSync } from '../providers/index.mjs';
@@ -60,26 +59,72 @@ function legacyError(res, message, status = 200) {
 
 function ok(text = '') { return { error: 0, text }; }
 
+/* ------------------------------------------------- login key allowlist ----
+ * A login key may carry a comma/space separated list of exact API commands
+ * (CMD_API_*).  A non-empty list is deny-by-default: the request must name an
+ * allowed command exactly.  REST routes can be allowed by their route pattern
+ * (e.g. /api/v1/domains) or by "METHOD /path".
+ */
+function loginKeyCommands(raw) {
+  return String(raw || '').split(/[\s,;]+/).map((entry) => entry.trim()).filter(Boolean);
+}
+
+function requestedApiCommands(ctx) {
+  const candidates = new Set();
+  if (ctx.apiCommand) candidates.add(ctx.apiCommand);
+  if (ctx.apiPattern) {
+    candidates.add(ctx.apiPattern);
+    candidates.add(ctx.apiPattern.replace(/^\/+/, ''));
+    candidates.add(`/${ctx.apiPattern.replace(/^\/+/, '')}`);
+  }
+  if (ctx.apiRoute) candidates.add(ctx.apiRoute);
+  return candidates;
+}
+
+function loginKeyDenied(user, ctx) {
+  const commands = user?.login_key?.commands;
+  if (!Array.isArray(commands) || commands.length === 0) return false;
+  const candidates = requestedApiCommands(ctx);
+  return !commands.some((command) => candidates.has(command));
+}
+
+function pruneLoginAttempts() {
+  const since = new Date(Date.now() - config.limits.loginWindowMinutes * 60000).toISOString();
+  run('DELETE FROM login_attempts WHERE created_at < ?', since);
+}
+
 /** Authenticate an API request: Basic auth (password or login key) or a panel session + CSRF. */
 function authenticate(ctx) {
   const keyUser = keyFromRequest(ctx.req.headers, ctx.ip, ctx.req.method);
   if (keyUser) return keyUser;
   const auth = basicAuth(ctx.req.headers.authorization || '');
   if (auth) {
+    // One limiter for every credential channel (SEC-009); also keep the table
+    // bounded by dropping attempts older than the configured window.
+    pruneLoginAttempts();
+    if (rateLimited(auth.username, ctx.ip)) return null;
     if (auth.password.includes(':')) {
       const [keyId, ...rest] = auth.password.split(':');
       const secret = rest.join(':');
-      const key = get('SELECT * FROM login_keys WHERE key_id = ?', keyId);
-      if (key && verifyPassword(secret, key.secret) && (!key.expires_at || new Date(key.expires_at) > new Date())) {
-        const user = get('SELECT * FROM users WHERE id = ?', key.user_id);
-        if (user && !user.suspended) {
-          run('UPDATE login_keys SET last_used = ? WHERE id = ?', nowIso(), key.id);
-          return user;
-        }
+      const key = get('SELECT * FROM login_keys WHERE key_id = ?', String(keyId));
+      const valid = key && key.key_id === String(keyId) && verifyPassword(secret, key.secret)
+        && (!key.expires_at || new Date(key.expires_at) > new Date());
+      if (!valid) {
+        recordFailure(auth.username, ctx.ip);
+        return null;
       }
-      return null;
+      const user = get('SELECT * FROM users WHERE id = ?', key.user_id);
+      if (!user || user.suspended) return null;
+      const commands = loginKeyCommands(key.commands);
+      user.login_key = { id: key.id, key_id: key.key_id, commands, expires_at: key.expires_at };
+      user.auth = { type: 'login_key', id: key.id, key_id: key.key_id, commands };
+      if (loginKeyDenied(user, ctx)) return null;
+      run('UPDATE login_keys SET last_used = ? WHERE id = ?', nowIso(), key.id);
+      return user;
     }
-    return apiLogin(auth.username, auth.password, ctx.ip);
+    const user = apiLogin(auth.username, auth.password, ctx.ip);
+    if (user) user.auth = { type: 'password' };
+    return user;
   }
   if (ctx.user) {
     if (ctx.req.method === 'GET') return ctx.user;
@@ -88,8 +133,62 @@ function authenticate(ctx) {
   return null;
 }
 
+/** User ids visible to an actor: null means every user (admin). */
+function scopeUserIds(actor) {
+  if (!actor || actor.level === 'admin') return null;
+  const ids = new Set();
+  if (Number.isSafeInteger(Number(actor.id))) ids.add(Number(actor.id));
+  for (const visible of visibleUsers(actor)) {
+    if (Number.isSafeInteger(Number(visible.id))) ids.add(Number(visible.id));
+  }
+  return [...ids];
+}
+
+function placeholders(count) {
+  return Array.from({ length: count }, () => '?').join(',');
+}
+
+function scopedEmailRows(actor) {
+  const ids = scopeUserIds(actor);
+  if (!ids) return all('SELECT e.* FROM email_accounts e ORDER BY e.domain, e.local_part');
+  if (!ids.length) return [];
+  return all(`SELECT e.* FROM email_accounts e JOIN domains d ON d.id = e.domain_id
+              WHERE d.user_id IN (${placeholders(ids.length)}) ORDER BY e.domain, e.local_part`, ...ids);
+}
+
+function scopedDatabaseRows(actor, columns = 'db_name, db_user, size_mb') {
+  const ids = scopeUserIds(actor);
+  if (!ids) return all(`SELECT ${columns} FROM databases ORDER BY db_name`);
+  if (!ids.length) return [];
+  return all(`SELECT ${columns} FROM databases WHERE user_id IN (${placeholders(ids.length)}) ORDER BY db_name`, ...ids);
+}
+
+function scopedBackupRows(actor, limit = 100) {
+  const ids = scopeUserIds(actor);
+  if (!ids) return all('SELECT * FROM backups ORDER BY id DESC LIMIT ?', limit);
+  if (!ids.length) return [];
+  return all(`SELECT * FROM backups WHERE user_id IN (${placeholders(ids.length)}) ORDER BY id DESC LIMIT ?`, ...ids, limit);
+}
+
+function scopedFtpRows(actor) {
+  const ids = scopeUserIds(actor);
+  if (!ids) return all('SELECT * FROM ftp_accounts ORDER BY username');
+  if (!ids.length) return [];
+  return all(`SELECT * FROM ftp_accounts WHERE user_id IN (${placeholders(ids.length)}) ORDER BY username`, ...ids);
+}
+
+/** Run a query whose FROM clause joins domains as `d`, scoped to visible user ids. */
+function scopedDomainJoin(actor, selectSql, fromSql, tailSql = '') {
+  const ids = scopeUserIds(actor);
+  if (!ids) return all(`${selectSql} ${fromSql} ${tailSql}`);
+  if (!ids.length) return [];
+  // A caller-supplied WHERE clause must become AND after the scope predicate.
+  const tail = String(tailSql || '').replace(/^\s*WHERE\s+/i, 'AND ');
+  return all(`${selectSql} ${fromSql} WHERE d.user_id IN (${placeholders(ids.length)}) ${tail}`, ...ids);
+}
+
 function userDomainsFor(user) {
-  return user.level === 'admin' ? all('SELECT * FROM domains') : all('SELECT * FROM domains WHERE user_id = ?', user.id);
+  return visibleDomains(user);
 }
 
 function jsonOk(res, data = {}) { return res.json ? res.json({ ok: true, ...data }) : null; }
@@ -146,7 +245,11 @@ function notificationMutationDenied(ctx, user) {
 
 /* ------------------------------------------------------------------ REST */
 export function registerApiRoutes(router) {
-  const api = (method, p, handler) => router.add(method, p, handler);
+  const api = (method, p, handler) => router.add(method, p, (ctx) => {
+    ctx.apiPattern = p;
+    ctx.apiRoute = `${method} ${p}`;
+    return handler(ctx);
+  });
 
   api('POST', '/mcp', async (ctx) => {
     const out = await handleMcp(ctx);
@@ -158,12 +261,28 @@ export function registerApiRoutes(router) {
     return { json: doc };
   });
 
-  api('GET', '/api/v1/ping', () => ({ json: { ok: true, product: 'OpenAdmin', version: VERSION } }));
+  api('GET', '/api/v1/ping', (ctx) => {
+    // Public health probes stay minimal; authenticated admins may read the
+    // version used by the multi-server registry.
+    const headers = ctx.req.headers || {};
+    const attempt = headers['x-api-key'] || /^(Basic|Bearer oa_)/i.test(String(headers.authorization || ''));
+    const user = attempt ? authenticate(ctx) : null;
+    if (user?.level === 'admin') return { json: { ok: true, product: 'OpenAdmin', version: VERSION } };
+    return { json: { ok: true } };
+  });
 
   api('GET', '/api/v1/me', (ctx) => {
     const user = authenticate(ctx);
     if (!user) return unauthorized(ctx);
-    return { json: { ok: true, user: publicUser(user), capabilities: ctx.caps, limits: limitsFor(user) } };
+    return {
+      json: {
+        ok: true, user: publicUser(user),
+        auth: user.auth
+          ? { type: user.auth.type, key_id: user.auth.key_id ?? null, commands: user.auth.commands || null, scopes: user.auth.scopes || null }
+          : { type: 'session' },
+        capabilities: ctx.caps, limits: limitsFor(user),
+      },
+    };
   });
 
   api('GET', '/api/v1/domains', (ctx) => {
@@ -188,9 +307,7 @@ export function registerApiRoutes(router) {
 
   api('DELETE', '/api/v1/domains/:name', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
-    const d = user.level === 'admin'
-      ? get('SELECT * FROM domains WHERE name = ?', ctx.params.name)
-      : get('SELECT * FROM domains WHERE name = ? AND user_id = ?', ctx.params.name, user.id);
+    const d = domainFor(user, ctx.params.name);
     if (!d) return notFound(ctx, 'Domain not found');
     run('DELETE FROM domains WHERE id = ?', d.id);
     return { json: { ok: true } };
@@ -198,20 +315,22 @@ export function registerApiRoutes(router) {
 
   api('GET', '/api/v1/email', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
-    const rows = all(`SELECT e.local_part, e.domain, e.quota_mb, e.used_mb, e.suspended FROM email_accounts e
-                      JOIN domains d ON d.id = e.domain_id WHERE d.user_id = ? ORDER BY e.domain, e.local_part`, user.id);
+    const rows = scopedEmailRows(user).map((e) => ({
+      local_part: e.local_part, domain: e.domain, quota_mb: e.quota_mb, used_mb: e.used_mb, suspended: e.suspended,
+    }));
     return { json: { ok: true, email: rows } };
   });
 
   api('POST', '/api/v1/email', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
-    const d = get('SELECT * FROM domains WHERE name = ? AND user_id = ?', String(ctx.body.domain || ''), user.id);
+    const d = domainFor(user, String(ctx.body.domain || ''));
     if (!d) return badRequest(ctx, 'Domain not found');
     const q = quota(user, 'emails');
     if (!q.ok) return badRequest(ctx, `Mailbox limit reached (${q.used}/${q.limit})`);
     const local = String(ctx.body.local_part || ctx.body.user || '').toLowerCase();
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(local)) return badRequest(ctx, 'Invalid mailbox name');
-    if (!ctx.body.password || String(ctx.body.password).length < 8) return badRequest(ctx, 'Password too short');
+    const policyError = passwordPolicyError(String(ctx.body.password || ''));
+    if (policyError) return badRequest(ctx, policyError);
     let mailHash = null;
     try { mailHash = dovecotHash(String(ctx.body.password)); } catch { /* optional */ }
     run(`INSERT INTO email_accounts(domain_id, domain, local_part, password, quota_mb, used_mb, suspended, created_at, mail_hash)
@@ -224,8 +343,9 @@ export function registerApiRoutes(router) {
   api('DELETE', '/api/v1/email/:address', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
     const [local, domain] = String(ctx.params.address).split('@');
-    const row = get(`SELECT e.* FROM email_accounts e JOIN domains d ON d.id = e.domain_id
-                     WHERE e.local_part = ? AND e.domain = ? AND d.user_id = ?`, local, domain, user.id);
+    const d = domainFor(user, domain || '');
+    if (!d) return notFound(ctx, 'Mailbox not found');
+    const row = get('SELECT * FROM email_accounts WHERE local_part = ? AND domain_id = ?', local, d.id);
     if (!row) return notFound(ctx, 'Mailbox not found');
     run('DELETE FROM email_accounts WHERE id = ?', row.id);
     syncMail();
@@ -235,16 +355,16 @@ export function registerApiRoutes(router) {
 
   api('GET', '/api/v1/dns/:domain', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
-    const d = get('SELECT * FROM domains WHERE name = ?', ctx.params.domain);
-    if (!d || (user.level === 'user' && d.user_id !== user.id)) return notFound(ctx, 'Domain not found');
+    const d = domainFor(user, ctx.params.domain);
+    if (!d) return notFound(ctx, 'Domain not found');
     const records = all('SELECT id, name, type, value, priority, ttl FROM dns_records WHERE domain_id = ? ORDER BY type, name', d.id);
     return { json: { ok: true, domain: d.name, records } };
   });
 
   api('POST', '/api/v1/dns/:domain', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
-    const d = get('SELECT * FROM domains WHERE name = ?', ctx.params.domain);
-    if (!d || (user.level === 'user' && d.user_id !== user.id)) return notFound(ctx, 'Domain not found');
+    const d = domainFor(user, ctx.params.domain);
+    if (!d) return notFound(ctx, 'Domain not found');
     run('INSERT INTO dns_records(domain_id, name, type, value, priority, ttl) VALUES(?,?,?,?,?,?)',
       d.id, String(ctx.body.name || '@'), String(ctx.body.type || 'A').toUpperCase(), String(ctx.body.value || ''),
       ctx.body.priority ? Number(ctx.body.priority) : null, Number(ctx.body.ttl) || 3600);
@@ -253,10 +373,7 @@ export function registerApiRoutes(router) {
 
   api('GET', '/api/v1/databases', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
-    const rows = user.level === 'admin'
-      ? all('SELECT db_name, db_user, size_mb FROM databases')
-      : all('SELECT db_name, db_user, size_mb FROM databases WHERE user_id = ?', user.id);
-    return { json: { ok: true, databases: rows } };
+    return { json: { ok: true, databases: scopedDatabaseRows(user) } };
   });
 
   api('GET', '/api/v1/users', (ctx) => {
@@ -280,7 +397,8 @@ export function registerApiRoutes(router) {
     }
     const domain = String(ctx.body.domain || '').toLowerCase();
     const password = String(ctx.body.password || '');
-    if (password.length < 8) return badRequest(ctx, 'Password must be at least 8 characters');
+    const policyError = passwordPolicyError(password);
+    if (policyError) return badRequest(ctx, policyError);
     const created = systemProvider().createUser(username, `/home/${username}`);
     if (!created.ok) return badRequest(ctx, created.output);
     const r = run(`INSERT INTO users(username, password, email, level, owner, package, domain, ip, created_at)
@@ -305,20 +423,6 @@ export function registerApiRoutes(router) {
     return { json: { ok: true, packages: rows } };
   });
 
-  // phpMyAdmin single sign-on handshake (loopback + shared secret only).
-  api('POST', '/api/phpmyadmin/credentials', (ctx) => {
-    const loopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ctx.ip);
-    if (!loopback) return { status: 403, json: { ok: false, error: 'Loopback only' } };
-    if (String(ctx.req.headers['x-openadmin-secret'] || '') !== panelSecret()) return { status: 403, json: { ok: false, error: 'Invalid service secret' } };
-    const data = verifySsoToken(ctx.body.token);
-    if (!data) return { status: 403, json: { ok: false, error: 'Invalid or expired token' } };
-    const row = get('SELECT * FROM databases WHERE db_name = ? AND user_id = ?', data.db, data.userId);
-    if (!row) return { status: 404, json: { ok: false, error: 'Database not found' } };
-    const password = decryptSecret(row.password_enc);
-    if (!password) return { status: 409, json: { ok: false, error: 'No stored credential for this database; reset the password or use normal login' } };
-    return { json: { ok: true, username: row.db_user, password } };
-  });
-
   api('GET', '/api/v1/backups/:id/download', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
     const row = backupFor(user, ctx.params.id);
@@ -337,7 +441,7 @@ export function registerApiRoutes(router) {
 
   api('GET', '/api/v1/webserver', async (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
-    if (user.level === 'user') return forbidden(ctx);
+    if (user.level !== 'admin') return forbidden(ctx);
     const { detect, activeServer, stagingDir } = await import('../webserver.mjs');
     const detected = detect();
     const active = activeServer();
@@ -365,6 +469,11 @@ export function registerApiRoutes(router) {
 
   api('GET', '/api/v1/system', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
+    // SEC-016: only administrators receive host/topology information. Other
+    // roles get a role-appropriate, count-free document.
+    if (user.level !== 'admin') {
+      return { json: { ok: true, product: 'OpenAdmin', scope: 'account' } };
+    }
     return {
       json: {
         ok: true, product: 'OpenAdmin', version: VERSION, license: 'AGPL-3.0 (unlimited, free)',
@@ -549,32 +658,59 @@ export function registerApiRoutes(router) {
   /* ------------------------------------------------------------ file API */
   api('GET', '/api/v1/files', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
-    const abs = resolveUserPath(user.username, ctx.query.path || `/home/${user.username}`);
-    const entries = fs.readdirSync(abs, { withFileTypes: true }).map((e2) => {
-      const st = fs.statSync(path.join(abs, e2.name));
-      return { name: e2.name, type: e2.isDirectory() ? 'dir' : 'file', size: st.size, modified: st.mtime.toISOString() };
-    });
-    return { json: { ok: true, path: displayPath(user.username, abs), entries } };
+    // SEC-002: listing rejects symlink escapes and never exposes host paths.
+    const listing = listTenantDir(user.username, ctx.query.path || '');
+    return {
+      json: {
+        ok: true,
+        path: listing.display,
+        entries: listing.entries.map((entry) => ({
+          name: entry.name,
+          type: entry.dir ? 'dir' : 'file',
+          size: entry.size,
+          modified: entry.mtime,
+          symlink: entry.symlink,
+          unsafe: entry.unsafe,
+        })),
+      },
+    };
+  });
+
+  api('GET', '/api/v1/files/limits', (ctx) => {
+    const user = authenticate(ctx); if (!user) return unauthorized(ctx);
+    return { json: { ok: true, maxUploadMb: config.limits.maxUploadMb, maxUploadBytes: config.limits.maxUploadMb * 1024 * 1024 } };
   });
 
   api('POST', '/api/v1/files/upload', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
-    const dir = resolveUserPath(user.username, ctx.body.path || `/home/${user.username}`);
-    const name = path.basename(String(ctx.body.name || 'upload.bin'));
-    const buf = Buffer.from(String(ctx.body.data || ''), 'base64');
-    if (buf.length > config.limits.maxUploadMb * 1024 * 1024) return badRequest(ctx, 'File too large');
+    const name = validateEntryName(String(ctx.body.name || 'upload.bin'));
+    const encoded = String(ctx.body.data || '');
+    const maxBytes = config.limits.maxUploadMb * 1024 * 1024;
+    if (encoded.length > Math.ceil(maxBytes / 3) * 4) {
+      return { status: 413, json: { ok: false, code: 'too_large', error: `File too large. Limit ${config.limits.maxUploadMb} MB (${maxBytes} bytes).` } };
+    }
+    const buf = Buffer.from(encoded, 'base64');
+    if (buf.length > maxBytes) return { status: 413, json: { ok: false, code: 'too_large', error: `File too large: ${(buf.length / 1048576).toFixed(2)} MB > ${config.limits.maxUploadMb} MB.` } };
     const disk = checkDisk(user, buf.length / 1024 / 1024);
     if (!disk.ok) return { status: 413, json: { ok: false, error: `Disk quota exceeded (${disk.used.toFixed(1)} / ${disk.limit} MB)` } };
-    const full = path.join(dir, name);
-    if (!full.startsWith(homeDir(user.username))) return forbidden(ctx);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(full, buf);
-    return { json: { ok: true, path: displayPath(user.username, full), size: buf.length } };
+    // SEC-002: resolve the *full* target (including the final component) with
+    // O_NOFOLLOW semantics. A pre-existing symlink/hardlink in the destination
+    // must never redirect the write outside the tenant home.
+    const base = String(ctx.body.path || `/home/${user.username}`).replace(/\/+$/, '');
+    const requested = `${base}/${name}`;
+    let written;
+    try {
+      written = writeTenantFile(user.username, requested, buf, { create: true });
+    } catch (error) {
+      if (error?.code === 'ALREADY_EXISTS') written = writeTenantFile(user.username, requested, buf, { create: false });
+      else throw error;
+    }
+    return { json: { ok: true, path: written.display, size: buf.length } };
   });
 
   api('GET', '/api/v1/files/download', (ctx) => {
     const user = authenticate(ctx); if (!user) return unauthorized(ctx);
-    const abs = resolveUserPath(user.username, ctx.query.path || '');
+    const abs = resolveUserPath(user.username, ctx.query.path || '', { operation: 'read' });
     if (!abs.startsWith(homeDir(user.username))) return forbidden(ctx);
     if (!fs.existsSync(abs)) return notFound(ctx, 'File not found');
     if (fs.statSync(abs).isDirectory()) {
@@ -628,14 +764,15 @@ export function registerApiRoutes(router) {
         return { error: 0, text: `Email account ${local}@${domain} created` };
       }
       if (action === 'delete') {
-        run('DELETE FROM email_accounts WHERE local_part = ? AND domain = ?', String(ctx.query.user || ''), String(ctx.query.domain || ''));
+        const d = domainFor(user, ctx.query.domain || '');
+        const local = String(ctx.query.user || ctx.query.local_part || '').toLowerCase();
+        if (!d || !local) return { error: 1, text: 'Domain not found' };
+        run('DELETE FROM email_accounts WHERE local_part = ? AND domain_id = ?', local, d.id);
         syncMail();
         apply({ mail: true });
-    apply({ mail: true });
         return { error: 0, text: 'Email account deleted' };
       }
-      const rows = all(`SELECT e.* FROM email_accounts e JOIN domains d ON d.id = e.domain_id WHERE d.user_id = ?`, user.id);
-      return { error: 0, text: 'Email accounts', list: rows.map((r) => `${r.local_part}@${r.domain}`) };
+      return { error: 0, text: 'Email accounts', list: scopedEmailRows(user).map((r) => `${r.local_part}@${r.domain}`) };
     },
     CMD_API_LICENSE: () => ({ error: 0, text: 'Unlimited free license', type: 'unlimited', expires: 'never', holders: '0' }),
     CMD_API_IP_MANAGER: (user) => {
@@ -668,11 +805,14 @@ export function registerApiRoutes(router) {
         return { error: 0, text: 'Forwarder created' };
       }
       if (action === 'delete') {
-        run('DELETE FROM email_forwarders WHERE source = ? AND domain = ?', String(ctx.query.source || ''), String(ctx.query.domain || ''));
+        const target = domainFor(user, ctx.query.domain || '');
+        if (!target) return { error: 1, text: 'Domain not found' };
+        run('DELETE FROM email_forwarders WHERE source = ? AND domain_id = ?', String(ctx.query.source || ''), target.id);
         return { error: 0, text: 'Forwarder deleted' };
       }
-      return { error: 0, text: 'Forwarders', list: all(`SELECT f.source || '@' || f.domain AS a FROM email_forwarders f
-        JOIN domains d ON d.id = f.domain_id WHERE d.user_id = ?`, user.id).map((r) => r.a) };
+      return { error: 0, text: 'Forwarders', list: scopedDomainJoin(user,
+        "SELECT f.source || '@' || f.domain AS a", 'FROM email_forwarders f JOIN domains d ON d.id = f.domain_id',
+        'ORDER BY f.domain, f.source').map((r) => r.a) };
     },
     CMD_API_EMAIL_AUTORESPONDER: (user, ctx) => {
       const action = String(ctx.query.action || '');
@@ -681,6 +821,7 @@ export function registerApiRoutes(router) {
         if (!d) return { error: 1, text: 'Domain not found' };
         const addr = String(ctx.query.email || ctx.query.user || '').toLowerCase();
         const email = addr.includes('@') ? addr : `${addr}@${d.name}`;
+        if (!email.endsWith(`@${d.name}`)) return { error: 1, text: 'Email must belong to the selected domain' };
         if (!ctx.query.subject) return { error: 1, text: 'subject is required' };
         run('INSERT INTO autoresponders(domain_id, domain, email, subject, body, enabled, created_at) VALUES(?,?,?,?,?,?,?)',
           d.id, d.name, email, String(ctx.query.subject), String(ctx.query.body || ctx.query.text || ''), 1, nowIso());
@@ -688,25 +829,38 @@ export function registerApiRoutes(router) {
         return { error: 0, text: 'Autoresponder created' };
       }
       if (action === 'delete') {
-        run('DELETE FROM autoresponders WHERE email = ?', String(ctx.query.email || ''));
+        const email = String(ctx.query.email || '').toLowerCase();
+        const domain = email.includes('@') ? email.split('@').pop() : '';
+        const target = domainFor(user, domain);
+        if (!target) return { error: 1, text: 'Autoresponder not found' };
+        run('DELETE FROM autoresponders WHERE email = ? AND domain_id = ?', email, target.id);
         return { error: 0, text: 'Autoresponder deleted' };
       }
-      return { error: 0, text: 'Autoresponders', list: all(`SELECT a.email FROM autoresponders a JOIN domains d ON d.id = a.domain_id WHERE d.user_id = ?`, user.id).map((r) => r.email) };
+      return { error: 0, text: 'Autoresponders', list: scopedDomainJoin(user,
+        'SELECT a.email', 'FROM autoresponders a JOIN domains d ON d.id = a.domain_id', 'ORDER BY a.email').map((r) => r.email) };
     },
     CMD_API_EMAIL_VACATION: (user, ctx) => {
       const action = String(ctx.query.action || '');
       const d = domainFor(user, ctx.query.domain || '');
       if (action === 'create' || action === 'modify') {
         if (!d) return { error: 1, text: 'Domain not found' };
-        const email = String(ctx.query.email || '');
+        const email = String(ctx.query.email || '').toLowerCase();
         if (!email.includes('@')) return { error: 1, text: 'email is required' };
+        if (!email.endsWith(`@${d.name}`)) return { error: 1, text: 'Email must belong to the selected domain' };
         run(`INSERT INTO vacation(domain, email, subject, body, start_date, end_date, enabled, created_at) VALUES(?,?,?,?,?,?,?,?)
              ON CONFLICT(email) DO UPDATE SET subject = excluded.subject, body = excluded.body, enabled = 1`,
           d.name, email, String(ctx.query.subject || 'Out of office'), String(ctx.query.body || ''), ctx.query.start || null, ctx.query.end || null, 1, nowIso());
         return { error: 0, text: 'Vacation message saved' };
       }
-      if (action === 'delete') { run('DELETE FROM vacation WHERE email = ?', String(ctx.query.email || '')); return { error: 0, text: 'Vacation message deleted' }; }
-      return { error: 0, text: 'Vacation messages', list: all('SELECT email FROM vacation WHERE domain IN (SELECT name FROM domains WHERE user_id = ?)', user.id).map((r) => r.email) };
+      if (action === 'delete') {
+        const email = String(ctx.query.email || '').toLowerCase();
+        const target = domainFor(user, email.includes('@') ? email.split('@').pop() : '');
+        if (!target) return { error: 1, text: 'Vacation message not found' };
+        run('DELETE FROM vacation WHERE email = ? AND domain = ?', email, target.name);
+        return { error: 0, text: 'Vacation message deleted' };
+      }
+      return { error: 0, text: 'Vacation messages', list: scopedDomainJoin(user,
+        'SELECT v.email', 'FROM vacation v JOIN domains d ON d.name = v.domain', 'ORDER BY v.email').map((r) => r.email) };
     },
     CMD_API_FTP: (user, ctx) => {
       const action = String(ctx.query.action || '');
@@ -715,7 +869,9 @@ export function registerApiRoutes(router) {
         if (!base || !ctx.query.passwd) return { error: 1, text: 'user and passwd are required' };
         const username = `${user.username}_${base}`.slice(0, 32);
         if (get('SELECT id FROM ftp_accounts WHERE username = ?', username)) return { error: 1, text: 'FTP user exists' };
-        const pathValue = String(ctx.query.path || `/home/${user.username}`);
+        // The FTP root must stay inside the acting account's home (SEC-001/002).
+        const safePath = resolveUserPath(user.username, String(ctx.query.path || `/home/${user.username}`), { operation: 'read' });
+        const pathValue = displayPath(user.username, safePath);
         const created = systemProvider().createFtpUser(username, pathValue, String(ctx.query.passwd));
         if (!created.ok) return { error: 1, text: created.output };
         run('INSERT INTO ftp_accounts(user_id, username, path, quota_mb, password, created_at) VALUES(?,?,?,?,?,?)',
@@ -724,11 +880,16 @@ export function registerApiRoutes(router) {
       }
       if (action === 'delete') {
         const uname = String(ctx.query.user || ctx.query.username || '');
+        const ids = scopeUserIds(user);
+        const row = ids
+          ? get(`SELECT * FROM ftp_accounts WHERE username = ? AND user_id IN (${placeholders(ids.length)})`, uname, ...ids)
+          : get('SELECT * FROM ftp_accounts WHERE username = ?', uname);
+        if (!row) return { error: 1, text: 'FTP account not found' };
         systemProvider().deleteFtpUser(uname);
-        run('DELETE FROM ftp_accounts WHERE username = ? AND user_id = ?', uname, user.id);
+        run('DELETE FROM ftp_accounts WHERE id = ?', row.id);
         return { error: 0, text: 'FTP account deleted' };
       }
-      return { error: 0, text: 'FTP accounts', list: all('SELECT username FROM ftp_accounts WHERE user_id = ?', user.id).map((r) => r.username) };
+      return { error: 0, text: 'FTP accounts', list: scopedFtpRows(user).map((r) => r.username) };
     },
     CMD_API_DATABASES: (user, ctx) => {
       const action = String(ctx.query.action || '');
@@ -750,15 +911,19 @@ export function registerApiRoutes(router) {
       }
       if (action === 'delete') {
         const dbName = String(ctx.query.name || ctx.query.db || '');
+        const ids = scopeUserIds(user);
+        const row = ids
+          ? get(`SELECT * FROM databases WHERE db_name = ? AND user_id IN (${placeholders(ids.length)})`, dbName, ...ids)
+          : get('SELECT * FROM databases WHERE db_name = ?', dbName);
+        if (!row) return { error: 1, text: 'Database not found' };
         if (mariadbDetect().connected) {
-          mariaDrop(dbName);
-          const row = get('SELECT db_user FROM databases WHERE db_name = ?', dbName);
-          if (row) mariaDropAccount(row.db_user);
+          mariaDrop(row.db_name);
+          mariaDropAccount(row.db_user);
         }
-        run('DELETE FROM databases WHERE db_name = ? AND user_id = ?', dbName, user.id);
+        run('DELETE FROM databases WHERE id = ?', row.id);
         return { error: 0, text: 'Database deleted' };
       }
-      return { error: 0, text: 'Databases', list: all('SELECT db_name FROM databases WHERE user_id = ?', user.id).map((r) => r.db_name) };
+      return { error: 0, text: 'Databases', list: scopedDatabaseRows(user, 'db_name').map((r) => r.db_name) };
     },
     CMD_API_CRON_JOBS: (user, ctx) => {
       const action = String(ctx.query.action || '');
@@ -909,6 +1074,8 @@ export function registerApiRoutes(router) {
 
   for (const name of Object.keys(commands)) {
     const handler = (ctx) => {
+      ctx.apiCommand = name;
+      ctx.apiPattern = `/${name}`;
       const user = authenticate(ctx);
       if (!user) {
         // DirectAdmin convention: HTTP 200 with error=1 for auth failures.
@@ -935,37 +1102,43 @@ export function registerApiRoutes(router) {
   const READ = {
     CMD_API_SHOW_DOMAIN: (u) => userDomainsFor(u).map((d) => d.name),
     CMD_API_SHOW_USER: (u) => visibleUsers(u, { level: 'user' }).map((x) => x.username),
-    CMD_API_SHOW_RESELLER: (u) => all("SELECT username FROM users WHERE level = 'reseller'").map((x) => x.username),
+    CMD_API_SHOW_RESELLER: (u) => (u.level === 'admin' ? all("SELECT username FROM users WHERE level = 'reseller'").map((x) => x.username) : []),
     CMD_API_ALL_USER_SHOW: (u) => visibleUsers(u).map((x) => x.username),
     CMD_API_USER_SHOW: (u) => visibleUsers(u, { level: 'user' }).map((x) => x.username),
-    CMD_API_RESELLER_SHOW: () => all("SELECT username FROM users WHERE level = 'reseller'").map((x) => x.username),
-    CMD_API_ADMIN_SHOW: () => all("SELECT username FROM users WHERE level = 'admin'").map((x) => x.username),
+    CMD_API_RESELLER_SHOW: (u) => (u.level === 'admin' ? all("SELECT username FROM users WHERE level = 'reseller'").map((x) => x.username) : []),
+    CMD_API_ADMIN_SHOW: (u) => (u.level === 'admin' ? all("SELECT username FROM users WHERE level = 'admin'").map((x) => x.username) : []),
     CMD_API_SHOW_USER_PACKAGES: () => all("SELECT name FROM packages WHERE type = 'user'").map((x) => x.name),
     CMD_API_SHOW_RESELLER_PACKAGES: () => all("SELECT name FROM packages WHERE type = 'reseller'").map((x) => x.name),
     CMD_API_MANAGE_USER_PACKAGES: () => all("SELECT name FROM packages WHERE type = 'user'").map((x) => x.name),
     CMD_API_MANAGE_RESELLER_PACKAGES: () => all("SELECT name FROM packages WHERE type = 'reseller'").map((x) => x.name),
     CMD_API_SHOW_SERVICES: (u) => (u.level === 'admin' ? all('SELECT name FROM services').map((x) => x.name) : []),
     CMD_API_SYSTEM_SERVICES: (u) => (u.level === 'admin' ? all('SELECT name FROM services').map((x) => x.name) : []),
-    CMD_API_EMAIL_USAGE: (u) => all(`SELECT e.local_part || '@' || e.domain AS address FROM email_accounts e
-                                     JOIN domains d ON d.id = e.domain_id WHERE d.user_id = ?`, u.id).map((x) => x.address),
-    CMD_API_EMAIL_LIST: (u) => all(`SELECT l.name || '@' || l.domain AS address FROM mailing_lists l
-                                    JOIN domains d ON d.id = l.domain_id WHERE d.user_id = ?`, u.id).map((x) => x.address),
-    CMD_API_EMAIL_VACATION: (u) => all(`SELECT email FROM vacation WHERE domain IN (SELECT name FROM domains WHERE user_id = ?)`, u.id).map((x) => x.email),
-    CMD_API_EMAIL_AUTORESPONDER: (u) => all(`SELECT a.email FROM autoresponders a JOIN domains d ON d.id = a.domain_id WHERE d.user_id = ?`, u.id).map((x) => x.email),
-    CMD_API_EMAIL_CATCH_ALL: (u) => all(`SELECT c.domain FROM catchall c JOIN domains d ON d.id = c.domain_id WHERE d.user_id = ?`, u.id).map((x) => x.domain),
-    CMD_API_EMAIL_FILTER: (u) => all(`SELECT id FROM email_filters WHERE domain IN (SELECT name FROM domains WHERE user_id = ?)`, u.id).map((x) => String(x.id)),
-    CMD_API_SPAMASSASSIN: (u) => all(`SELECT domain FROM email_filters WHERE domain IN (SELECT name FROM domains WHERE user_id = ?) GROUP BY domain`, u.id).map((x) => x.domain),
+    CMD_API_EMAIL_USAGE: (u) => scopedDomainJoin(u, "SELECT e.local_part || '@' || e.domain AS address",
+      'FROM email_accounts e JOIN domains d ON d.id = e.domain_id', 'ORDER BY e.domain, e.local_part').map((x) => x.address),
+    CMD_API_EMAIL_LIST: (u) => scopedDomainJoin(u, "SELECT l.name || '@' || l.domain AS address",
+      'FROM mailing_lists l JOIN domains d ON d.id = l.domain_id', 'ORDER BY l.domain, l.name').map((x) => x.address),
+    CMD_API_EMAIL_VACATION: (u) => scopedDomainJoin(u, 'SELECT v.email', 'FROM vacation v JOIN domains d ON d.name = v.domain', 'ORDER BY v.email').map((x) => x.email),
+    CMD_API_EMAIL_AUTORESPONDER: (u) => scopedDomainJoin(u, 'SELECT a.email',
+      'FROM autoresponders a JOIN domains d ON d.id = a.domain_id', 'ORDER BY a.email').map((x) => x.email),
+    CMD_API_EMAIL_CATCH_ALL: (u) => scopedDomainJoin(u, 'SELECT c.domain',
+      'FROM catchall c JOIN domains d ON d.id = c.domain_id', 'ORDER BY c.domain').map((x) => x.domain),
+    CMD_API_EMAIL_FILTER: (u) => scopedDomainJoin(u, 'SELECT f.id',
+      'FROM email_filters f JOIN domains d ON d.name = f.domain', 'ORDER BY f.id').map((x) => String(x.id)),
+    CMD_API_SPAMASSASSIN: (u) => scopedDomainJoin(u, 'SELECT f.domain',
+      'FROM email_filters f JOIN domains d ON d.name = f.domain', 'GROUP BY f.domain ORDER BY f.domain').map((x) => x.domain),
     CMD_API_SSL: (u) => (u.level === 'admin' ? all('SELECT domain FROM ssl_certs').map((x) => x.domain) : all('SELECT domain FROM ssl_certs WHERE username = ?', u.username).map((x) => x.domain)),
     CMD_API_DOMAIN_TLS: (u) => all('SELECT domain FROM ssl_certs WHERE username = ?', u.username).map((x) => x.domain),
-    CMD_API_ADMIN_SSL: () => all('SELECT domain FROM ssl_certs').map((x) => x.domain),
-    CMD_API_SERVER_TLS: () => all("SELECT value FROM settings WHERE key = 'server_name'").map((x) => x.value),
-    CMD_API_DNS_ADMIN: (u) => (u.level === 'admin' ? all('SELECT name FROM domains').map((x) => x.name) : all('SELECT name FROM domains WHERE user_id = ?', u.id).map((x) => x.name)),
+    CMD_API_ADMIN_SSL: (u) => (u.level === 'admin' ? all('SELECT domain FROM ssl_certs').map((x) => x.domain) : []),
+    CMD_API_SERVER_TLS: (u) => (u.level === 'admin' ? all("SELECT value FROM settings WHERE key = 'server_name'").map((x) => x.value) : []),
+    CMD_API_DNS_ADMIN: (u) => userDomainsFor(u).map((x) => x.name),
     CMD_API_DNS_RESELLER: (u) => visibleDomains(u).map((x) => x.name),
-    CMD_API_DNS_MX: (u) => all(`SELECT r.value FROM dns_records r JOIN domains d ON d.id = r.domain_id
-                                WHERE r.type = 'MX' AND d.user_id = ?`, u.id).map((x) => x.value),
-    CMD_API_DB_SHOW: (u) => all('SELECT db_name FROM databases WHERE user_id = ?', u.id).map((x) => x.db_name),
-    CMD_API_FTP_SHOW: (u) => all('SELECT username FROM ftp_accounts WHERE user_id = ?', u.id).map((x) => x.username),
-    CMD_API_LOG_VIEWER: () => all('SELECT actor || char(58) || action AS v FROM audit_log ORDER BY id DESC LIMIT 100').map((x) => Object.values(x)[0]),
+    CMD_API_DNS_MX: (u) => scopedDomainJoin(u, 'SELECT r.value', 'FROM dns_records r JOIN domains d ON d.id = r.domain_id',
+      "WHERE r.type = 'MX' ORDER BY r.value").map((x) => x.value),
+    CMD_API_DB_SHOW: (u) => scopedDatabaseRows(u, 'db_name').map((x) => x.db_name),
+    CMD_API_FTP_SHOW: (u) => scopedFtpRows(u).map((x) => x.username),
+    CMD_API_LOG_VIEWER: (u) => (u.level === 'admin'
+      ? all('SELECT actor || char(58) || action AS v FROM audit_log ORDER BY id DESC LIMIT 100')
+      : all('SELECT actor || char(58) || action AS v FROM audit_log WHERE actor = ? ORDER BY id DESC LIMIT 100', u.username)).map((x) => Object.values(x)[0]),
     CMD_API_PLUGINS: () => all('SELECT name FROM plugins').map((x) => x.name),
     CMD_API_PLUGIN_MANAGER: () => all('SELECT name FROM plugins').map((x) => x.name),
     CMD_API_SKINS: () => ['evolution', 'enhanced'],
@@ -982,71 +1155,91 @@ export function registerApiRoutes(router) {
     CMD_API_WORDPRESS: (u) => all('SELECT domain FROM wordpress WHERE domain IN (SELECT name FROM domains WHERE user_id = ?)', u.id).map((x) => x.domain),
     CMD_API_GIT: (u) => { const v = JSON.parse(setting(`git:${u.username}`, '[]')); return v.map((x) => x.name); },
     CMD_API_TICKET: (u) => all('SELECT id FROM tickets WHERE user_id = ?', u.id).map((x) => String(x.id)),
-    CMD_API_MAIL_QUEUE: () => all('SELECT id FROM mail_queue').map((x) => String(x.id)),
+    CMD_API_MAIL_QUEUE: (u) => (u.level === 'admin' ? all('SELECT id FROM mail_queue').map((x) => String(x.id)) : []),
     CMD_API_IMAPSYNC: (u) => all('SELECT id FROM imap_jobs WHERE username = ?', u.username).map((x) => String(x.id)),
-    CMD_API_MULTI_SERVER: () => { const v = JSON.parse(setting('cluster_peers', '[]')); return v.map((x) => x.host); },
-    CMD_API_MOD_SECURITY: () => Object.keys(JSON.parse(setting('waf_domains', '{}'))),
-    CMD_API_NGINX_TEMPLATES: () => ['default', 'wordpress', 'laravel', 'static-site', 'reverse-proxy'],
-    CMD_API_TEMPLATE_DIFF: () => ['header.html', 'footer.html', 'login.html'],
-    CMD_API_CUSTOMBUILD: () => ['nginx', 'apache2', 'php', 'node'],
+    CMD_API_MULTI_SERVER: (u) => { if (u.level !== 'admin') return []; const v = JSON.parse(setting('cluster_peers', '[]')); return v.map((x) => x.host); },
+    CMD_API_MOD_SECURITY: (u) => (u.level === 'admin' ? Object.keys(JSON.parse(setting('waf_domains', '{}'))) : []),
+    CMD_API_NGINX_TEMPLATES: (u) => (u.level === 'admin' ? ['default', 'wordpress', 'laravel', 'static-site', 'reverse-proxy'] : []),
+    CMD_API_TEMPLATE_DIFF: (u) => (u.level === 'admin' ? ['header.html', 'footer.html', 'login.html'] : []),
+    CMD_API_CUSTOMBUILD: (u) => (u.level === 'admin' ? ['nginx', 'apache2', 'php', 'node'] : []),
     CMD_API_RESOURCE_USAGE: (u) => all('SELECT day || char(61) || bandwidth_mb AS v FROM usage_daily WHERE username = ?', u.username).map((x) => Object.values(x)[0]),
-    CMD_API_EMAIL_LOGS: () => all('SELECT id FROM mail_queue LIMIT 50').map((x) => String(x.id)),
-    CMD_API_EMAIL_LOGS_SUMMARY: () => all('SELECT status, COUNT(*) n FROM mail_queue GROUP BY status').map((x) => `${x.status}=${x.n}`),
+    CMD_API_EMAIL_LOGS: (u) => (u.level === 'admin' ? all('SELECT id FROM mail_queue LIMIT 50').map((x) => String(x.id)) : []),
+    CMD_API_EMAIL_LOGS_SUMMARY: (u) => (u.level === 'admin' ? all('SELECT status, COUNT(*) n FROM mail_queue GROUP BY status').map((x) => `${x.status}=${x.n}`) : []),
 
-    CMD_API_ACCOUNT_ADMIN: () => all("SELECT username FROM users WHERE level = 'admin'").map((x) => x.username),
-    CMD_API_ACCOUNT_RESELLER: () => all("SELECT username FROM users WHERE level = 'reseller'").map((x) => x.username),
+    CMD_API_ACCOUNT_ADMIN: (u) => (u.level === 'admin' ? all("SELECT username FROM users WHERE level = 'admin'").map((x) => x.username) : []),
+    CMD_API_ACCOUNT_RESELLER: (u) => (u.level === 'admin' ? all("SELECT username FROM users WHERE level = 'reseller'").map((x) => x.username) : []),
     CMD_API_ADDITIONAL_DOMAINS: (u) => userDomainsFor(u).map((d) => d.name),
-    CMD_API_ADMIN_BACKUP: () => all('SELECT filename FROM backups').map((x) => x.filename),
-    CMD_API_ADMIN_BACKUP_MODIFY: () => all('SELECT filename FROM backups').map((x) => x.filename),
-    CMD_API_ADMIN_CRON_JOBS: () => all('SELECT command FROM cron_jobs').map((x) => x.command),
-    CMD_API_ADMIN_FILE_EDITOR: () => JSON.parse(setting('admin_file_editor_files', '[]')),
-    CMD_API_ADMIN_HISTORY: () => all('SELECT actor || char(32) || action AS v FROM audit_log ORDER BY id DESC LIMIT 200').map((x) => Object.values(x)[0]),
-    CMD_API_ADMIN_SETTINGS: () => all('SELECT key FROM settings').map((x) => x.key),
-    CMD_API_ADMIN_STATS: () => [String(get('SELECT COUNT(*) n FROM users').n), String(get('SELECT COUNT(*) n FROM domains').n)],
+    CMD_API_ADMIN_BACKUP: (u) => scopedBackupRows(u).map((x) => x.filename),
+    CMD_API_ADMIN_BACKUP_MODIFY: (u) => scopedBackupRows(u).map((x) => x.filename),
+    CMD_API_ADMIN_CRON_JOBS: (u) => (u.level === 'admin' ? all('SELECT command FROM cron_jobs').map((x) => x.command) : []),
+    CMD_API_ADMIN_FILE_EDITOR: (u) => (u.level === 'admin' ? JSON.parse(setting('admin_file_editor_files', '[]')) : []),
+    CMD_API_ADMIN_HISTORY: (u) => (u.level === 'admin'
+      ? all('SELECT actor || char(32) || action AS v FROM audit_log ORDER BY id DESC LIMIT 200')
+      : all('SELECT actor || char(32) || action AS v FROM audit_log WHERE actor = ? ORDER BY id DESC LIMIT 200', u.username)).map((x) => Object.values(x)[0]),
+    CMD_API_ADMIN_SETTINGS: (u) => (u.level === 'admin' ? all('SELECT key FROM settings').map((x) => x.key) : []),
+    CMD_API_ADMIN_STATS: (u) => (u.level === 'admin'
+      ? [String(get('SELECT COUNT(*) n FROM users').n), String(get('SELECT COUNT(*) n FROM domains').n)]
+      : []),
     CMD_API_BANDWIDTH_BREAKDOWN: (u) => all('SELECT day || char(61) || bandwidth_mb AS v FROM usage_daily WHERE username = ?', u.username).map((x) => Object.values(x)[0]),
-    CMD_API_BRUTE_FORCE_MONITOR: () => all('SELECT ip || char(61) || COUNT(*) AS v FROM login_attempts GROUP BY ip').map((x) => Object.values(x)[0]),
-    CMD_API_CUSTOM_HTTPD: () => all("SELECT key FROM settings WHERE key LIKE 'httpd:%'").map((x) => x.key.replace('httpd:', '')),
-    CMD_API_DB: (u) => all('SELECT db_name FROM databases WHERE user_id = ?', u.id).map((x) => x.db_name),
-    CMD_API_DB_USER_CREATE: (u) => all('SELECT db_user FROM databases WHERE user_id = ?', u.id).map((x) => x.db_user),
-    CMD_API_DB_USER_PRIVS: (u) => all('SELECT db_user FROM databases WHERE user_id = ?', u.id).map((x) => x.db_user),
-    CMD_API_DB_VIEW: (u) => all('SELECT db_name FROM databases WHERE user_id = ?', u.id).map((x) => x.db_name),
-    CMD_API_DOMAIN_POINTER: (u) => all(`SELECT r.value FROM dns_records r JOIN domains d ON d.id = r.domain_id WHERE r.type = 'POINTER' AND d.user_id = ?`, u.id).map((x) => x.value),
+    CMD_API_BRUTE_FORCE_MONITOR: (u) => (u.level === 'admin'
+      ? all('SELECT ip || char(61) || COUNT(*) AS v FROM login_attempts GROUP BY ip').map((x) => Object.values(x)[0]) : []),
+    CMD_API_CUSTOM_HTTPD: (u) => (u.level === 'admin' ? all("SELECT key FROM settings WHERE key LIKE 'httpd:%'").map((x) => x.key.replace('httpd:', '')) : []),
+    CMD_API_DB: (u) => scopedDatabaseRows(u, 'db_name').map((x) => x.db_name),
+    CMD_API_DB_USER_CREATE: (u) => scopedDatabaseRows(u, 'db_user').map((x) => x.db_user),
+    CMD_API_DB_USER_PRIVS: (u) => scopedDatabaseRows(u, 'db_user').map((x) => x.db_user),
+    CMD_API_DB_VIEW: (u) => scopedDatabaseRows(u, 'db_name').map((x) => x.db_name),
+    CMD_API_DOMAIN_POINTER: (u) => scopedDomainJoin(u, 'SELECT r.value', 'FROM dns_records r JOIN domains d ON d.id = r.domain_id',
+      "WHERE r.type = 'POINTER' ORDER BY r.value").map((x) => x.value),
     CMD_API_DU_BREAKDOWN: (u) => all('SELECT day || char(61) || disk_mb AS v FROM usage_daily WHERE username = ?', u.username).map((x) => Object.values(x)[0]),
     CMD_API_EDIT_USER_MESSAGE: () => all('SELECT subject FROM messages').map((x) => x.subject),
     CMD_API_EMAIL_AUTORESPONDER_CREATE: () => [],
-    CMD_API_EMAIL_AUTORESPONDER_MODIFY: (u) => all(`SELECT a.email FROM autoresponders a JOIN domains d ON d.id = a.domain_id WHERE d.user_id = ?`, u.id).map((x) => x.email),
-    CMD_API_EMAIL_FORWARDER_MODIFY: (u) => all(`SELECT f.source || '@' || f.domain FROM email_forwarders f JOIN domains d ON d.id = f.domain_id WHERE d.user_id = ?`, u.id).map((x) => x.source),
-    CMD_API_EMAIL_POP: (u) => all(`SELECT e.local_part || '@' || e.domain AS address FROM email_accounts e JOIN domains d ON d.id = e.domain_id WHERE d.user_id = ?`, u.id).map((x) => x.address),
+    CMD_API_EMAIL_AUTORESPONDER_MODIFY: (u) => scopedDomainJoin(u, 'SELECT a.email',
+      'FROM autoresponders a JOIN domains d ON d.id = a.domain_id', 'ORDER BY a.email').map((x) => x.email),
+    CMD_API_EMAIL_FORWARDER_MODIFY: (u) => scopedDomainJoin(u, "SELECT f.source || '@' || f.domain AS address",
+      'FROM email_forwarders f JOIN domains d ON d.id = f.domain_id', 'ORDER BY f.domain, f.source').map((x) => x.address),
+    CMD_API_EMAIL_POP: (u) => scopedDomainJoin(u, "SELECT e.local_part || '@' || e.domain AS address",
+      'FROM email_accounts e JOIN domains d ON d.id = e.domain_id', 'ORDER BY e.domain, e.local_part').map((x) => x.address),
     CMD_API_EMAIL_VACATION_CREATE: () => [],
-    CMD_API_EMAIL_VACATION_MODIFY: (u) => all('SELECT email FROM vacation WHERE domain IN (SELECT name FROM domains WHERE user_id = ?)', u.id).map((x) => x.email),
+    CMD_API_EMAIL_VACATION_MODIFY: (u) => scopedDomainJoin(u, 'SELECT v.email',
+      'FROM vacation v JOIN domains d ON d.name = v.domain', 'ORDER BY v.email').map((x) => x.email),
     CMD_API_FILE_MANAGER: (u) => { const home = `/home/${u.username}`; return [home]; },
     CMD_API_FTP_SETTINGS: (u) => [setting(`ftp_settings_${u.username}`, '{}')],
-    CMD_API_IP_MANAGER_DETAILS: () => all('SELECT ip FROM ips').map((x) => x.ip),
+    CMD_API_IP_MANAGER_DETAILS: (u) => (u.level === 'admin' ? all('SELECT ip FROM ips').map((x) => x.ip) : []),
     CMD_API_JSON_VALIDATE: () => ['valid'],
-    CMD_API_MODIFY_RESELLER: () => all("SELECT username FROM users WHERE level = 'reseller'").map((x) => x.username),
+    CMD_API_MODIFY_RESELLER: (u) => (u.level === 'admin' ? all("SELECT username FROM users WHERE level = 'reseller'").map((x) => x.username) : []),
     CMD_API_MOVE_USERS: (u) => visibleUsers(u, { level: 'user' }).map((x) => x.username),
     CMD_API_NAME_SERVER: () => [setting('ns1', ''), setting('ns2', '')],
-    CMD_API_NETDATA_SOCK: () => [get("SELECT status FROM services WHERE name = 'netdata'")?.status || 'not installed'],
+    CMD_API_NETDATA_SOCK: (u) => (u.level === 'admin' ? [get("SELECT status FROM services WHERE name = 'netdata'")?.status || 'not installed'] : []),
     CMD_API_PERL_MODULES: () => providerPerlModules(),
     CMD_API_PHP_SAFE_MODE: () => String(setting('php_versions', '8.4,8.3,8.2,8.1,7.4')).split(','),
     CMD_API_PLUGINS_ADMIN: () => all("SELECT name FROM plugins WHERE level = 'admin'").map((x) => x.name),
     CMD_API_PLUGINS_RESELLER: () => all("SELECT name FROM plugins WHERE level = 'reseller'").map((x) => x.name),
-    CMD_API_PROCESS_MONITOR: () => processNames(),
+    CMD_API_PROCESS_MONITOR: (u) => (u.level === 'admin' ? processNames() : []),
     CMD_API_REBOOT: () => ['reboot requires POST with confirm=yes'],
-    CMD_API_REDIS: () => [get("SELECT status FROM services WHERE name = 'redis'")?.status || 'not installed'],
-    CMD_API_RESELLER_HISTORY: () => all("SELECT actor || char(32) || action AS v FROM audit_log WHERE level = 'reseller' ORDER BY id DESC LIMIT 100").map((x) => Object.values(x)[0]),
+    CMD_API_REDIS: (u) => (u.level === 'admin' ? [get("SELECT status FROM services WHERE name = 'redis'")?.status || 'not installed'] : []),
+    CMD_API_RESELLER_HISTORY: (u) => (u.level === 'admin'
+      ? all("SELECT actor || char(32) || action AS v FROM audit_log WHERE level = 'reseller' ORDER BY id DESC LIMIT 100")
+      : all('SELECT actor || char(32) || action AS v FROM audit_log WHERE actor = ? ORDER BY id DESC LIMIT 100', u.username)).map((x) => Object.values(x)[0]),
     CMD_API_RESELLER_STATS: (u) => all('SELECT day || char(61) || bandwidth_mb AS v FROM usage_daily WHERE username = ?', u.username).map((x) => Object.values(x)[0]),
-    CMD_API_RSPAMD_SOCK: () => [get("SELECT status FROM services WHERE name = 'rspamd'")?.status || 'not installed'],
-    CMD_API_SHOW_LOG: () => all('SELECT action FROM audit_log ORDER BY id DESC LIMIT 100').map((x) => x.action),
+    CMD_API_RSPAMD_SOCK: (u) => (u.level === 'admin' ? [get("SELECT status FROM services WHERE name = 'rspamd'")?.status || 'not installed'] : []),
+    CMD_API_SHOW_LOG: (u) => (u.level === 'admin'
+      ? all('SELECT action FROM audit_log ORDER BY id DESC LIMIT 100')
+      : all('SELECT action FROM audit_log WHERE actor = ? ORDER BY id DESC LIMIT 100', u.username)).map((x) => x.action),
     CMD_API_SHOW_RESELLER_PACKAGE: () => all("SELECT name FROM packages WHERE type = 'reseller'").map((x) => x.name),
     CMD_API_SHOW_USER_PACKAGE: () => all("SELECT name FROM packages WHERE type = 'user'").map((x) => x.name),
     CMD_API_SUSPENSION_MESSAGE: () => [setting('suspension_message', 'Account suspended')],
-    CMD_API_SYSTEM_BACKUP: () => all('SELECT filename FROM backups').map((x) => x.filename),
+    CMD_API_SYSTEM_BACKUP: (u) => scopedBackupRows(u).map((x) => x.filename),
     CMD_API_TICKET_CREATE: () => [],
-    CMD_API_TICKET_MANAGE: () => all('SELECT id FROM tickets').map((x) => String(x.id)),
-    CMD_API_UNIT: () => [get("SELECT status FROM services WHERE name = 'unit'")?.status || 'not installed'],
-    CMD_API_USER_BACKUP: (u) => all('SELECT filename FROM backups WHERE user_id = ?', u.id).map((x) => x.filename),
-    CMD_API_USER_BACKUP_MODIFY: (u) => all('SELECT filename FROM backups WHERE user_id = ?', u.id).map((x) => x.filename),
+    CMD_API_TICKET_MANAGE: (u) => {
+      const ids = scopeUserIds(u);
+      const rows = ids
+        ? all(`SELECT id FROM tickets WHERE user_id IN (${placeholders(ids.length)}) ORDER BY id DESC`, ...ids)
+        : all('SELECT id FROM tickets ORDER BY id DESC');
+      return rows.map((x) => String(x.id));
+    },
+    CMD_API_UNIT: (u) => (u.level === 'admin' ? [get("SELECT status FROM services WHERE name = 'unit'")?.status || 'not installed'] : []),
+    CMD_API_USER_BACKUP: (u) => scopedBackupRows(u).map((x) => x.filename),
+    CMD_API_USER_BACKUP_MODIFY: (u) => scopedBackupRows(u).map((x) => x.filename),
     CMD_API_USER_HISTORY: (u) => all('SELECT action FROM audit_log WHERE actor = ? ORDER BY id DESC LIMIT 100', u.username).map((x) => x.action),
     CMD_API_USER_STATS: (u) => all('SELECT day || char(61) || bandwidth_mb AS v FROM usage_daily WHERE username = ?', u.username).map((x) => Object.values(x)[0]),
     CMD_API_VERSION: () => [VERSION],
@@ -1054,6 +1247,8 @@ export function registerApiRoutes(router) {
   for (const cmd of READ_KEYS()) {
     if (commands[cmd]) continue;
     const handler = (ctx) => {
+      ctx.apiCommand = cmd;
+      ctx.apiPattern = `/${cmd}`;
       const user = authenticate(ctx);
       if (!user) return { status: 200, raw: legacyEncode({ error: 1, text: 'Invalid login credentials', details: '' }), type: 'form' };
       try {
@@ -1077,6 +1272,8 @@ export function registerApiRoutes(router) {
     if (commands[cmd]) continue;
     if (router.match('GET', `/${cmd}`)) continue;
     router.get(`/${cmd}`, (ctx) => {
+      ctx.apiCommand = cmd;
+      ctx.apiPattern = `/${cmd}`;
       const user = authenticate(ctx); if (!user) return { status: 200, raw: legacyEncode({ error: 1, text: 'Invalid login credentials', details: '' }), type: 'form' };
       return { status: 200, raw: legacyEncode({ error: 1, text: `${cmd} requires an external provider and is not implemented`, details: '' }), type: 'form' };
     });

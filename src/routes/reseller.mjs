@@ -2,7 +2,10 @@
 // DNS, statistics, tickets, IPs, backups and settings.
 import crypto from 'node:crypto';
 import { all, get, run, nowIso, setting, audit } from '../db.mjs';
-import { createSession, limitsFor, serializeCookie } from '../auth.mjs';
+import { limitsFor, serializeCookie } from '../auth.mjs';
+import { config } from '../config.mjs';
+import { startImpersonation } from '../secrets.mjs';
+import { previewActorCookie } from '../apps.mjs';
 import { html as h, raw, formatBytes, pct } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, table, btn, badge, alert, emptyState, kvList, progress, statCard, sparkline } from '../ui/components.mjs';
@@ -1135,10 +1138,16 @@ export function registerResellerRoutes(router) {
       return ctx.redirect(`${R}/users?flash=${encodeURIComponent('Możesz otworzyć panel tylko swojego klienta.')}&type=error`);
     }
     if (user.suspended) return ctx.redirect(`${R}/users/${user.id}?flash=${encodeURIComponent('Konto klienta jest zawieszone.')}&type=error`);
-    const session = createSession(user, { ip: ctx.ip, ua: ctx.req.headers['user-agent'] });
-    ctx.res.setHeader('Set-Cookie', serializeCookie(session.token));
-    audit(ctx.user.username, 'reseller', 'user.impersonate', user.username, ctx.ip);
-    return ctx.redirect(`/user?flash=${encodeURIComponent(`Zalogowano jako ${user.username}`)}`);
+    const actor = ctx.cookies['OA_SESSION'];
+    const result = startImpersonation(ctx.user, user.id, {
+      ip: ctx.ip, ua: ctx.req.headers['user-agent'], actorSessionToken: actor, readOnly: true,
+    });
+    if (!result.ok) return ctx.redirect(`${R}/users/${user.id}?flash=${encodeURIComponent(result.error)}&type=error`);
+    ctx.res.setHeader('Set-Cookie', [
+      serializeCookie(result.token, { secure: config.https }),
+      previewActorCookie(actor, { secure: config.https }),
+    ]);
+    return ctx.redirect(`/user?flash=${encodeURIComponent(`Podglądasz konto ${user.username} (tylko do odczytu)`)}`);
   });
 
   router.get('/reseller/packages', (ctx) => packagesPage(ctx, { owner: ctx.user.username, type: 'user', path: `${R}/packages` }));

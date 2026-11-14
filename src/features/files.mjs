@@ -17,25 +17,305 @@ import { checkDisk } from '../quota.mjs';
 import { userHome } from '../paths.mjs';
 
 /* ------------------------------------------------------------------ paths */
-export function homeDir(username) {
-  const p = userHome(username);
-  fs.mkdirSync(p, { recursive: true });
-  return p;
+// SEC-002: one resolver for every tenant path. No caller is allowed to fall
+// back to the home directory: an unsafe path is a typed error, not a redirect.
+const USERNAME_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/;
+const WRITE_OPERATIONS = new Set(['write', 'create', 'delete', 'rename', 'upload']);
+
+export class TenantPathError extends Error {
+  constructor(code, message, { status = 403, field = 'path' } = {}) {
+    super(message);
+    this.name = 'TenantPathError';
+    this.code = code;
+    this.status = status;
+    this.field = field;
+  }
 }
 
-export function resolveUserPath(username, requested = '') {
+function tenantError(code, message, status = 403) {
+  return new TenantPathError(code, message, { status });
+}
+
+export function assertUsername(username) {
+  if (typeof username !== 'string' || !USERNAME_RE.test(username)) {
+    throw tenantError('INVALID_USERNAME', 'Invalid account name', 400);
+  }
+  return username;
+}
+
+export function homeDir(username) {
+  assertUsername(username);
+  const home = path.resolve(userHome(username));
+  try { fs.mkdirSync(home, { recursive: true, mode: 0o700 }); } catch {
+    throw tenantError('HOME_UNAVAILABLE', 'Account home is unavailable', 500);
+  }
+  let stat;
+  try { stat = fs.lstatSync(home); } catch {
+    throw tenantError('HOME_UNAVAILABLE', 'Account home is unavailable', 500);
+  }
+  if (stat.isSymbolicLink()) throw tenantError('HOME_SYMLINK', 'Account home must not be a symbolic link');
+  if (!stat.isDirectory()) throw tenantError('HOME_NOT_DIRECTORY', 'Account home is not a directory', 500);
+  return home;
+}
+
+function realHome(username) {
   const home = homeDir(username);
-  let rel = String(requested || '').replace(/^\/home\/[^/]+/, '');
-  rel = rel.replace(/\/+$/, '') || '/';
-  const abs = path.resolve(home, '.' + (rel.startsWith('/') ? rel : '/' + rel));
-  if (abs !== home && !abs.startsWith(home + path.sep)) return home;
+  try { return fs.realpathSync(home); } catch {
+    throw tenantError('HOME_UNAVAILABLE', 'Account home is unavailable', 500);
+  }
+}
+
+function decodeRequestedPath(value) {
+  if (value === undefined || value === null) value = '';
+  if (typeof value !== 'string') throw tenantError('INVALID_PATH_TYPE', 'Path must be a string', 400);
+  if (value.length > 4096) throw tenantError('PATH_TOO_LONG', 'Path is too long', 400);
+  if (/\0/.test(value)) throw tenantError('INVALID_PATH_CHARS', 'Path contains a NUL byte', 400);
+  // Encoded separators are rejected before normalisation so double-encoding
+  // cannot smuggle a separator past the resolver.
+  let probe = value;
+  for (let depth = 0; depth < 4; depth++) {
+    if (/%(?:2e|2f|5c|00)/i.test(probe)) throw tenantError('ENCODED_SEPARATOR', 'Path contains an encoded separator');
+    let next;
+    try { next = decodeURIComponent(probe); } catch { break; }
+    if (next === probe) break;
+    probe = next;
+  }
+  if (/[\x00-\x1f\x7f]/.test(value)) throw tenantError('INVALID_PATH_CHARS', 'Path contains control characters', 400);
+  if (value.includes('\\')) throw tenantError('INVALID_PATH_CHARS', 'Backslashes are not allowed in paths', 400);
+  return value;
+}
+
+function tenantRelativePath(username, requested) {
+  let rel = decodeRequestedPath(requested);
+  if (rel === '' || rel === '/') return '';
+  if (rel.startsWith('/home/')) {
+    const rest = rel.slice('/home/'.length);
+    const slash = rest.indexOf('/');
+    const owner = slash === -1 ? rest : rest.slice(0, slash);
+    if (owner !== username) throw tenantError('PATH_OUTSIDE_TENANT', 'Path belongs to another account');
+    rel = slash === -1 ? '' : rest.slice(slash);
+  } else if (rel === '/home') {
+    throw tenantError('PATH_OUTSIDE_TENANT', 'Path belongs to another account');
+  }
+  const parts = rel.split('/').filter(Boolean);
+  if (parts.some((part) => part === '..')) throw tenantError('PATH_TRAVERSAL', 'Path traversal is not allowed');
+  if (parts.some((part) => part.length > 255)) throw tenantError('PATH_SEGMENT_TOO_LONG', 'Path segment is too long', 400);
+  return parts.join('/');
+}
+
+function nearestExisting(target, home) {
+  let current = target;
+  while (current !== home) {
+    try { fs.lstatSync(current); return current; } catch (error) {
+      if (error.code !== 'ENOENT') throw tenantError('PATH_UNREADABLE', 'Path cannot be inspected', 500);
+      current = path.dirname(current);
+    }
+  }
+  return home;
+}
+
+function assertReadablePath(home, abs, rootReal) {
+  const probe = nearestExisting(abs, home);
+  let probeReal;
+  try { probeReal = fs.realpathSync(probe); } catch {
+    throw tenantError('PATH_UNREADABLE', 'Path cannot be resolved', 500);
+  }
+  if (probeReal !== rootReal && !probeReal.startsWith(rootReal + path.sep)) {
+    throw tenantError('SYMLINK_ESCAPE', 'Path resolves outside the account home');
+  }
+  // The final component may be a symlink, but its target must stay inside.
+  let stat = null;
+  try { stat = fs.lstatSync(abs); } catch (error) { if (error.code !== 'ENOENT') throw tenantError('PATH_UNREADABLE', 'Path cannot be inspected', 500); }
+  if (stat?.isSymbolicLink()) {
+    let targetReal;
+    try { targetReal = fs.realpathSync(abs); } catch {
+      throw tenantError('SYMLINK_ESCAPE', 'Path resolves outside the account home');
+    }
+    if (targetReal !== rootReal && !targetReal.startsWith(rootReal + path.sep)) {
+      throw tenantError('SYMLINK_ESCAPE', 'Path resolves outside the account home');
+    }
+  }
+}
+
+function assertWritablePath(home, abs) {
+  const relative = path.relative(home, abs);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) throw tenantError('PATH_OUTSIDE_TENANT', 'Path escapes the account home');
+  let current = home;
+  for (const part of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    let stat;
+    try { stat = fs.lstatSync(current); } catch (error) {
+      if (error.code === 'ENOENT') return;
+      throw tenantError('PATH_UNREADABLE', 'Path cannot be inspected', 500);
+    }
+    if (stat.isSymbolicLink()) throw tenantError('SYMLINK_BLOCKED', 'Symbolic links are not allowed for write operations');
+    if (current === abs) {
+      if (!stat.isFile() && !stat.isDirectory()) throw tenantError('SPECIAL_FILE', 'Special files cannot be modified');
+      if (stat.isFile() && stat.nlink > 1) throw tenantError('HARDLINK_BLOCKED', 'Files with multiple hard links cannot be modified');
+    }
+  }
+}
+
+/**
+ * Resolve a user supplied path inside the tenant home.
+ * @param {string} username
+ * @param {string} [requested] absolute (/home/user/...), home-relative or empty
+ * @param {{operation?: 'read'|'list'|'write'|'create'|'delete'|'rename'|'upload'}} [options]
+ * @returns {string} lexical path inside the home
+ * @throws {TenantPathError}
+ */
+export function resolveUserPath(username, requested = '', { operation = 'read' } = {}) {
+  assertUsername(username);
+  const home = homeDir(username);
+  const rootReal = realHome(username);
+  const rel = tenantRelativePath(username, requested);
+  const abs = rel ? path.resolve(home, rel) : home;
+  if (abs !== home && !abs.startsWith(home + path.sep)) throw tenantError('PATH_OUTSIDE_TENANT', 'Path escapes the account home');
+  if (WRITE_OPERATIONS.has(operation)) assertWritablePath(home, abs);
+  else assertReadablePath(home, abs, rootReal);
   return abs;
+}
+
+/** Non-throwing wrapper for callers that prefer a typed result. */
+export function resolveUserPathSafe(username, requested = '', options = {}) {
+  try { return { ok: true, path: resolveUserPath(username, requested, options) }; }
+  catch (error) {
+    if (error instanceof TenantPathError) return { ok: false, code: error.code, error: error.message, status: error.status };
+    throw error;
+  }
 }
 
 export function displayPath(username, abs) {
   const home = homeDir(username);
-  if (abs === home) return `/home/${username}`;
-  return `/home/${username}${abs.slice(home.length)}`;
+  const resolved = path.resolve(abs);
+  if (resolved === home) return `/home/${username}`;
+  if (!resolved.startsWith(home + path.sep)) throw tenantError('PATH_OUTSIDE_TENANT', 'Path escapes the account home');
+  return `/home/${username}${resolved.slice(home.length)}`;
+}
+
+export function validateEntryName(value) {
+  if (typeof value !== 'string') throw tenantError('INVALID_NAME', 'Name must be a string', 400);
+  const name = value.trim();
+  if (!name || name === '.' || name === '..') throw tenantError('INVALID_NAME', 'Invalid name', 400);
+  if (name.length > 255) throw tenantError('INVALID_NAME', 'Name is too long', 400);
+  if (/[\0\/\\]/.test(name) || /[\x00-\x1f\x7f]/.test(name)) throw tenantError('INVALID_NAME', 'Name contains invalid characters', 400);
+  return name;
+}
+
+function statForEntry(username, abs, name) {
+  const entryPath = path.join(abs, name);
+  let stat;
+  try { stat = fs.lstatSync(entryPath); } catch { return null; }
+  if (stat.isSymbolicLink()) {
+    try {
+      const safe = resolveUserPath(username, displayPath(username, abs) + '/' + name, { operation: 'read' });
+      const target = fs.statSync(safe);
+      return { stat, target, symlink: true, safe: true };
+    } catch {
+      return { stat, target: null, symlink: true, safe: false };
+    }
+  }
+  return { stat, target: stat, symlink: false, safe: true };
+}
+
+export function listTenantDir(username, requested = '') {
+  const abs = resolveUserPath(username, requested, { operation: 'list' });
+  const dirents = fs.readdirSync(abs, { withFileTypes: true });
+  const entries = [];
+  for (const dirent of dirents) {
+    if (dirent.name === '.' || dirent.name === '..') continue;
+    const info = statForEntry(username, abs, dirent.name);
+    if (!info) continue;
+    const target = info.target || info.stat;
+    const dir = info.safe && target.isDirectory();
+    const ext = path.extname(dirent.name).toLowerCase();
+    entries.push({
+      name: dirent.name,
+      dir,
+      symlink: info.symlink,
+      unsafe: !info.safe,
+      size: dir ? dirSize(path.join(abs, dirent.name)) : Number(target.size) || 0,
+      mtime: target.mtime ? target.mtime.toISOString() : new Date(0).toISOString(),
+      perms: humanPerms(target.mode || 0),
+      full: path.join(abs, dirent.name),
+      editable: !dir && !info.symlink && info.safe && target.isFile() && (TEXT_EXT.has(ext) || dirent.name === '.htaccess'),
+      ext,
+    });
+  }
+  return { path: abs, display: displayPath(username, abs), entries };
+}
+
+export function readTenantFile(username, requested, { maxBytes = 400000 } = {}) {
+  const abs = resolveUserPath(username, requested, { operation: 'read' });
+  const stat = fs.lstatSync(abs);
+  if (stat.isDirectory()) throw tenantError('IS_DIRECTORY', 'Path is a directory', 400);
+  if (!stat.isFile() && !stat.isSymbolicLink()) throw tenantError('SPECIAL_FILE', 'Not a regular file', 400);
+  const data = fs.readFileSync(abs);
+  if (maxBytes && data.length > maxBytes) return { ok: true, path: abs, content: data.subarray(0, maxBytes).toString('utf8'), size: data.length, truncated: true };
+  return { ok: true, path: abs, content: data.toString('utf8'), size: data.length, truncated: false };
+}
+
+function writeFlags(create) {
+  const constants = fs.constants;
+  const noFollow = constants.O_NOFOLLOW || 0;
+  return create
+    ? constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollow
+    : constants.O_WRONLY | constants.O_TRUNC | noFollow;
+}
+
+export function writeTenantFile(username, requested, content, { create = false, mode = 0o644 } = {}) {
+  const abs = resolveUserPath(username, requested, { operation: create ? 'create' : 'write' });
+  if (typeof content !== 'string' && !Buffer.isBuffer(content)) throw tenantError('INVALID_CONTENT', 'Content must be text or a buffer', 400);
+  let fd;
+  try { fd = fs.openSync(abs, writeFlags(create), mode); }
+  catch (error) {
+    if (error.code === 'ELOOP') throw tenantError('FINAL_SYMLINK', 'Refusing to write through a symbolic link');
+    if (error.code === 'EEXIST') throw tenantError('ALREADY_EXISTS', 'File already exists', 409);
+    if (error.code === 'ENOENT') throw tenantError('PARENT_MISSING', 'Parent directory does not exist', 404);
+    throw error;
+  }
+  try { fs.writeFileSync(fd, content); } finally { try { fs.closeSync(fd); } catch { /* ignore */ } }
+  return { ok: true, path: abs, display: displayPath(username, abs), size: Buffer.byteLength(content) };
+}
+
+export function createTenantDir(username, requested, name) {
+  const safeName = validateEntryName(name);
+  const dir = resolveUserPath(username, requested, { operation: 'create' });
+  const abs = path.join(dir, safeName);
+  if (abs !== dir && !abs.startsWith(dir + path.sep)) throw tenantError('PATH_OUTSIDE_TENANT', 'Path escapes the account home');
+  fs.mkdirSync(abs, { recursive: false, mode: 0o755 });
+  return { ok: true, path: abs, display: displayPath(username, abs) };
+}
+
+export function deleteTenantPath(username, requested, name = null) {
+  const base = resolveUserPath(username, requested, { operation: 'delete' });
+  const abs = name === null ? base : path.join(base, validateEntryName(name));
+  if (abs === homeDir(username)) throw tenantError('HOME_DELETE_BLOCKED', 'The account home cannot be deleted');
+  if (abs !== base && !abs.startsWith(base + path.sep)) throw tenantError('PATH_OUTSIDE_TENANT', 'Path escapes the account home');
+  resolveUserPath(username, displayPath(username, abs), { operation: 'delete' });
+  fs.rmSync(abs, { recursive: true, force: false });
+  return { ok: true, path: displayPath(username, abs) };
+}
+
+export function renameTenantPath(username, requested, oldName, newName) {
+  const base = resolveUserPath(username, requested, { operation: 'rename' });
+  const from = path.join(base, validateEntryName(oldName));
+  const to = path.join(base, validateEntryName(newName));
+  if (!from.startsWith(base + path.sep) || !to.startsWith(base + path.sep)) throw tenantError('PATH_OUTSIDE_TENANT', 'Path escapes the account home');
+  resolveUserPath(username, displayPath(username, from), { operation: 'rename' });
+  resolveUserPath(username, displayPath(username, to), { operation: 'rename' });
+  fs.renameSync(from, to);
+  return { ok: true, from: displayPath(username, from), to: displayPath(username, to) };
+}
+
+function pathFailure(error) {
+  return error instanceof TenantPathError ? error : new TenantPathError('PATH_ERROR', error?.message || 'Path operation failed', { status: 500 });
+}
+
+function filesRedirect(ctx, error, fallbackPath = null) {
+  const base = fallbackPath || `/user/files?path=${encodeURIComponent(`/home/${ctx.user.username}`)}`;
+  const sep = base.includes('?') ? '&' : '?';
+  return ctx.redirect(base + sep + 'flash=' + encodeURIComponent(pathFailure(error).message) + '&type=error');
 }
 
 function humanPerms(mode) {
@@ -43,17 +323,22 @@ function humanPerms(mode) {
   return s;
 }
 
-function dirSize(dir, depth = 0) {
+function dirSize(dir, depth = 0, root = dir) {
   let total = 0;
   if (depth > 4) return 0;
   let entries = [];
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return 0; }
   for (const ent of entries) {
-    if (ent.name === '.' || ent.name === '..') continue;
+    if (ent.name === '.' || ent.name === '..' || ent.isSymbolicLink()) continue;
     const p = path.join(dir, ent.name);
     try {
-      if (ent.isDirectory()) total += dirSize(p, depth + 1);
-      else total += fs.statSync(p).size;
+      const stat = fs.lstatSync(p);
+      if (stat.isSymbolicLink()) continue;
+      if (stat.isDirectory()) {
+        const real = fs.realpathSync(p);
+        const rootReal = fs.realpathSync(root);
+        if (real === rootReal || real.startsWith(rootReal + path.sep)) total += dirSize(p, depth + 1, root);
+      } else if (stat.isFile()) total += stat.size;
     } catch { /* skip */ }
   }
   return total;
@@ -80,35 +365,26 @@ export function register(router) {
   router.get('/user/files', (ctx) => {
     const username = ctx.user.username;
     const requested = ctx.query.path || `/home/${username}`;
-    const abs = resolveUserPath(username, requested);
-    const display = displayPath(username, abs);
-    let entries = [];
-    try {
-      entries = fs.readdirSync(abs, { withFileTypes: true }).map((ent) => {
-        const full = path.join(abs, ent.name);
-        let st = { size: 0, mtime: new Date(), mode: 0o644 };
-        try { st = fs.statSync(full); } catch { /* ignore */ }
-        const ext = path.extname(ent.name).toLowerCase();
-        return {
-          name: ent.name, dir: ent.isDirectory(), size: ent.isDirectory() ? dirSize(full) : st.size,
-          mtime: st.mtime.toISOString(), perms: humanPerms(st.mode), full,
-          editable: !ent.isDirectory() && (TEXT_EXT.has(ext) || ent.name === '.htaccess'),
-          ext,
-        };
-      }).sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
-    } catch { entries = []; }
+    let dirInfo;
+    try { dirInfo = listTenantDir(username, requested); }
+    catch (error) { return filesRedirect(ctx, error); }
+    const { path: abs, display } = dirInfo;
+    const entries = dirInfo.entries.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
 
     const absParts = display.split('/').filter(Boolean);
     const crumbs = absParts.slice(2).map((part, i) => ({
       label: part, path: '/' + absParts.slice(0, i + 3).join('/'),
     }));
     const editing = ctx.query.edit ? entries.find((x) => x.name === ctx.query.edit && x.editable) : null;
-    const editorContent = editing && fs.existsSync(editing.full) ? fs.readFileSync(editing.full, 'utf8').slice(0, 400000) : '';
+    let editorContent = '';
+    if (editing) {
+      try { editorContent = readTenantFile(username, display + '/' + editing.name).content; } catch { editorContent = ''; }
+    }
 
     const body = h`
       ${card('File manager', h`
         <div class="file-pathbar">
-          <a class="crumb-home" href="/user/files?path=/home/${username}">${icon('home', { size: 15 })}</a>
+          <a class="crumb-home" href="/user/files?path=/home/${username}" aria-label="Katalog domowy">${icon('home', { size: 15 })}</a>
           ${crumbs.map((c) => h`<span class="crumb-sep">/</span><a class="crumb-link" href="/user/files?path=${encodeURIComponent(c.path)}">${c.label}</a>`)}
           <span class="file-path-abs">${display}</span>
         </div>
@@ -125,18 +401,19 @@ export function register(router) {
             ${display !== `/home/${username}` ? h`<tr><td colspan="5"><a class="link" href="/user/files?path=${encodeURIComponent(display.split('/').slice(0, -1).join('/') || '/home/' + username)}">${icon('arrowRight', { size: 14 })} Parent directory</a></td></tr>` : ''}
             ${entries.length ? entries.map((f) => h`<tr>
               <td><div class="file-name">${icon(f.dir ? 'folder' : 'file', { size: 16 })}
-                ${f.dir ? h`<a href="/user/files?path=${encodeURIComponent(display + '/' + f.name)}">${f.name}</a>` : h`<span>${f.name}</span>`}</div></td>
+                ${f.unsafe ? h`<span title="Symbolic link escapes the account home">${f.name}</span>${badge('blocked', 'danger')}`
+                  : f.dir ? h`<a href="/user/files?path=${encodeURIComponent(display + '/' + f.name)}">${f.name}</a>` : h`<span>${f.name}</span>`}</div></td>
               <td>${f.dir ? '—' : formatBytes(f.size / 1024 / 1024)}</td>
               <td class="cell-mono">${f.perms}</td>
               <td class="small">${formatDate(f.mtime, { time: true })}</td>
-              <td class="col-actions"><div class="row-actions">
+              <td class="col-actions">${f.unsafe ? h`<span class="small muted">blocked</span>` : h`<div class="row-actions">
                 ${f.editable ? h`<a class="icon-btn" href="/user/files?path=${encodeURIComponent(display)}&edit=${encodeURIComponent(f.name)}" title="Edit">${icon('edit', { size: 16 })}</a>` : ''}
                 ${!f.dir ? h`<a class="icon-btn" href="/api/v1/files/download?path=${encodeURIComponent(display + '/' + f.name)}" title="Download">${icon('download', { size: 16 })}</a>` : ''}
                 <button class="icon-btn" type="button" data-open-modal="rename-${encodeURIComponent(f.name)}" title="Rename">${icon('tag', { size: 16 })}</button>
                 <form method="post" action="/user/files/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
                   <input type="hidden" name="path" value="${display}"><input type="hidden" name="name" value="${f.name}">
                   <button class="icon-btn danger" type="submit" title="Delete" onclick="return confirm('Delete ${e(f.name)}?')">${icon('trash', { size: 16 })}</button></form>
-              </div></td>
+              </div>`}</td>
             </tr>`) : h`<tr><td colspan="5">${emptyState('This directory is empty.')}</td></tr>`}
           </tbody>
         </table></div>
@@ -164,7 +441,7 @@ export function register(router) {
         <div class="modal">
           <header class="modal-head"><h3>Upload files</h3><button class="icon-btn" type="button" data-close-modal>${icon('x', { size: 18 })}</button></header>
           <div class="modal-body">
-            <div class="dropzone" id="fileUpload" data-path="${display}">
+            <div class="dropzone" id="fileUpload" data-path="${display}" data-max-upload-bytes="${config.limits.maxUploadMb * 1024 * 1024}">
               ${icon('upload', { size: 26 })}
               <p><strong>Drop files here</strong> or click to browse</p>
               <input type="file" id="fileInput" multiple hidden>
@@ -187,47 +464,52 @@ export function register(router) {
   });
 
   router.post('/user/files/create', (ctx) => {
+    const fallback = `/user/files?path=${encodeURIComponent(String(ctx.body.path || `/home/${ctx.user.username}`))}`;
     const disk = checkDisk(ctx.user);
     if (!disk.ok) return ctx.redirect('/user/files?flash=' + encodeURIComponent(`Disk quota exceeded (${disk.used.toFixed(1)} / ${disk.limit} MB)`) + '&type=error');
-    const dir = resolveUserPath(ctx.user.username, ctx.body.path);
-    const name = path.basename(String(ctx.body.name || '').trim());
-    if (!name || name === '.' || name === '..') return ctx.redirect('/user/files?flash=Invalid%20name&type=error');
-    const full = path.join(dir, name);
     try {
-      if (ctx.body.kind === 'dir') fs.mkdirSync(full, { recursive: false });
-      else fs.writeFileSync(full, String(ctx.body.content || ''), 'utf8');
-    } catch (e) {
-      return ctx.redirect('/user/files?path=' + encodeURIComponent(displayPath(ctx.user.username, dir)) + '&flash=' + encodeURIComponent(e.message) + '&type=error');
-    }
-    systemProvider().chownUser(ctx.user.username);
-    return ctx.redirect('/user/files?path=' + encodeURIComponent(displayPath(ctx.user.username, dir)) + '&flash=Created');
+      const dir = resolveUserPath(ctx.user.username, ctx.body.path, { operation: 'create' });
+      const display = displayPath(ctx.user.username, dir);
+      const name = validateEntryName(ctx.body.name);
+      if (ctx.body.kind === 'dir') createTenantDir(ctx.user.username, display, name);
+      else writeTenantFile(ctx.user.username, display + '/' + name, String(ctx.body.content || ''), { create: true });
+      systemProvider().chownUser(ctx.user.username);
+      return ctx.redirect('/user/files?path=' + encodeURIComponent(display) + '&flash=Created');
+    } catch (error) { return filesRedirect(ctx, error, fallback); }
   });
 
   router.post('/user/files/save', (ctx) => {
+    const fallback = `/user/files?path=${encodeURIComponent(String(ctx.body.path || `/home/${ctx.user.username}`))}`;
     const disk = checkDisk(ctx.user);
     if (!disk.ok) return ctx.redirect('/user/files?path=' + encodeURIComponent(ctx.body.path || '') + '&flash=' + encodeURIComponent('Disk quota exceeded') + '&type=error');
-    const dir = resolveUserPath(ctx.user.username, ctx.body.path);
-    const full = path.join(dir, path.basename(String(ctx.body.name)));
-    if (!full.startsWith(homeDir(ctx.user.username))) return ctx.redirect('/user/files?flash=Access%20denied&type=error');
-    fs.writeFileSync(full, String(ctx.body.content ?? ''), 'utf8');
-    systemProvider().chownUser(ctx.user.username);
-    return ctx.redirect('/user/files?path=' + encodeURIComponent(displayPath(ctx.user.username, dir)) + '&flash=File%20saved');
+    try {
+      const dir = resolveUserPath(ctx.user.username, ctx.body.path, { operation: 'write' });
+      const display = displayPath(ctx.user.username, dir);
+      const name = validateEntryName(ctx.body.name);
+      writeTenantFile(ctx.user.username, display + '/' + name, String(ctx.body.content ?? ''), { create: false });
+      systemProvider().chownUser(ctx.user.username);
+      return ctx.redirect('/user/files?path=' + encodeURIComponent(display) + '&flash=File%20saved');
+    } catch (error) { return filesRedirect(ctx, error, fallback); }
   });
 
   router.post('/user/files/delete', (ctx) => {
-    const dir = resolveUserPath(ctx.user.username, ctx.body.path);
-    const full = path.join(dir, path.basename(String(ctx.body.name)));
-    if (!full.startsWith(homeDir(ctx.user.username))) return ctx.redirect('/user/files?flash=Access%20denied&type=error');
-    try { fs.rmSync(full, { recursive: true, force: true }); } catch { /* ignore */ }
-    return ctx.redirect('/user/files?path=' + encodeURIComponent(displayPath(ctx.user.username, dir)) + '&flash=Deleted');
+    const fallback = `/user/files?path=${encodeURIComponent(String(ctx.body.path || `/home/${ctx.user.username}`))}`;
+    try {
+      const dir = resolveUserPath(ctx.user.username, ctx.body.path, { operation: 'delete' });
+      const display = displayPath(ctx.user.username, dir);
+      deleteTenantPath(ctx.user.username, display, ctx.body.name);
+      return ctx.redirect('/user/files?path=' + encodeURIComponent(display) + '&flash=Deleted');
+    } catch (error) { return filesRedirect(ctx, error, fallback); }
   });
 
   router.post('/user/files/rename', (ctx) => {
-    const dir = resolveUserPath(ctx.user.username, ctx.body.path);
-    const from = path.join(dir, path.basename(String(ctx.body.old)));
-    const to = path.join(dir, path.basename(String(ctx.body.new)));
-    try { fs.renameSync(from, to); } catch { /* ignore */ }
-    return ctx.redirect('/user/files?path=' + encodeURIComponent(displayPath(ctx.user.username, dir)) + '&flash=Renamed');
+    const fallback = `/user/files?path=${encodeURIComponent(String(ctx.body.path || `/home/${ctx.user.username}`))}`;
+    try {
+      const dir = resolveUserPath(ctx.user.username, ctx.body.path, { operation: 'rename' });
+      const display = displayPath(ctx.user.username, dir);
+      renameTenantPath(ctx.user.username, display, ctx.body.old, ctx.body.new);
+      return ctx.redirect('/user/files?path=' + encodeURIComponent(display) + '&flash=Renamed');
+    } catch (error) { return filesRedirect(ctx, error, fallback); }
   });
 
   /* ------------------------------------------------------------------ FTP */
@@ -286,11 +568,17 @@ export function register(router) {
     if (!q.ok) return ctx.redirect('/user/ftp?flash=FTP%20limit%20reached&type=error');
     const user = `${ctx.user.username}_${String(ctx.body.username || '').replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 24)}`;
     if (get('SELECT id FROM ftp_accounts WHERE username = ?', user)) return ctx.redirect('/user/ftp?flash=That%20FTP%20user%20already%20exists&type=error');
-    const reqPath = String(ctx.body.path || `/home/${ctx.user.username}`);
-    const created = systemProvider().createFtpUser(user, reqPath, String(ctx.body.password));
+    const password = String(ctx.body.password || '');
+    if (password.length < 8) return ctx.redirect('/user/ftp?flash=Password%20must%20be%208%2B%20characters&type=error');
+    let reqPath;
+    try {
+      const abs = resolveUserPath(ctx.user.username, ctx.body.path || `/home/${ctx.user.username}`, { operation: 'write' });
+      reqPath = displayPath(ctx.user.username, abs);
+    } catch (error) { return filesRedirect(ctx, error, '/user/ftp'); }
+    const created = systemProvider().createFtpUser(user, reqPath, password);
     if (!created.ok) return ctx.redirect('/user/ftp?flash=' + encodeURIComponent(created.output) + '&type=error');
     run('INSERT INTO ftp_accounts(user_id, username, path, quota_mb, password, created_at) VALUES(?,?,?,?,?,?)',
-      ctx.user.id, user, reqPath, Number(ctx.body.quota_mb) || 0, hashPassword(String(ctx.body.password)), nowIso());
+      ctx.user.id, user, reqPath, Number(ctx.body.quota_mb) || 0, hashPassword(password), nowIso());
     audit(ctx.user.username, ctx.user.level, 'ftp.create', user, ctx.ip);
     return ctx.redirect('/user/ftp?flash=' + encodeURIComponent(`FTP account ${user} created`));
   });
@@ -299,8 +587,11 @@ export function register(router) {
     const a = get('SELECT * FROM ftp_accounts WHERE id = ? AND user_id = ?', Number(ctx.params.id), ctx.user.id);
     if (!a) return ctx.redirect('/user/ftp?flash=Not%20found&type=error');
     const password = String(ctx.body.password || '');
-    const path2 = String(ctx.body.path || a.path);
-    if (!path2.startsWith(`/home/${ctx.user.username}/`)) return ctx.redirect('/user/ftp?flash=Path%20must%20be%20inside%20home&type=error');
+    let path2;
+    try {
+      const abs = resolveUserPath(ctx.user.username, ctx.body.path || a.path, { operation: 'write' });
+      path2 = displayPath(ctx.user.username, abs);
+    } catch (error) { return filesRedirect(ctx, error, '/user/ftp'); }
     if (password && password.length < 8) return ctx.redirect('/user/ftp?flash=Password%20must%20be%208%2B%20characters&type=error');
     if (password) {
       const r = systemProvider().createFtpUser(a.username, path2, password);

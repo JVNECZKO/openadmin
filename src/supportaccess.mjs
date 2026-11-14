@@ -36,9 +36,10 @@ export function redeemSupport(token, { ip = '', ua = '' } = {}) {
   if (new Date(row.expires_at).getTime() < Date.now()) return { ok: false, error: 'Token wygasł' };
   const admin = get("SELECT * FROM users WHERE username = ? AND level = 'admin'", row.created_by) || get("SELECT * FROM users WHERE level = 'admin' ORDER BY id LIMIT 1");
   if (!admin) return { ok: false, error: 'Brak konta administratora' };
+  const claimed = run('UPDATE support_access SET last_used_at = ? WHERE id = ? AND last_used_at IS NULL', nowIso(), row.id);
+  if (claimed.changes !== 1) return { ok: false, error: 'Ten link supportu został już użyty. Poproś administratora o nowy.' };
   const ttl = Math.max(1, Math.ceil((new Date(row.expires_at).getTime() - Date.now()) / 3600000));
   const s = createSession(admin, { ip, ua, support: true, supportToken: row.prefix, ttlHours: Math.min(12, ttl) });
-  run('UPDATE support_access SET last_used_at = ? WHERE id = ?', nowIso(), row.id);
   audit('support:' + row.prefix, 'admin', 'support.access.redeem', ip, '');
   return { ok: true, session: s };
 }

@@ -10,9 +10,13 @@ import { card, table, btn, badge, alert, emptyState, kvList, progress, form } fr
 import { icon } from '../ui/icons.mjs';
 import { listCard, domainSelect } from '../ui/pages/list.mjs';
 import { visibleUsers, canManageUser, visibleDomains, ownedUsernames, quota } from '../core/access.mjs';
-import { engineChoices } from '../provisioning.mjs';
-import { homeDir, provisionDomain } from './files.mjs';
-import { createZone } from './domains.mjs';
+import { passwordPolicyError } from '../security.mjs';
+import {
+  provisionAccount, lastAccountProvision, pendingActivation, rememberChoices,
+} from '../provisioning.mjs';
+import { renderUserProvisioningForm, renderAccountResult } from './wizards.mjs';
+import { purgeAcmeForDomain } from '../autossl.mjs';
+import { homeDir } from './files.mjs';
 import { systemProvider } from '../providers/index.mjs';
 import { zonePath } from '../dns.mjs';
 import { certPaths } from '../ssl.mjs';
@@ -192,98 +196,196 @@ export function usersPage(ctx, { path = '/reseller/users', level = 'user', suspe
   return page(ctx, { title, subtitle: 'Manage hosted accounts', body, actions: [btn('Create user', { href: `${path}/create`, icon: 'plus' })] });
 }
 
-export function userForm(ctx, { path, existing = null, packages = [], resellers = false }) {
-  const pkgRows = packages.length ? packages : all('SELECT * FROM packages WHERE type = ? ORDER BY name', 'user');
+function visiblePackageRows(ctx) {
+  return all("SELECT * FROM packages WHERE type = 'user' ORDER BY name")
+    .filter((pkg) => ctx.user.level !== 'reseller' || !pkg.owner || pkg.owner === ctx.user.username);
+}
+
+export function userForm(ctx, { path, existing = null, packages = [], resellers = false, values = null, preflight = null, error = '' } = {}) {
+  const pkgRows = (packages.length ? packages : all('SELECT * FROM packages WHERE type = ? ORDER BY name', existing?.level === 'reseller' ? 'reseller' : 'user'))
+    .filter((pkg) => ctx.user.level !== 'reseller' || !pkg.owner || pkg.owner === ctx.user.username);
+  if (!existing) {
+    const resellerRows = ctx.user.level === 'admin'
+      ? all("SELECT username FROM users WHERE level = 'reseller' ORDER BY username")
+      : [];
+    const body = renderUserProvisioningForm(ctx, {
+      path,
+      packages: pkgRows.filter((pkg) => pkg.type === 'user'),
+      values: values || {},
+      preflight,
+      error,
+      resellers: resellerRows,
+    });
+    return page(ctx, {
+      title: 'Utwórz konto klienta',
+      subtitle: 'Kontakt → pakiet → domena/DNS → WWW/PHP/SSL/poczta → preflight → atomowe wykonanie',
+      body,
+      wide: true,
+    });
+  }
   const body = h`${card(existing ? `Modify user · ${existing.username}` : 'Create user', h`
-    <form method="post" action="${path}${existing ? '/' + existing.id : '/create'}" class="oa-form" autocomplete="off">
+    <form method="post" action="${path}/${existing.id}" class="oa-form" autocomplete="off">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
       <div class="form-grid">
-        <div class="field"><label class="field-label">Username <span class="req">*</span></label>
-          <input name="username" value="${existing?.username || ''}" ${existing ? 'disabled' : 'required'} pattern="[a-z0-9][a-z0-9_.-]{1,31}" placeholder="johndoe">
-          <p class="field-help">Lowercase letters, numbers, dot, dash and underscore.</p></div>
-        <div class="field"><label class="field-label">${existing ? 'New password (leave blank to keep)' : 'Password'}</label>
-          <div class="field-control"><input id="upass" name="password" type="password" minlength="8" ${existing ? '' : 'required'}>
-            <button class="btn btn-secondary btn-sm" type="button" data-genpass="#upass" style="margin-left:8px">Generate</button></div></div>
-        <div class="field"><label class="field-label">Email</label><input name="email" type="email" value="${existing?.email || ''}" required></div>
-        <div class="field"><label class="field-label">Package</label><select name="package">
-          ${pkgRows.map((p) => h`<option value="${p.name}" ${existing?.package === p.name ? 'selected' : ''}>${p.name}</option>`)}</select></div>
-        <div class="field"><label class="field-label">Primary domain</label><input name="domain" value="${existing?.domain || ''}" placeholder="customer.com">
-          <p class="field-help">Optional. Creates the document root, DNS zone and mail domain.</p></div>
-        <div class="field"><label class="field-label">Silnik WWW dla domeny</label><select name="engine">
-          ${engineChoices().map((e) => h`<option value="${e.id}" ${e.active ? 'selected' : ''} ${!e.available ? 'disabled' : ''}>${e.label}${e.installed ? '' : e.sandbox ? ' (sandbox)' : ' (niedostępny)'}</option>`)}
-        </select><p class="field-help">Dotyczy domeny tworzonej razem z kontem; później zmienisz w edycji domeny.</p></div>
-        <div class="field"><label class="field-label">IP address</label><select name="ip">
-          <option value="">${setting('server_ip', '127.0.0.1')} (server)</option>
-          ${all("SELECT * FROM ips WHERE status != 'free'").map((i) => h`<option value="${i.ip}" ${existing?.ip === i.ip ? 'selected' : ''}>${i.ip}</option>`)}
-        </select></div>
-        ${resellers ? h`<div class="field"><label class="field-label">Reseller package</label><select name="package2">
-          ${all("SELECT * FROM packages WHERE type = 'reseller'").map((p) => h`<option>${p.name}</option>`)}</select></div>` : ''}
-        <div class="field field-full"><label class="field-label">Notes</label><textarea name="notes" rows="2">${existing?.notes || ''}</textarea></div>
-        ${existing ? h`<div class="field field-full"><label class="check-field"><input type="checkbox" name="suspend" value="1" ${existing.suspended ? 'checked' : ''}> <span>Suspend this account</span></label></div>` : h`<div class="field field-full"><label class="check-field"><input type="checkbox" name="notify" value="1" checked> <span>Send a welcome message with the login details</span></label></div>`}
+        <div class="field"><label class="field-label" for="oa-edit-username">Username</label>
+          <input id="oa-edit-username" name="username" value="${existing.username}" disabled></div>
+        <div class="field"><label class="field-label" for="oa-edit-password">Nowe hasło (puste = bez zmiany)</label>
+          <div class="field-control"><input id="oa-edit-password" name="password" type="password" minlength="10">
+            <button class="btn btn-secondary btn-sm" type="button" data-genpass="#oa-edit-password" style="margin-left:8px">Generate</button></div>
+          <p class="field-help">Polityka panelu: długość i klasy znaków są sprawdzane po stronie serwera.</p></div>
+        <div class="field"><label class="field-label" for="oa-edit-email">Email</label><input id="oa-edit-email" name="email" type="email" value="${existing.email || ''}" required></div>
+        <div class="field"><label class="field-label" for="oa-edit-package">Package</label><select id="oa-edit-package" name="package">
+          ${pkgRows.map((p) => h`<option value="${p.name}" ${existing.package === p.name ? 'selected' : ''}>${p.name}${p.owner ? ` — ${p.owner}` : ''}</option>`)}</select></div>
+        <div class="field"><label class="field-label" for="oa-edit-domain">Primary domain</label><input id="oa-edit-domain" name="domain" value="${existing.domain || ''}" placeholder="customer.com">
+          <p class="field-help">Zmiana pola nie przenosi automatycznie plików — domenę dodaj w kreatorze domen.</p></div>
+        <div class="field"><label class="field-label" for="oa-edit-ip">IP</label><input id="oa-edit-ip" name="ip" value="${existing.ip || ''}"></div>
+        <div class="field field-full"><label class="field-label" for="oa-edit-notes">Notes</label><textarea id="oa-edit-notes" name="notes" rows="2">${existing.notes || ''}</textarea></div>
+        <div class="field field-full"><label class="check-field"><input type="checkbox" name="shell_enabled" value="1" ${existing.shell_enabled ? 'checked' : ''}> <span>Shell access (SSH/terminal)</span></label></div>
+        <div class="field field-full"><label class="check-field"><input type="checkbox" name="suspend" value="1" ${existing.suspended ? 'checked' : ''}> <span>Suspend this account</span></label></div>
       </div>
-      <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('save', { size: 16 })} ${existing ? 'Save changes' : 'Create account'}</button>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('save', { size: 16 })} Save changes</button>
         <a class="btn btn-ghost" href="${path}">Cancel</a></div>
     </form>`)}`;
   return page(ctx, { title: existing ? 'Modify User' : 'Create User', subtitle: existing ? existing.username : 'Provision a new hosting account', body });
 }
 
+function wizardPayload(ctx, { level = 'user', owner = null } = {}) {
+  const body = ctx.body || {};
+  const wizard = String(body.wizard || '') === '1';
+  const explicit = (name) => (wizard ? body[name] === '1' : body[name] === undefined ? undefined : body[name] === '1' || body[name] === 'on' || body[name] === true);
+  return {
+    actor: ctx.user,
+    level,
+    owner: owner ?? (body.owner || null),
+    username: body.username,
+    email: body.email,
+    contact_name: body.contact_name,
+    phone: body.phone,
+    notes: body.notes,
+    package: body.new_package_name ? '__new__' : (body.package || 'default'),
+    new_package_name: body.new_package_name,
+    new_limit_domains: body.new_limit_domains,
+    new_limit_emails: body.new_limit_emails,
+    new_limit_disk_mb: body.new_limit_disk_mb,
+    new_limit_bandwidth_mb: body.new_limit_bandwidth_mb,
+    new_limit_databases: body.new_limit_databases,
+    password: body.password,
+    activation: wizard ? body.activation === '1' : !body.password,
+    domain: body.domain,
+    create_domain: undefined,
+    engine: body.engine,
+    php_version: body.php_version,
+    ssl_mode: body.ssl_mode,
+    ip: body.ip,
+    create_dns: wizard ? body.create_dns === '1' : true,
+    dns_template: body.dns_template,
+    check_delegation: explicit('check_delegation'),
+    create_mailbox: explicit('create_mailbox'),
+    mailbox_local: body.mailbox_local,
+    mailbox_quota_mb: body.mailbox_quota_mb,
+    app: (body.app && body.app !== 'none') || body.wordpress === '1'
+      ? {
+        type: body.wordpress === '1' && !body.app ? 'wordpress' : body.app,
+        title: body.app_title,
+        adminUser: body.app_admin_user,
+        adminEmail: body.app_admin_email,
+        adminPassword: body.app_admin_password,
+      }
+      : 'none',
+    create_backup: explicit('create_backup'),
+    create_monitoring: explicit('create_monitoring'),
+    retry_ssl_after_dns: explicit('retry_ssl_after_dns'),
+    docroot: wizard ? body.docroot === '1' : undefined,
+    php_step: wizard ? body.php_step === '1' : undefined,
+    vhost: wizard ? body.vhost === '1' : undefined,
+    notify: wizard ? body.notify === '1' : !!body.notify,
+    rollbackOnFailure: true,
+    actorIp: ctx.ip,
+  };
+}
+
 export function createUser(ctx, { path, level = 'user', owner = null }) {
-  const username = String(ctx.body.username || '').trim().toLowerCase();
-  if (!isUsername(username) || username.length < 2) return ctx.redirect(`${path}/create?flash=Invalid%20username&type=error`);
-  if (get('SELECT id FROM users WHERE lower(username) = ?', username)) return ctx.redirect(`${path}/create?flash=Username%20already%20exists&type=error`);
-  const pkg = get('SELECT * FROM packages WHERE name = ? AND type = ?', String(ctx.body.package || 'default'), level === 'reseller' ? 'reseller' : 'user');
-  if (!pkg) return ctx.redirect(`${path}/create?flash=Package%20not%20found&type=error`);
-  const password = String(ctx.body.password || '');
-  if (password.length < 8) return ctx.redirect(`${path}/create?flash=Password%20must%20be%20at%20least%208%20characters&type=error`);
-  if (level === 'user' && ctx.user.level === 'reseller') {
-    const q = quota(ctx.user, 'users');
-    if (!q.ok) return ctx.redirect(`${path}/create?flash=User%20limit%20reached&type=error`);
+  const payload = wizardPayload(ctx, { level, owner });
+  let result;
+  try {
+    result = provisionAccount(payload);
+  } catch (error) {
+    const values = ctx.body || {};
+    const body = renderUserProvisioningForm(ctx, {
+      path,
+      packages: visiblePackageRows(ctx),
+      values,
+      error: `Nie udało się uruchomić provisioningu: ${error.message}`,
+    });
+    return page(ctx, { title: 'Utwórz konto klienta', subtitle: 'Błąd provisioningu', body, wide: true });
   }
-  const domain = String(ctx.body.domain || '').trim().toLowerCase();
-  if (domain && !isDomain(domain)) return ctx.redirect(`${path}/create?flash=Invalid%20domain&type=error`);
-  if (domain && get('SELECT id FROM domains WHERE name = ?', domain)) return ctx.redirect(`${path}/create?flash=Domain%20already%20exists&type=error`);
-  const created = systemProvider().createUser(username, `/home/${username}`);
-  if (!created.ok) return ctx.redirect(`${path}/create?flash=` + encodeURIComponent('System account failed: ' + created.output) + '&type=error');
-  const ts = nowIso();
-  const id = transaction(() => {
-    const r = run(`INSERT INTO users(username, password, email, level, owner, package, domain, ip, notes, created_at, must_change_password)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,1)`,
-      username, hashPassword(password), String(ctx.body.email || ''), level, owner, pkg.name, domain,
-      String(ctx.body.ip || setting('server_ip', '127.0.0.1')), String(ctx.body.notes || ''), ts);
-    if (domain) {
-      const d = run(`INSERT INTO domains(user_id, username, name, docroot, php_version, ssl, status, is_main, ip, created_at)
-                     VALUES(?,?,?,?,?,?,?,?,?,?)`,
-        r.lastInsertRowid, username, domain, `/home/${username}/domains/${domain}/public_html`, '8.3', 1, 'active', 1,
-        String(ctx.body.ip || setting('server_ip', '127.0.0.1')), ts);
-      createZone(d.lastInsertRowid, domain);
-      if (ctx.body.engine) setSetting(`web_server:${domain}`, String(ctx.body.engine));
-      provisionDomain(username, domain);
-    }
-    homeDir(username);
-    copySkeleton(username);
-    if (ctx.body.notify) {
-      run('INSERT INTO messages(level, username, subject, body, created_at) VALUES(?,?,?,?,?)', 'user', username,
-        'Witaj w OpenAdmin', `Twoje konto jest gotowe.\nUżytkownik: ${username}\nPanel: https://${setting('server_name', 'localhost')}:2222\nDomeny: ${domain || '—'}`, ts);
-    }
-    return r.lastInsertRowid;
+
+  if (result.ok) {
+    try {
+      rememberChoices(ctx.user, 'account', {
+        engine: payload.engine, phpVersion: payload.php_version, sslMode: payload.ssl_mode,
+        dnsTemplateId: payload.dns_template ? Number(payload.dns_template) || '' : '',
+        createDns: payload.create_dns !== false, createMailbox: !!payload.create_mailbox,
+        mailboxLocal: payload.mailbox_local, mailboxQuotaMb: Number(payload.mailbox_quota_mb) || 1024,
+        backup: !!payload.create_backup, monitoring: !!payload.create_monitoring,
+        delegationCheck: !!payload.check_delegation, retrySslAfterDns: !!payload.retry_ssl_after_dns,
+        docroot: payload.docroot !== false, php: payload.php_step !== false, vhost: payload.vhost !== false,
+      });
+    } catch { /* preferences are best effort */ }
+    return ctx.redirect(`${path}/${result.userId}?created=1&flash=` + encodeURIComponent(`Konto ${result.username} utworzone`));
+  }
+
+  // A partial account that could not be rolled back is still a real account:
+  // send the operator to its detail page where every step is visible.
+  if (result.userId && !result.rolledBack) {
+    return ctx.redirect(`${path}/${result.userId}?created=1&type=error&flash=` + encodeURIComponent('Konto powstało częściowo — przejrzyj kroki provisioningu.'));
+  }
+  const values = ctx.body || {};
+  const body = renderUserProvisioningForm(ctx, {
+    path,
+    packages: visiblePackageRows(ctx),
+    values,
+    preflight: result,
+    error: 'Konfiguracja została odrzucona — nic nie zostało utworzone.',
   });
-  audit(ctx.user.username, ctx.user.level, 'user.create', username, ctx.ip);
-  try { runHooks('user.create', { username, email: ctx.body.email, package: pkg.name, domain }); } catch { /* plugin failure does not block */ }
-  try { apply({ web: true, dns: true, mail: true, pools: true }); } catch { /* apply status records failures */ }
-  return ctx.redirect(`${path}/${id}?flash=` + encodeURIComponent(`Account ${username} created`));
+  return page(ctx, {
+    title: 'Utwórz konto klienta',
+    subtitle: 'Popraw konfigurację i spróbuj ponownie',
+    body,
+    wide: true,
+  });
 }
 
 export function updateUser(ctx, { path, target }) {
   const password = String(ctx.body.password || '');
   const shell = !!ctx.body.shell_enabled;
+  const email = String(ctx.body.email || target.email || '').trim();
+  if (email && !isEmail(email)) return ctx.redirect(`${path}/${target.id}?flash=${encodeURIComponent('Nieprawidłowy adres e-mail')}&type=error`);
+  const packageName = String(ctx.body.package || target.package || '');
+  const pkg = get('SELECT * FROM packages WHERE name = ?', packageName);
+  const wantedType = target.level === 'reseller' ? 'reseller' : 'user';
+  if (!pkg || pkg.type !== wantedType) {
+    return ctx.redirect(`${path}/${target.id}?flash=${encodeURIComponent('Pakiet nie istnieje lub ma nieprawidłowy typ')}&type=error`);
+  }
+  if (ctx.user.level === 'reseller' && pkg.owner && pkg.owner !== ctx.user.username) {
+    return ctx.redirect(`${path}/${target.id}?flash=${encodeURIComponent('Ten pakiet należy do innego resellera')}&type=error`);
+  }
+  const domain = String(ctx.body.domain || '').trim().toLowerCase();
+  if (domain && !isDomain(domain)) return ctx.redirect(`${path}/${target.id}?flash=${encodeURIComponent('Nieprawidłowa domena główna')}&type=error`);
+  if (domain) {
+    const existing = get('SELECT * FROM domains WHERE name = ?', domain);
+    if (existing && existing.user_id !== target.id) {
+      return ctx.redirect(`${path}/${target.id}?flash=${encodeURIComponent('Ta domena należy do innego konta')}&type=error`);
+    }
+  }
   if (shell !== !!target.shell_enabled) {
     const r = systemProvider().setShell(target.username, shell);
     if (!r.ok) return ctx.redirect(`${path}/${target.id}?flash=${encodeURIComponent('Shell change failed: ' + (r.output || 'unknown'))}&type=error`);
     run('UPDATE users SET shell_enabled = ? WHERE id = ?', shell ? 1 : 0, target.id);
   }
-  if (password && password.length < 8) return ctx.redirect(`${path}/${target.id}?flash=Password%20too%20short&type=error`);
+  if (password) { const policyError = passwordPolicyError(password); if (policyError) return ctx.redirect(`${path}/${target.id}?flash=${encodeURIComponent(policyError)}&type=error`); }
   run(`UPDATE users SET email = ?, package = ?, domain = ?, ip = ?, notes = ?, suspended = ?, must_change_password = ? WHERE id = ?`,
-    String(ctx.body.email || target.email), String(ctx.body.package || target.package), String(ctx.body.domain || '').toLowerCase(),
+    email || target.email, pkg.name, domain || target.domain || '',
     String(ctx.body.ip || target.ip), String(ctx.body.notes || ''), ctx.body.suspend ? 1 : 0,
     password ? 1 : target.must_change_password, target.id);
   if (password) run('UPDATE users SET password = ? WHERE id = ?', hashPassword(password), target.id);
@@ -297,7 +399,21 @@ export function userDetailPage(ctx, { path, target }) {
   const limits = limitsFor(target);
   const usage = all('SELECT * FROM usage_daily WHERE username = ? ORDER BY day DESC LIMIT 30', target.username);
   const bw = usage.reduce((a, r) => a + (r.bandwidth_mb || 0), 0);
+  const activation = pendingActivation(target.id);
+  const provision = lastAccountProvision(target.id);
   const body = h`
+    ${ctx.query.created === '1' ? alert('Konto zostało utworzone. Poniżej znajduje się rzeczywisty wynik provisioningu.', provision?.ok === false ? 'warn' : 'ok') : ''}
+    ${activation ? card('Aktywacja konta', h`
+      ${alert('Hasło nie jest wyświetlane w panelu. Przekaż klientowi jednorazowy link aktywacyjny — wygasa po godzinie.', 'info')}
+      <div class="field"><label class="field-label" for="oa-activation-url">Link aktywacyjny</label>
+        <input id="oa-activation-url" readonly value="${activation.url}"></div>
+      <p class="small muted">Utworzono ${formatDate(activation.createdAt, { time: true })}.</p>
+      <form method="post" action="${path}/${target.id}/activation"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <button class="btn btn-secondary" type="submit">${icon('refresh', { size: 16 })} Wygeneruj nowy link</button></form>`) : ''}
+    ${!activation && target.level !== 'admin' ? card('Aktywacja konta', h`
+      <p class="small muted">Brak aktywnego linku aktywacyjnego (wykorzystany lub wygasł). Możesz wygenerować nowy jednorazowy link.</p>
+      <form method="post" action="${path}/${target.id}/activation"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <button class="btn btn-secondary" type="submit">${icon('refresh', { size: 16 })} Wygeneruj link aktywacyjny</button></form>`) : ''}
     <div class="grid grid-2-1">
       ${card('Account', h`<form method="post" action="${path}/${target.id}" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -340,7 +456,9 @@ export function userDetailPage(ctx, { path, target }) {
     ${card('Recent backups', h`${backups.length ? table({
       columns: [{ label: 'File', key: 'filename' }, { label: 'Size', render: (b) => formatBytes(b.size_mb) }, { label: 'Created', render: (b) => formatDate(b.created_at) }],
       rows: backups, empty: 'None',
-    }) : emptyState('No backups')}`)}`;
+    }) : emptyState('No backups')}`)}
+    ${provision ? card('Wynik provisioningu konta', h`${renderAccountResult(provision, { title: 'Kroki wykonania' })}`,
+    { sub: `${formatDate(provision.at, { time: true })} · ${provision.rolledBack ? 'rollback wykonany' : provision.ok ? 'sukces' : 'częściowy wynik'}` }) : ''}`;
   return page(ctx, { title: target.username, subtitle: `${target.level} account · ${target.email || ''}`, body, actions: [
     btn('Sign in as user', { href: `${path}/${target.id}/login-as`, variant: 'secondary', icon: 'logout', attrs: 'onclick="return confirm(\'Open this account in a new session?\')"' }),
   ] });
@@ -358,10 +476,17 @@ export function deleteUser(ctx, { path, target }) {
   const dkim = all(`SELECT k.* FROM dkim_keys k JOIN domains d ON d.name = k.domain WHERE d.user_id = ?`, target.id);
   const backups = all('SELECT filename FROM backups WHERE user_id = ?', target.id);
   for (const d of domains) {
+    try { purgeAcmeForDomain(d.name); } catch { /* queue cleanup is best effort */ }
+    try { run('DELETE FROM backup_jobs WHERE name = ? AND target_user = ?', `site:${d.name}`, target.username); } catch { /* ignore */ }
+    run('DELETE FROM settings WHERE key = ?', `site_monitoring:${d.name}`);
+    run('DELETE FROM settings WHERE key = ?', `site_provision_last:${d.name}`);
     try { fs.rmSync(zonePath(d.name), { force: true }); } catch { /* ignore */ }
     try { fs.rmSync(certPaths(d.name).dir, { recursive: true, force: true }); } catch { /* ignore */ }
     try { fs.rmSync(path.join(config.dataDir, 'dkim', `${d.name}.default.key`), { force: true }); } catch { /* ignore */ }
   }
+  run('DELETE FROM settings WHERE key = ?', `user_provision_last:${target.id}`);
+  run('DELETE FROM settings WHERE key = ?', `user_activation:${target.id}`);
+  run('DELETE FROM password_resets WHERE user_id = ?', target.id);
   for (const k of dkim) { try { fs.rmSync(k.key_path, { force: true }); } catch { /* ignore */ } }
   for (const f of ftp) { try { systemProvider().deleteFtpUser(f.username); } catch { /* ignore */ } }
   for (const b of backups) { try { fs.rmSync(backupPath(b.filename), { force: true }); } catch { /* ignore */ } }

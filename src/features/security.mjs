@@ -13,6 +13,7 @@ import { issueLetsEncrypt, generateSelfSigned, installPem, certPaths, sslStatus,
 import { validate } from '../webserver.mjs';
 import { apply } from '../apply.mjs';
 import { systemProvider } from '../providers/index.mjs';
+import { passwordPolicyError } from '../security.mjs';
 
 function daysUntil(iso) {
   if (!iso) return null;
@@ -227,7 +228,8 @@ export function register(router) {
     const current = String(ctx.body.current || '');
     const next = String(ctx.body.password || '');
     if (!verifyPassword(current, ctx.user.password)) return ctx.redirect('/user/password?flash=Current%20password%20is%20incorrect&type=error');
-    if (next.length < 8) return ctx.redirect('/user/password?flash=New%20password%20must%20be%20at%20least%208%20characters&type=error');
+    const policyError = passwordPolicyError(next);
+    if (policyError) return ctx.redirect('/user/password?flash=' + encodeURIComponent(policyError) + '&type=error');
     if (next !== String(ctx.body.confirm || '')) return ctx.redirect('/user/password?flash=Passwords%20do%20not%20match&type=error');
     run('UPDATE users SET password = ?, must_change_password = 0 WHERE id = ?', hashPassword(next), ctx.user.id);
     if (ctx.body.signout) destroyUserSessions(ctx.user.id);

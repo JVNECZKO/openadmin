@@ -277,17 +277,6 @@ function composePane(mailbox, { to = '', subject = '', quote = '', error = '', d
 
 export function register(router) {
   router.get('/webmail', (ctx) => {
-    // Panel users can open their own mailbox without a second login.
-    if (ctx.user && ctx.query.as) {
-      const owned = all(`SELECT e.local_part || '@' || e.domain AS address FROM email_accounts e
-                         JOIN domains d ON d.id = e.domain_id
-                         WHERE d.user_id = ? AND e.local_part || '@' || e.domain = ?`, ctx.user.id, String(ctx.query.as));
-      if (owned.length) {
-        const token = createSession(String(ctx.query.as));
-        ctx.res.setHeader('Set-Cookie', cookieFor(token));
-        return ctx.redirect('/webmail');
-      }
-    }
     const found = mailSession(ctx.cookies[COOKIE]);
     if (!found) return { status: 200, html: loginPage({ email: ctx.query.email || '' }) };
     const { mailbox } = found;

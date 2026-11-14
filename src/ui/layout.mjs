@@ -7,6 +7,109 @@ import { htmlLang } from '../i18n.mjs';
 import { setting } from '../db.mjs';
 
 const LEVEL_LABEL = { admin: 'Admin', reseller: 'Reseller', user: 'User' };
+const LEVEL_RANK = { user: 1, reseller: 2, admin: 3 };
+
+/**
+ * Resolve the visual role context from the route, never from an accidental
+ * default. Compatibility pages carry the role in the path (`/compat/admin/…`)
+ * and `/help` is rendered in the signed-in user's real role. A caller can never
+ * gain a higher menu level than the account actually has.
+ */
+export function layoutLevelFor(pathname, declaredLevel, user) {
+  const actual = user?.level || declaredLevel || 'user';
+  const path = String(pathname || '/');
+  const compat = path.match(/^\/compat\/(user|reseller|admin)(?:\/|$)/);
+  if (compat) {
+    const explicit = compat[1];
+    return (LEVEL_RANK[explicit] || 1) <= (LEVEL_RANK[actual] || 1) ? explicit : actual;
+  }
+  if (path === '/help' || path.startsWith('/help/')) return actual;
+  if (path.startsWith('/compat')) return actual;
+  return declaredLevel || actual;
+}
+
+function searchIndexForLevel(viewLevel, caps, user) {
+  if (!user) return [];
+  const groups = navFor(viewLevel, caps, {
+    admin: user.level === 'admin', reseller: user.level !== 'user',
+    lang: user.language || 'pl', mode: user.ui_mode || 'simple',
+  });
+  return groups.flatMap((g) => g.items.map((i) => ({ label: i.label, href: i.href, icon: i.icon, group: g.title })));
+}
+
+function impersonationBanner({ user, csrf }) {
+  const view = user?.impersonation;
+  if (!view) return '';
+  const started = Number.isFinite(Date.parse(view.startedAt))
+    ? new Date(view.startedAt).toLocaleString('pl-PL')
+    : String(view.startedAt || '');
+  return html`<div class="impersonation-banner" role="region" aria-label="Tryb podglądu konta"
+    data-impersonation-banner data-actor="${view.actor}" data-subject="${view.subject}"
+    data-read-only="${view.readOnly ? '1' : '0'}"
+    style="position:sticky;top:0;z-index:80;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 18px;background:#fff4d6;border-bottom:2px solid #d97706;color:#3b2a06;font-size:14px">
+    <span aria-hidden="true" style="display:inline-flex">${icon('eye', { size: 18 })}</span>
+    <span>Podglądasz konto <strong>${view.subject}</strong> (${humanLevel(view.subjectLevel)}) jako <strong>${view.actor}</strong> (${humanLevel(view.actorLevel)}). Start: ${started}. ${view.readOnly ? 'Tryb tylko do odczytu.' : 'Tryb zapisu.'}</span>
+    <form method="post" action="/logout" class="inline" style="margin-left:auto">
+      <input type="hidden" name="_csrf" value="${csrf}">
+      <input type="hidden" name="stop_impersonation" value="1">
+      <button class="btn btn-secondary btn-sm" type="submit">Zakończ podgląd</button>
+    </form>
+  </div>`;
+}
+
+function adminContextNotice({ user, level, path }) {
+  if (!user || user.level !== 'admin' || user.impersonation) return '';
+  if (level === 'admin') return '';
+  const p = String(path || '');
+  if (!p.startsWith('/user') && !p.startsWith('/compat/user')) return '';
+  return html`<div class="alert alert-info" role="status" data-admin-context-notice
+    style="margin:0 0 14px"><strong>Widok administratora w interfejsie użytkownika.</strong>
+    Dane i operacje dotyczą konta <strong>${user.username}</strong>, a nie wybranego klienta.
+    Aby otworzyć konto klienta, użyj <a class="link" href="/admin/users">Admin → Użytkownicy → Podgląd</a>.</div>`;
+}
+
+/* OA-004: webmail has no panel SSO. Warn before the panel hands the user to a
+   mailbox login instead of silently promising a passwordless hand-off. */
+function webmailAccessNotice(path) {
+  if (!String(path || '').startsWith('/user/email')) return '';
+  return html`<dialog id="webmail-access-notice" data-webmail-notice aria-labelledby="webmail-notice-title"
+    style="max-width:460px;border:0;border-radius:14px;padding:0;box-shadow:0 24px 64px rgba(15,23,42,.35);color:#0f172a;background:#fff">
+    <div style="padding:22px 24px">
+      <h2 id="webmail-notice-title" style="margin:0 0 8px;font-size:18px">Webmail wymaga hasła skrzynki</h2>
+      <p style="margin:0 0 10px;line-height:1.5">Otworzysz webmail dla <strong data-webmail-mailbox>—</strong>.
+        To wejście otwiera formularz logowania webmaila — <strong>potrzebne będzie hasło tej skrzynki</strong>.</p>
+      <p class="small muted" style="margin:0 0 16px">Nie znasz hasła? Administrator lub reseller może je zresetować w liście skrzynek.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button type="button" class="btn btn-ghost" data-webmail-cancel>Anuluj</button>
+        <button type="button" class="btn btn-primary" data-webmail-continue>Przejdź do logowania</button>
+      </div>
+    </div>
+  </dialog>
+  <script>
+  (function () {
+    var dialog = document.getElementById('webmail-access-notice');
+    if (!dialog || typeof dialog.showModal !== 'function') return;
+    var mailbox = dialog.querySelector('[data-webmail-mailbox]');
+    var pending = '';
+    document.addEventListener('click', function (event) {
+      var link = event.target.closest && event.target.closest('a[href^="/webmail?email="]');
+      if (!link) return;
+      event.preventDefault();
+      try {
+        var url = new URL(link.href, location.origin);
+        pending = url.search;
+        mailbox.textContent = url.searchParams.get('email') || '—';
+      } catch (e) { pending = ''; }
+      dialog.showModal();
+    });
+    dialog.querySelector('[data-webmail-cancel]').addEventListener('click', function () { dialog.close(); });
+    dialog.querySelector('[data-webmail-continue]').addEventListener('click', function () {
+      dialog.close();
+      location.href = '/webmail' + pending;
+    });
+  })();
+  </script>`;
+}
 
 function brandMark(size = 30) {
   return raw(`<svg class="brand-mark" width="${size}" height="${size}" viewBox="0 0 32 32" aria-hidden="true">
@@ -164,7 +267,10 @@ function topbar({ user, level, path, csrf, notifications, title, notifyUrl = '' 
           <a class="menu-item" role="menuitem" href="/user/login-keys">${icon('shield', { size: 16 })} Login keys</a>
           <a class="menu-item" role="menuitem" href="/user/statistics">${icon('chart', { size: 16 })} My statistics</a>
           <div class="menu-sep" role="separator"></div>
-          <a class="menu-item menu-item-danger" role="menuitem" href="/logout" data-csrf="${csrf}">${icon('logout', { size: 16 })} Sign out</a>
+          <form method="post" action="/logout" class="menu-form" style="margin:0">
+            <input type="hidden" name="_csrf" value="${csrf}">
+            <button class="menu-item menu-item-danger" role="menuitem" type="submit" style="width:100%;border:0;background:none;text-align:left;font:inherit;cursor:pointer">${icon('logout', { size: 16 })} Sign out</button>
+          </form>
         </div>
       </div>
     </div>
@@ -191,6 +297,8 @@ export function renderPage({
   actions = [], counts = null, storage = null, wide = false, searchIndex = [], notifyUrl = '',
 }) {
   const path = active || '/';
+  const viewLevel = layoutLevelFor(path, level, user);
+  const navIndex = viewLevel === level ? searchIndex : searchIndexForLevel(viewLevel, caps, user);
   const docTitle = title ? `${title} · ${setting('brand_name', 'OpenAdmin')}` : setting('brand_name', 'OpenAdmin');
   const page = html`<!DOCTYPE html>
 <html lang="${htmlLang(user.language || 'pl')}" data-skin="${user.skin || 'evolution'}">
@@ -205,14 +313,16 @@ export function renderPage({
   <link rel="stylesheet" href="/assets/app.css?v=${VERSION}">
   <script>try{var m=localStorage.getItem('oa_theme');if(m==='dark'||(!m&&window.matchMedia('(prefers-color-scheme: dark)').matches&&localStorage.getItem('oa_theme')!=='light'))document.documentElement.dataset.mode='dark';}catch(e){}</script>
 </head>
-<body class="app-body" data-page="${path}" data-level="${level}">
+<body class="app-body" data-page="${path}" data-level="${viewLevel}">
   <a class="skip-link" href="#main-content">Skip to content</a>
+  ${impersonationBanner({ user, csrf })}
   <div class="app-shell">
-    ${sidebar({ user, level, caps, path, counts, storage, version: VERSION })}
+    ${sidebar({ user, level: viewLevel, caps, path, counts, storage, version: VERSION })}
     <div class="app-main">
-      ${topbar({ user, level, path, csrf, title, notifications: counts?.notifications || 0, notifyUrl })}
+      ${topbar({ user, level: viewLevel, path, csrf, title, notifications: counts?.notifications || 0, notifyUrl })}
       <main class="content ${wide ? 'content-wide' : ''}" id="main-content" tabindex="-1">
         ${setting('template:header.html', '') ? raw(`<div class="template-header">${setting('template:header.html', '')}</div>`) : ''}
+        ${adminContextNotice({ user, level: viewLevel, path })}
         ${flash ? html`<div class="flash flash-${flash.type || 'ok'}" role="status" data-flash>${icon(flash.type === 'error' ? 'alert' : 'check', { size: 18 })}<span>${flash.message}</span><button class="icon-btn" type="button" data-dismiss aria-label="Dismiss message">${icon('x', { size: 14 })}</button></div>` : ''}
         <div class="page-head reveal">
           <div class="page-head-text">
@@ -246,8 +356,9 @@ export function renderPage({
   </div>
   <div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="false"></div>
   <div class="live-region" data-live-region role="status" aria-live="polite" aria-atomic="true"></div>
-  <script>window.OA_CSRF=${raw(JSON.stringify(csrf || ''))};window.OA_PAGE=${raw(JSON.stringify({ level, path, title }))};</script>
-  <script type="application/json" id="oa-nav-index">${raw(JSON.stringify(searchIndex))}</script>
+  ${webmailAccessNotice(path)}
+  <script>window.OA_CSRF=${raw(JSON.stringify(csrf || ''))};window.OA_PAGE=${raw(JSON.stringify({ level: viewLevel, path, title }))};</script>
+  <script type="application/json" id="oa-nav-index">${raw(JSON.stringify(navIndex))}</script>
   <script src="/assets/app.js?v=${VERSION}" defer></script>
   <script src="/assets/i18n.js?v=${VERSION}" defer></script>
 </body>
@@ -255,10 +366,12 @@ export function renderPage({
   return raw(withCsrf(page.value, csrf));
 }
 
-export function renderLogin({ message = '', error = '', csrf = '', serverName = '', demo = false, notice = '' }) {
+export function renderLogin({ message = '', error = '', csrf = '', serverName = '', demo = false, notice = '', locale = 'en' }) {
+  const pl = String(locale).toLowerCase().startsWith('pl');
+  const t = (en, plText) => (pl ? plText : en);
   const demoAccounts = demo
     ? html`<div class="demo-strip">
-        <div class="demo-title">${icon('sparkles', { size: 16 })} Live demo accounts</div>
+        <div class="demo-title">${icon('sparkles', { size: 16 })} ${t('Live demo accounts', 'Konta demonstracyjne')}</div>
         <div class="demo-grid">
           <button type="button" class="demo-chip" data-demo-user="demouser" data-demo-pass="demo"><strong>User</strong><span>demouser / demo</span></button>
           <button type="button" class="demo-chip" data-demo-user="demoreseller" data-demo-pass="demo"><strong>Reseller</strong><span>demoreseller / demo</span></button>
@@ -267,14 +380,14 @@ export function renderLogin({ message = '', error = '', csrf = '', serverName = 
       </div>`
     : '';
   return html`<!DOCTYPE html>
-<html lang="en" data-skin="evolution">
+<html lang="${pl ? 'pl' : 'en'}" data-skin="evolution">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#f5f7fa">
   <meta name="csrf-token" content="${csrf}">
-  <title>Sign in · ${setting('brand_name', 'OpenAdmin')}</title>
+  <title>${t('Sign in', 'Zaloguj się')} · ${setting('brand_name', 'OpenAdmin')}</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/app.css?v=${VERSION}">
   <script>try{var m=localStorage.getItem('oa_theme');if(m==='dark'||(!m&&window.matchMedia('(prefers-color-scheme: dark)').matches&&localStorage.getItem('oa_theme')!=='light'))document.documentElement.dataset.mode='dark';}catch(e){}</script>
@@ -287,39 +400,39 @@ export function renderLogin({ message = '', error = '', csrf = '', serverName = 
       </div>
       <div class="login-card reveal">
         ${setting('template:login.html', '') ? raw(`<div class="template-login">${setting('template:login.html', '')}</div>`) : ''}
-        <h1>Sign in to your panel</h1>
-        <p class="login-sub">Use the same credentials for admin, reseller and user access.</p>
+        <h1>${t('Sign in to your panel', 'Zaloguj się do panelu')}</h1>
+        <p class="login-sub">${t('Use the same credentials for admin, reseller and user access.', 'Użyj tych samych danych do panelu administratora, resellera i użytkownika.')}</p>
         ${error ? html`<div class="alert alert-danger" role="alert">${icon('alertCircle', { size: 18 })}<div>${error}</div></div>` : ''}
         ${notice ? html`<div class="alert alert-warn" role="status">${icon('info', { size: 18 })}<div>${notice}</div></div>` : ''}
         <form method="post" action="/login" class="login-form" autocomplete="on">
           <input type="hidden" name="_csrf" value="${csrf}">
           <input type="hidden" name="redirect" value="${message || ''}">
-          <label class="field-label" for="username">Username</label>
-          <div class="input-icon">${icon('user', { size: 18 })}<input id="username" name="username" type="text" required autofocus autocomplete="username" placeholder="your-username"></div>
-          <label class="field-label" for="password">Password</label>
+          <label class="field-label" for="username">${t('Username', 'Nazwa użytkownika')}</label>
+          <div class="input-icon">${icon('user', { size: 18 })}<input id="username" name="username" type="text" required autofocus autocomplete="username" placeholder="${t('your-username', 'twoja-nazwa')}"></div>
+          <label class="field-label" for="password">${t('Password', 'Hasło')}</label>
           <div class="input-icon">${icon('lock', { size: 18 })}<input id="password" name="password" type="password" required autocomplete="current-password" placeholder="••••••••"></div>
           <div class="login-row">
-            <label class="check-field small"><input type="checkbox" name="remember" value="1" checked><span>Remember me</span></label>
-            <a href="/lost-password" class="link">Forgot password?</a>
+            <label class="check-field small"><input type="checkbox" name="remember" value="1" checked><span>${t('Remember me', 'Zapamiętaj mnie')}</span></label>
+            <a href="/lost-password" class="link">${t('Forgot password?', 'Nie pamiętasz hasła?')}</a>
           </div>
-          <button class="btn btn-primary btn-block btn-lg" type="submit">${icon('arrowRight', { size: 18 })}<span>Sign in</span></button>
+          <button class="btn btn-primary btn-block btn-lg" type="submit">${icon('arrowRight', { size: 18 })}<span>${t('Sign in', 'Zaloguj się')}</span></button>
         </form>
         ${demoAccounts}
         ${notice ? '' : ''}
-        <p class="login-help">Need an account? Contact your hosting provider. This panel is free software under the AGPL-3.0.</p>
+        <p class="login-help">${t('Need an account? Contact your hosting provider. This panel is free software under the AGPL-3.0.', 'Nie masz konta? Skontaktuj się z hostingodawcą. Panel jest wolnym oprogramowaniem na licencji AGPL-3.0.')}</p>
       </div>
-      <footer class="login-foot"><span>${setting('brand_name', 'OpenAdmin')} v${VERSION}</span><span>100% free · no license fees</span></footer>
+      <footer class="login-foot"><span>${setting('brand_name', 'OpenAdmin')} v${VERSION}</span><span>${t('100% free · no license fees', '100% darmowy · bez opłat licencyjnych')}</span></footer>
     </section>
     <aside class="login-aside">
       <div class="aside-glow"></div>
       <div class="aside-inner">
-        <span class="pill-light">${icon('gift', { size: 15 })} Free forever · unlimited domains</span>
-        <h2>Everything your server needs,<br>nothing you have to pay for.</h2>
-        <p>A DirectAdmin-compatible control panel for admins, resellers and users — domains, DNS, email, databases, files, backups and SSL in one place.</p>
+        <span class="pill-light">${icon('gift', { size: 15 })} ${t('Free forever · unlimited domains', 'Darmowy na zawsze · bez limitu domen')}</span>
+        <h2>${t('Everything your server needs,', 'Wszystko, czego potrzebuje Twój serwer,')}<br>${t('nothing you have to pay for.', 'bez opłat licencyjnych.')}</h2>
+        <p>${t('A DirectAdmin-compatible control panel for admins, resellers and users — domains, DNS, email, databases, files, backups and SSL in one place.', 'Panel zgodny z DirectAdmin dla administratorów, resellerów i użytkowników — domeny, DNS, poczta, bazy danych, pliki, kopie zapasowe i SSL w jednym miejscu.')}</p>
         <ul class="aside-list">
-          <li>${icon('check', { size: 16 })} Admin · Reseller · User panels</li>
-          <li>${icon('check', { size: 16 })} DirectAdmin-compatible CMD_API</li>
-          <li>${icon('check', { size: 16 })} Free licensing, unlimited accounts</li>
+          <li>${icon('check', { size: 16 })} ${t('Admin · Reseller · User panels', 'Panele administratora · resellera · użytkownika')}</li>
+          <li>${icon('check', { size: 16 })} ${t('DirectAdmin-compatible CMD_API', 'Zgodny CMD_API DirectAdmin')}</li>
+          <li>${icon('check', { size: 16 })} ${t('Free licensing, unlimited accounts', 'Darmowa licencja, bez limitu kont')}</li>
         </ul>
         <div class="aside-stats">
           <div><strong>3</strong><span>panel levels</span></div>

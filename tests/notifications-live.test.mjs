@@ -2,6 +2,7 @@
 // API-key scopes, support read-only handling and the notification-center UI.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -43,7 +44,9 @@ async function loginAs(username, password = 'demo') {
 function csrfFor(cookie) {
   const token = /(?:^|;\s*)OA_SESSION=([^;]+)/.exec(cookie || '')?.[1];
   assert.ok(token, 'session cookie should contain OA_SESSION');
-  const row = db.get('SELECT csrf FROM sessions WHERE token = ?', token);
+  // SEC-010: only the SHA-256 hash of the cookie token is stored.
+  const hash = crypto.createHash('sha256').update(token).digest('hex');
+  const row = db.get('SELECT csrf FROM sessions WHERE token_hash = ?', hash);
   assert.ok(row?.csrf, 'session should have a CSRF token');
   return row.csrf;
 }

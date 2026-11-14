@@ -14,30 +14,147 @@ export function eximBin() {
   return which('exim4') || which('exim') || '';
 }
 
+/**
+ * Strip Exim log syntax and return a real mailbox address, or null. Never
+ * returns `''`, `':'`, a local delivery path or an `undefined` placeholder,
+ * because callers render these values directly.
+ */
+export function normalizeAddress(value) {
+  if (value === null || value === undefined) return null;
+  let text = String(value).trim();
+  if (!text) return null;
+  const angle = /<([^<>]*)>/.exec(text);
+  if (angle) text = angle[1].trim();
+  text = text.replace(/^[<"'([]+|[>"')\]]+$/g, '').trim();
+  text = text.replace(/[,;:]+$/, '').trim();
+  if (!text || text === ':' || text === '<>' || text === 'null' || text === 'undefined') return null;
+  if (/[/\\]/.test(text)) return null; // /var/mail/mail is a delivery path, not an address
+  if (/[=<>"\s]/.test(text)) return null; // R=..., T=..., id=..., angle syntax
+  if (text.split('@').length !== 2) return null;
+  if (!/^[^@<>:\s]+@[^@<>:\s]+$/.test(text)) return null;
+  return text;
+}
+
+/** Extract every plausible address from a log payload, preserving order. */
+export function extractAddresses(value) {
+  const text = String(value ?? '');
+  const found = [];
+  const push = (candidate) => {
+    const address = normalizeAddress(candidate);
+    if (address && !found.includes(address)) found.push(address);
+  };
+  for (const match of text.matchAll(/<([^<>]*)>/g)) push(match[1]);
+  for (const token of text.split(/[\s,;]+/)) push(token);
+  return found;
+}
+
+/**
+ * Parse one Exim mainlog line into envelope fields. Fixtures cover received,
+ * bounce (`<>`), local delivery, retry/deferred and empty-sender rows.
+ */
+export function parseEximLine(line) {
+  const raw = String(line ?? '').trim();
+  const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:[.,]\d+)?\s+(\S+)\s+(<=|=>|==|\*\*|->|>>)\s*(.*)$/.exec(raw);
+  if (!match) return null;
+  const [, date, time, messageId, marker, rest] = match;
+  const payload = rest.trim();
+  const addresses = extractAddresses(payload);
+  const fromMatch = /(?:^|\s)from\s+(?:<([^>]*)>|(\S+))/i.exec(payload);
+  const forMatch = /(?:^|\s)for\s+(?:<([^>]*)>|(\S+))/i.exec(payload);
+  const bounce = marker === '<=' && /(?:^|\s)<>/.test(payload);
+  const pathMatch = /(?:^|\s)(\/[^\s<>]+)/.exec(payload);
+  const transport = /(?:^|\s)T=(\S+)/.exec(payload)?.[1] || null;
+  const router = /(?:^|\s)R=(\S+)/.exec(payload)?.[1] || null;
+  const localDelivery = !!pathMatch
+    || /(?:^|\s)(?:R|T)=(?:local|maildir|dovecot|openadmin|lmtp)/i.test(payload);
+  const retry = marker === '==' || /\b(?:defer|deferred|retry|timed out|try again)\b/i.test(payload);
+  const status = marker === '<='
+    ? 'received'
+    : marker === '**'
+      ? 'failed'
+      : marker === '=='
+        ? 'deferred'
+        : marker === '->' || marker === '>>'
+          ? 'relayed'
+          : 'delivered';
+
+  let sender = null;
+  let recipient = null;
+  if (marker === '<=') {
+    sender = normalizeAddress(fromMatch?.[1] || fromMatch?.[2]) || (bounce ? null : (addresses[0] || null));
+    recipient = normalizeAddress(forMatch?.[1] || forMatch?.[2])
+      || (addresses.length > 1 ? addresses[addresses.length - 1] : null);
+    if (bounce) sender = null;
+  } else {
+    recipient = normalizeAddress(forMatch?.[1] || forMatch?.[2]) || (addresses[0] || null);
+  }
+
+  const primary = recipient || sender || '';
+  const domain = primary.includes('@') && primary.split('@').length === 2 ? primary.split('@')[1] : '';
+  return {
+    timestamp: `${date} ${time}`,
+    createdAt: `${date}T${time}Z`,
+    messageId,
+    marker,
+    status,
+    sender,
+    recipient,
+    domain,
+    bounce,
+    localDelivery,
+    deliveryPath: pathMatch?.[1] || null,
+    retry,
+    transport,
+    router,
+    reason: payload.slice(0, 400),
+    addressParse: bounce ? 'bounce' : recipient || sender ? 'ok' : 'unparsed',
+    raw,
+  };
+}
+
+/** Parse one `exim -bp` summary line without pretending paths are addresses. */
+export function parseEximQueueLine(line) {
+  const raw = String(line ?? '').trim();
+  const match = /^\s*(\S+)\s+(\S+)\s+(\S{6,})\s+(.*)$/.exec(raw);
+  if (!match) return null;
+  const rest = match[4];
+  const sender = normalizeAddress(/<([^>]+)>/.exec(rest)?.[1]) || null;
+  const marker = /(\*\*|==|=>|->)\s*(.+?)(?::\s*(.*))?$/.exec(rest);
+  const addresses = extractAddresses(rest).filter((address) => address !== sender);
+  const recipient = normalizeAddress(marker?.[2]) || addresses[0] || null;
+  return {
+    id: match[3],
+    age: match[1],
+    size: match[2],
+    sender,
+    recipient,
+    status: marker?.[1] === '**' ? 'failed' : marker?.[1] === '==' ? 'deferred' : marker?.[1] === '=>' ? 'delivered' : 'queued',
+    reason: marker?.[3]?.trim() || '',
+    raw,
+  };
+}
+
 export function queueList() {
   if (config.provider === 'linux' && eximBin()) {
     const r = sh(eximBin(), ['-bp'], { timeout: 20000 });
     if (r.ok) {
       const rows = [];
       for (const line of r.stdout.split('\n')) {
-        const m = /^\s*(\S+)\s+(\S+)\s+(\S{6,})\s+(.*)$/.exec(line);
-        if (!m) continue;
-        const rest = m[4];
-        const sender = /<([^>]+)>/.exec(rest)?.[1] || '';
-        const marker = /(\*\*|==|=>|->)\s*([^:]+)(?::\s*(.*))?/.exec(rest);
-        rows.push({
-          id: m[3], age: m[1], size: m[2], sender,
-          recipient: marker?.[2]?.trim() || '',
-          status: marker?.[1] === '**' ? 'failed' : marker?.[1] === '==' ? 'deferred' : marker?.[1] === '=>' ? 'delivered' : 'queued',
-          reason: marker?.[3]?.trim() || '',
-        });
+        const row = parseEximQueueLine(line);
+        if (row) rows.push(row);
       }
       if (rows.length) return { ok: true, simulated: false, rows };
     }
   }
   const rows = all('SELECT * FROM mail_queue ORDER BY id DESC LIMIT 100').map((r) => ({
-    id: String(r.id), age: r.created_at, size: '—', sender: r.sender || '', recipient: r.recipient || '',
-    status: r.status || 'queued', reason: r.error || '', db: true,
+    id: String(r.id),
+    age: r.created_at,
+    size: '—',
+    sender: normalizeAddress(r.sender),
+    recipient: normalizeAddress(r.recipient),
+    status: r.status || 'queued',
+    reason: r.error || '',
+    db: true,
   }));
   return { ok: true, simulated: config.provider !== 'linux', rows };
 }
@@ -63,8 +180,8 @@ function logPath() {
   return '';
 }
 
-export function syncMailEvents({ maxLines = 2000 } = {}) {
-  const file = config.provider === 'linux' ? logPath() : '';
+export function syncMailEvents({ maxLines = 2000, logFile = null } = {}) {
+  const file = logFile || (config.provider === 'linux' ? logPath() : '');
   if (!file) return { ok: true, inserted: 0, output: 'Brak logu Exima (sandbox lub inny MTA)' };
   let text = '';
   try {
@@ -78,19 +195,27 @@ export function syncMailEvents({ maxLines = 2000 } = {}) {
   } catch (e) { return { ok: false, error: e.message, inserted: 0 }; }
   const lines = text.split('\n').filter(Boolean).slice(-maxLines);
   let inserted = 0;
+  let unparsed = 0;
   for (const line of lines) {
-    const m = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(\S+)\s+(<=|=>|\*\*|==|->)\s+(\S+)(?:\s+(.*))?$/.exec(line);
-    if (!m) continue;
+    const parsed = parseEximLine(line);
+    if (!parsed) continue;
     if (get('SELECT id FROM mail_events WHERE raw = ? LIMIT 1', line)) continue;
-    const marker = m[3];
-    const status = marker === '<=' ? 'received' : marker === '=>' ? 'delivered' : marker === '**' ? 'failed' : marker === '==' ? 'deferred' : 'relayed';
-    const address = m[4].replace(/[<>]/g, '');
-    const domain = address.includes('@') ? address.split('@').pop() : '';
+    if (parsed.addressParse === 'unparsed') unparsed++;
+    const reason = parsed.addressParse === 'unparsed'
+      ? `Nie udało się sparsować adresu: ${parsed.reason}`.slice(0, 400)
+      : parsed.reason;
     run('INSERT INTO mail_events(message_id, domain, sender, recipient, status, reason, raw, created_at) VALUES(?,?,?,?,?,?,?,?)',
-      m[2], domain, marker === '<=' ? address : '', marker === '<=' ? '' : address, status, (m[5] || '').slice(0, 400), line, m[1].replace(' ', 'T') + 'Z');
+      parsed.messageId,
+      parsed.domain || '',
+      parsed.status === 'received' ? parsed.sender : null,
+      parsed.recipient,
+      parsed.status,
+      reason,
+      line,
+      parsed.createdAt);
     inserted++;
   }
-  return { ok: true, inserted, output: `${inserted} new event(s)` };
+  return { ok: true, inserted, unparsed, output: `${inserted} new event(s)${unparsed ? `, ${unparsed} unparsed address(es)` : ''}` };
 }
 
 function digAt(name, type, server) {

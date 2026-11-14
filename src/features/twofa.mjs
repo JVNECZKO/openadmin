@@ -5,6 +5,7 @@ import { page } from '../ui/respond.mjs';
 import { card, alert, kvList, badge, btn } from '../ui/components.mjs';
 import { generateSecret, verifyTotp, otpauthURL, recoveryCodes } from '../twofa.mjs';
 import { qrSvg } from '../qr.mjs';
+import { sealTotp, openTotp } from '../secrets.mjs';
 
 export function register(router) {
   router.get('/user/2fa', (ctx) => {
@@ -54,7 +55,7 @@ export function register(router) {
       return ctx.redirect('/user/2fa?flash=' + encodeURIComponent('That code did not match. Check your authenticator clock and try again.') + '&type=error');
     }
     const codes = recoveryCodes();
-    run('UPDATE users SET twofa_secret = ?, twofa_enabled = 1 WHERE id = ?', secret, ctx.user.id);
+    run('UPDATE users SET twofa_secret = ?, twofa_enabled = 1 WHERE id = ?', sealTotp(secret), ctx.user.id);
     run('DELETE FROM twofa_recovery WHERE user_id = ?', ctx.user.id);
     for (const code of codes) {
       run('INSERT INTO twofa_recovery(user_id, code_hash) VALUES(?,?)', ctx.user.id, hashPassword(code));
@@ -73,7 +74,7 @@ export function register(router) {
     if (!verifyPassword(String(ctx.body.password || ''), user.password)) {
       return ctx.redirect('/user/2fa?flash=Password%20is%20incorrect&type=error');
     }
-    if (!verifyTotp(user.twofa_secret, String(ctx.body.code || ''))) {
+    if (!verifyTotp(openTotp(user.twofa_secret), String(ctx.body.code || ''))) {
       return ctx.redirect('/user/2fa?flash=Invalid%20authentication%20code&type=error');
     }
     run('UPDATE users SET twofa_enabled = 0, twofa_secret = NULL WHERE id = ?', user.id);

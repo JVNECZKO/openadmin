@@ -57,10 +57,10 @@ export const config = {
     serverIp: process.env.OA_SERVER_IP || '127.0.0.1',
   },
   limits: {
-    maxUploadMb: int(process.env.OA_MAX_UPLOAD_MB, 256),
+    // One real limit shared by the UI, REST API and HTTP body reader.
+    maxUploadMb: int(process.env.OA_MAX_UPLOAD_MB, 64),
     maxLoginAttempts: 8,
     loginWindowMinutes: 10,
-    maxUploadMb: 256,
   },
 };
 

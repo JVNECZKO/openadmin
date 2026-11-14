@@ -2,7 +2,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.mjs';
-import { all } from './db.mjs';
 import { writeManaged, readManaged, sh, which, isRoot } from './sys.mjs';
 
 const FIXED = [
@@ -18,30 +17,72 @@ const FIXED = [
   ['panel', 'Panel log', '/var/log/openadmin/panel.log'],
 ];
 
+/**
+ * Log sources expose `sizeBytes` (base unit = bytes). Callers must format this
+ * value with `formatBytesIEC()`; passing bytes to an MB helper is a bug.
+ */
+function logSource(id, label, file) {
+  try {
+    const stat = fs.statSync(file);
+    return {
+      id,
+      label,
+      file,
+      sizeBytes: stat.size,
+      // Kept as an explicit alias so older callers cannot silently switch units.
+      size: stat.size,
+      status: 'fresh',
+      timestamp: stat.mtime.toISOString(),
+      reason: null,
+    };
+  } catch (error) {
+    return {
+      id,
+      label,
+      file,
+      sizeBytes: null,
+      size: null,
+      status: 'unavailable',
+      timestamp: null,
+      reason: error.code || error.message || 'Nie można odczytać pliku logu',
+    };
+  }
+}
+
 export function sources() {
   const list = [];
   for (const [id, label, file] of FIXED) {
-    if (fs.existsSync(file)) list.push({ id, label, file, size: fs.statSync(file).size });
+    if (fs.existsSync(file)) list.push(logSource(id, label, file));
   }
   if (config.provider !== 'linux') {
     const dir = path.join(config.dataDir, 'simulated', 'var', 'log');
     if (fs.existsSync(dir)) {
-      for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.log'))) list.push({ id: `sim:${f}`, label: f, file: path.join(dir, f), size: fs.statSync(path.join(dir, f)).size });
+      for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.log'))) {
+        list.push(logSource(`sim:${f}`, f, path.join(dir, f)));
+      }
     }
   }
   return list;
 }
 
 function resolveSource(id) {
-  const s = sources().find((x) => x.id === id);
-  if (!s) return null;
-  if (config.provider !== 'linux' && !s.file.startsWith(path.join(config.dataDir, 'simulated'))) return null;
-  return s;
+  const source = sources().find((x) => x.id === id);
+  if (!source) return null;
+  if (config.provider !== 'linux' && !source.file.startsWith(path.join(config.dataDir, 'simulated'))) return null;
+  return source;
 }
 
 export function tail(id, { lines = 200, query = '' } = {}) {
   const src = resolveSource(String(id));
   if (!src) return { ok: false, error: 'Nieznane źródło logu' };
+  // An unreadable source is unavailable, not an empty log with size 0.
+  if (src.sizeBytes === null) {
+    return {
+      ok: false,
+      error: `Nie można odczytać pliku logu: ${src.reason || 'niedostępny'}`,
+      source: { id: src.id, label: src.label, file: src.file, sizeBytes: null, status: 'unavailable', reason: src.reason },
+    };
+  }
   const max = 512 * 1024;
   let text = '';
   try {
@@ -52,11 +93,30 @@ export function tail(id, { lines = 200, query = '' } = {}) {
     fs.readSync(fd, buf, 0, buf.length, start);
     fs.closeSync(fd);
     text = buf.toString('utf8');
-  } catch (e) { return { ok: false, error: e.message }; }
+  } catch (e) {
+    return {
+      ok: false,
+      error: e.message,
+      source: { id: src.id, label: src.label, file: src.file, sizeBytes: null, status: 'unavailable', reason: e.message },
+    };
+  }
   let rows = text.split('\n').filter(Boolean);
   if (query) { const q = String(query).toLowerCase(); rows = rows.filter((r) => r.toLowerCase().includes(q)); }
   rows = rows.slice(-Math.min(2000, Math.max(1, Number(lines) || 200)));
-  return { ok: true, rows, source: { id: src.id, label: src.label, file: src.file, size: src.size } };
+  return {
+    ok: true,
+    rows,
+    source: {
+      id: src.id,
+      label: src.label,
+      file: src.file,
+      sizeBytes: src.sizeBytes,
+      size: src.sizeBytes,
+      status: src.status,
+      timestamp: src.timestamp,
+      reason: src.reason,
+    },
+  };
 }
 
 export function downloadSource(id) {
