@@ -16,24 +16,38 @@ import { panelSecret } from './config.mjs';
 import { get, run, nowIso, audit } from './db.mjs';
 import { createSession, destroySession, hashSessionToken, userById, isSuspended } from './auth.mjs';
 
-function key() {
-  return crypto.createHash('sha256').update(panelSecret()).digest();
+function activeKeyId() {
+  return String(process.env.OA_SECRET_ACTIVE || 'primary').trim().slice(0, 64) || 'primary';
+}
+
+function keyMaterial(kid = activeKeyId()) {
+  if (kid === 'primary') return crypto.createHash('sha256').update(panelSecret()).digest();
+  const ring = String(process.env.OA_SECRET_KEYS || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const pair = ring.map((x) => x.split('=')).find(([id]) => id === kid);
+  if (!pair || !pair[1]) throw new Error(`Unknown secret key id: ${kid}`);
+  return crypto.createHash('sha256').update(pair[1]).digest();
 }
 
 export function encryptSecret(plain) {
   if (!plain) return null;
+  const kid = activeKeyId();
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key(), iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', keyMaterial(kid), iv);
   const ct = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return `${iv.toString('base64')}.${tag.toString('base64')}.${ct.toString('base64')}`;
+  return `v2:${kid}:${iv.toString('base64')}.${tag.toString('base64')}.${ct.toString('base64')}`;
 }
 
 export function decryptSecret(payload) {
   if (!payload) return null;
+  const raw = String(payload);
+  const tagged = raw.startsWith('v2:');
+  const parts = (tagged ? raw.slice(3).split(':').slice(1).join(':') : raw).split('.');
+  const kid = tagged ? raw.slice(3).split(':')[0] : 'primary';
   try {
-    const [ivB, tagB, ctB] = String(payload).split('.');
-    const decipher = crypto.createDecipheriv('aes-256-gcm', key(), Buffer.from(ivB, 'base64'));
+    if (parts.length !== 3) return null;
+    const [ivB, tagB, ctB] = parts;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', keyMaterial(tagged ? kid : 'primary'), Buffer.from(ivB, 'base64'));
     decipher.setAuthTag(Buffer.from(tagB, 'base64'));
     return Buffer.concat([decipher.update(Buffer.from(ctB, 'base64')), decipher.final()]).toString('utf8');
   } catch {
