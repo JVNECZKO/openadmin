@@ -212,8 +212,10 @@ The second phase adds the operational depth audited from Webuzo:
 - **Update Center**, **API keys + MCP**, **notification channels**, **reseller
   privilege plans**, **support access**, **AutoSSL**, **log center**, **process
   actions**, **storage destinations**, **panel branding/ACL** and **WebDisk**.
-- **Application catalogue** — Joomla, Drupal, PrestaShop, Moodle (web installer
-  where the project has no CLI).
+- **Application catalogue** — one visual catalogue with WordPress, Nextcloud,
+  Joomla, Drupal, PrestaShop and Moodle; native installers for WP/Nextcloud and
+  web installers where the project has no CLI. Resellers can install apps for a
+  customer domain.
 - **PostgreSQL**, **multi-server registry**, **demo accounts**, **shell/skeleton**.
 
 See [docs/PLATFORM-FEATURES.md](docs/PLATFORM-FEATURES.md) for prerequisites and

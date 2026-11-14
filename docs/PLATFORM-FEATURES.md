@@ -155,9 +155,10 @@ reported as unsupported rather than simulated.
 - **WebDisk**: per-user WebDAV account under `/webdisk/`, Basic auth, PROPFIND,
   GET/PUT/MKCOL/DELETE/MOVE/LOCK; live-tested with curl.
 - **Application catalogue**: Joomla, Drupal, PrestaShop, Moodle; official
-  downloads, MariaDB provisioning, web installers where the project does not
-  offer a CLI (PrestaShop), CLI attempt for Moodle; state and installer URL are
-  returned honestly.
+  downloads, MariaDB provisioning, native WP/Nextcloud installers, web
+  installers where the project does not offer a CLI, CLI attempt for Moodle;
+  state and installer URL are returned honestly. `/user/app-installer` redirects
+  to the catalogue. Resellers install the same apps for a customer domain.
 - **PostgreSQL**: optional manager; detects service and reports installation
   command when absent.
 - **Multi-server**: node registry and `/api/v1/ping` health check. It is a
@@ -176,7 +177,7 @@ translation resources, but claiming complete translations would be false.
 
 ## Verification
 
-- `node --test tests/` — 100/100 passing locally and on the Debian container.
+- `node --test tests/` — 104/104 passing locally and on the Debian container.
 - Live checks: Security Center tabs, Mail diagnosis 100%, queue/events, backup
   job + dry-run restore, backup actual restore in test DB, PHP-FPM hard-limit
   unit (CPU 50%, memory 256 MB, TasksMax 40), API key + MCP, support read-only,
