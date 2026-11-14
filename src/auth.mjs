@@ -153,6 +153,30 @@ export function destroyUserSessions(userId) {
   run('DELETE FROM sessions WHERE user_id = ?', userId);
 }
 
+
+/** Rotate a panel session after a privilege-sensitive change. */
+export function rotateSession(rawToken, { ip = '', ua = '' } = {}) {
+  const found = getSession(rawToken);
+  if (!found) return null;
+  // Never rotate a preview: the actor cookie points to the original session.
+  if (found.impersonation) return { token: rawToken, csrf: found.session.csrf, expires: found.session.expires_at, unchanged: true };
+  const created = createSession(found.user, {
+    ip: ip || found.session.ip || '', ua: ua || found.session.ua || '',
+    support: found.session.support === 1, supportToken: found.session.support_token || null,
+  });
+  destroySession(rawToken);
+  return created;
+}
+
+export function reissueSession(ctx) {
+  const rotated = rotateSession(ctx.cookies?.[COOKIE], { ip: ctx.ip, ua: ctx.req?.headers?.['user-agent'] || '' });
+  if (rotated && !rotated.unchanged) {
+    ctx.res.setHeader('Set-Cookie', serializeCookie(rotated.token, { secure: config.https }));
+    ctx.session = { ...(ctx.session || {}), csrf: rotated.csrf };
+  }
+  return rotated;
+}
+
 export function cookieName() { return COOKIE; }
 
 export function serializeCookie(token, { secure = config.https, maxAge = config.sessionTtlHours * 3600 } = {}) {

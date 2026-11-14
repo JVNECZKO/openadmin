@@ -6,6 +6,7 @@ import { card, alert, kvList, badge, btn } from '../ui/components.mjs';
 import { generateSecret, verifyTotp, otpauthURL, recoveryCodes } from '../twofa.mjs';
 import { qrSvg } from '../qr.mjs';
 import { sealTotp, openTotp } from '../secrets.mjs';
+import { reissueSession } from '../auth.mjs';
 
 export function register(router) {
   router.get('/user/2fa', (ctx) => {
@@ -56,6 +57,7 @@ export function register(router) {
     }
     const codes = recoveryCodes();
     run('UPDATE users SET twofa_secret = ?, twofa_enabled = 1 WHERE id = ?', sealTotp(secret), ctx.user.id);
+    reissueSession(ctx);
     run('DELETE FROM twofa_recovery WHERE user_id = ?', ctx.user.id);
     for (const code of codes) {
       run('INSERT INTO twofa_recovery(user_id, code_hash) VALUES(?,?)', ctx.user.id, hashPassword(code));
@@ -78,6 +80,7 @@ export function register(router) {
       return ctx.redirect('/user/2fa?flash=Invalid%20authentication%20code&type=error');
     }
     run('UPDATE users SET twofa_enabled = 0, twofa_secret = NULL WHERE id = ?', user.id);
+    reissueSession(ctx);
     run('DELETE FROM twofa_recovery WHERE user_id = ?', user.id);
     return ctx.redirect('/user/2fa?flash=Two-factor%20authentication%20disabled');
   });

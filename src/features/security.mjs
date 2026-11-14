@@ -2,7 +2,7 @@ import fs from 'node:fs';
 // SSL/TLS certificates, password changes, login keys and SSH keys.
 import crypto from 'node:crypto';
 import { all, get, run, nowIso, hashPassword, verifyPassword, audit, setting } from '../db.mjs';
-import { destroyUserSessions, activeSessions } from '../auth.mjs';
+import { destroyUserSessions, activeSessions, reissueSession } from '../auth.mjs';
 import { html as h, formatDate, randomPassword } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, table, btn, badge, alert, emptyState, kvList, tabs } from '../ui/components.mjs';
@@ -233,6 +233,7 @@ export function register(router) {
     if (next !== String(ctx.body.confirm || '')) return ctx.redirect('/user/password?flash=Passwords%20do%20not%20match&type=error');
     run('UPDATE users SET password = ?, must_change_password = 0 WHERE id = ?', hashPassword(next), ctx.user.id);
     if (ctx.body.signout) destroyUserSessions(ctx.user.id);
+    else reissueSession(ctx);
     audit(ctx.user.username, ctx.user.level, 'password.change', '', ctx.ip);
     return ctx.redirect('/user/password?flash=Password%20updated');
   });
