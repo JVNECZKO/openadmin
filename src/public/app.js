@@ -495,6 +495,7 @@
   let autoRefreshTimer = null;
   let autoRefreshLast = 0;
   let autoRefreshInterval = 30;
+  let autoRefreshAllowed = false;
 
   function refreshStampKey() { return `oa:lastRefresh:${location.pathname}${location.search}`; }
 
@@ -594,6 +595,10 @@
   }
 
   function setAutoRefresh(on, interval = 30) {
+    if (on && !autoRefreshAllowed) {
+      announce('Auto-refresh is only available on overview and monitoring pages');
+      return;
+    }
     autoRefreshInterval = Math.max(10, Math.min(3600, Number(interval) || 30));
     if (on) {
       storageSet(AUTO_KEY, '1');
@@ -622,6 +627,7 @@
       '/admin', '/admin/users', '/admin/processes', '/admin/log-center', '/admin/logs',
     ]);
     const autoAllowed = autoSafePaths.has(cleanPath);
+    autoRefreshAllowed = autoAllowed;
     if (!autoAllowed && control) {
       control.hidden = true;
       control.setAttribute('aria-disabled', 'true');
