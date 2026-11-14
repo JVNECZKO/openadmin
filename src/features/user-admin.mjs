@@ -1,7 +1,7 @@
 // User and package administration shared by the Reseller and Admin levels.
 import fs from 'node:fs';
 import path from 'node:path';
-import { all, get, run, nowIso, hashPassword, audit, setting, transaction } from '../db.mjs';
+import { all, get, run, nowIso, hashPassword, audit, setting, setSetting, transaction } from '../db.mjs';
 import { config } from '../config.mjs';
 import { limitsFor } from '../auth.mjs';
 import { html as h, isDomain, isEmail, isUsername, formatBytes, formatDate, safeJson } from '../util.mjs';
@@ -10,6 +10,7 @@ import { card, table, btn, badge, alert, emptyState, kvList, progress, form } fr
 import { icon } from '../ui/icons.mjs';
 import { listCard, domainSelect } from '../ui/pages/list.mjs';
 import { visibleUsers, canManageUser, visibleDomains, ownedUsernames, quota } from '../core/access.mjs';
+import { engineChoices } from '../provisioning.mjs';
 import { homeDir, provisionDomain } from './files.mjs';
 import { createZone } from './domains.mjs';
 import { systemProvider } from '../providers/index.mjs';
@@ -208,6 +209,9 @@ export function userForm(ctx, { path, existing = null, packages = [], resellers 
           ${pkgRows.map((p) => h`<option value="${p.name}" ${existing?.package === p.name ? 'selected' : ''}>${p.name}</option>`)}</select></div>
         <div class="field"><label class="field-label">Primary domain</label><input name="domain" value="${existing?.domain || ''}" placeholder="customer.com">
           <p class="field-help">Optional. Creates the document root, DNS zone and mail domain.</p></div>
+        <div class="field"><label class="field-label">Silnik WWW dla domeny</label><select name="engine">
+          ${engineChoices().map((e) => h`<option value="${e.id}" ${e.active ? 'selected' : ''} ${!e.available ? 'disabled' : ''}>${e.label}${e.installed ? '' : e.sandbox ? ' (sandbox)' : ' (niedostępny)'}</option>`)}
+        </select><p class="field-help">Dotyczy domeny tworzonej razem z kontem; później zmienisz w edycji domeny.</p></div>
         <div class="field"><label class="field-label">IP address</label><select name="ip">
           <option value="">${setting('server_ip', '127.0.0.1')} (server)</option>
           ${all("SELECT * FROM ips WHERE status != 'free'").map((i) => h`<option value="${i.ip}" ${existing?.ip === i.ip ? 'selected' : ''}>${i.ip}</option>`)}
@@ -252,6 +256,7 @@ export function createUser(ctx, { path, level = 'user', owner = null }) {
         r.lastInsertRowid, username, domain, `/home/${username}/domains/${domain}/public_html`, '8.3', 1, 'active', 1,
         String(ctx.body.ip || setting('server_ip', '127.0.0.1')), ts);
       createZone(d.lastInsertRowid, domain);
+      if (ctx.body.engine) setSetting(`web_server:${domain}`, String(ctx.body.engine));
       provisionDomain(username, domain);
     }
     homeDir(username);

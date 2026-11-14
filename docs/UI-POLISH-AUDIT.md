@@ -414,5 +414,10 @@ provisioning fixes:
   affordance, empty selects, queue action, process/database pagination, CSRF,
   date locale, help copy and WebDisk URL are fixed.
 
+Additional final pass: terminal commands use an inline JSON endpoint and are excluded
+from auto-refresh; auto-refresh performs a soft content swap that preserves the
+shell, header, scroll position and focus, so the layout no longer jumps. Login and
+remaining navigation labels are localized.
+
 Artifacts: `/tmp/visual-audit-current/raw.json` and
 `/tmp/visual-audit-current/shots/`.
