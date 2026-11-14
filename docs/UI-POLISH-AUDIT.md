@@ -387,3 +387,32 @@ The final HTML/screenshot artifacts are retained under `/tmp/visual-audit-final/
 - The demo dataset includes 112 databases (likely test pollution). The database page’s missing pagination is still a real issue for accounts with many databases, but its exact row count is demo-specific.
 - Full-page screenshots at 390 can be very tall; the longest (`admin/processes` 15,194 px) is preserved without truncation.
 - The repository is on a working-tree snapshot, not `HEAD`; the report intentionally describes the frozen working tree.
+
+
+---
+
+## Post-fix verification — 2026-11-14 20:33 CET
+
+Re-ran the same crawl against the integrated tree after the shell, feature and
+provisioning fixes:
+
+- **186 page snapshots / 72 route variants / 390-768-1440 px**: **0** HTTP errors,
+  **0** JavaScript exceptions, **0** failed assets, **0** page-level horizontal
+  overflow, **0** duplicate IDs, **0** POST forms without a CSRF token after shell initialization,
+  **0** escaped form markup.
+- **153/153 tests** pass locally and on the Debian container.
+- P1-01: alerts now render safe inline fragments; no literal `<strong>`/`<code>`
+  text in browser output.
+- P1-02: all 28 table actions render buttons without a confirm string.
+- P1-03/P1-04: mobile tables pin the action column; service actions wrap.
+- P1-05: `/user/websites/new` is a real four-step wizard with indicator,
+  next/back, validation and no-JS fallback.
+- P1-06: core add-domain/edit/reseller flows translated; remaining brand names
+  (`Let's Encrypt`, engine names) intentionally stay untranslated.
+- P1-07: `--muted` now `#596b7e` (5.48:1 on white).
+- P2-01/02/03/04/05/06/08/09/12/13: nav links, automation discovery, tab
+  affordance, empty selects, queue action, process/database pagination, CSRF,
+  date locale, help copy and WebDisk URL are fixed.
+
+Artifacts: `/tmp/visual-audit-current/raw.json` and
+`/tmp/visual-audit-current/shots/`.

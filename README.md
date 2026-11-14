@@ -250,7 +250,7 @@ dependencies; the test suite is plain <code>node --test</code>.
 
     node --test tests/
 
-The suite is **104/104 passing** locally and on the Debian container (Node 22,
+The suite is **153/153 passing** locally and on the Debian container (Node 22,
 no npm dependencies).
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.

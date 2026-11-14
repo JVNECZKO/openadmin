@@ -527,10 +527,39 @@
     return !!document.querySelector('form.is-submitting') || body.classList.contains('is-submitting');
   }
 
-  function refreshPage() {
+  let softRefreshAt = 0;
+  async function refreshPage() {
     if (document.hidden || hasPendingForm() || overlayStack.length) return;
-    markRefreshed();
-    window.location.reload();
+    if (Date.now() - softRefreshAt < 8000) return;
+    softRefreshAt = Date.now();
+    /* Soft refresh: keep the shell and the page header (including the
+       auto-refresh control) mounted; replace only the content cards. This
+       avoids the full-page repaint/flicker that looked like a broken layout. */
+    try {
+      const res = await fetch(location.href, { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'text/html' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      const doc = new DOMParser().parseFromString(text, 'text/html');
+      const fresh = doc.querySelector('main.content');
+      const current = document.querySelector('main.content');
+      if (!fresh || !current) throw new Error('content missing');
+      const focus = document.activeElement;
+      if (focus && current.contains(focus) && /^(INPUT|TEXTAREA|SELECT)$/.test(focus.tagName)) return;
+      const scroll = window.scrollY;
+      const oldHead = current.querySelector('.page-head');
+      const freshNodes = Array.from(fresh.children).filter((n) => !n.classList.contains('page-head'));
+      current.innerHTML = '';
+      if (oldHead) current.appendChild(oldHead);
+      freshNodes.forEach((n) => current.appendChild(n));
+      if (window.scrollY !== scroll) window.scrollTo({ top: scroll, behavior: 'instant' });
+      initForms();
+      initFilters();
+      initTableScroll();
+      markRefreshed();
+      document.dispatchEvent(new CustomEvent('oa:content-refreshed'));
+    } catch {
+      window.location.reload();
+    }
   }
 
   function stopAutoRefresh() {
@@ -1339,6 +1368,10 @@
     const fallback = $('[data-wizard-fallback]', form);
     let index = 0;
     form.classList.add('wizard-ready');
+    const appSelect = form.querySelector('[name="app"]');
+    const appPassword = form.querySelector('[name="app_admin_password"]');
+    const syncAppRequired = () => { if (appPassword) appPassword.required = !!appSelect && appSelect.value !== 'none'; };
+    if (appSelect) { appSelect.addEventListener('change', syncAppRequired); syncAppRequired(); }
     const firstInvalid = (step) => $$('input, select, textarea', step).find((el) => !el.disabled && el.willValidate && !el.checkValidity());
     function show(next, { scroll = true, focus = true } = {}) {
       index = Math.max(0, Math.min(steps.length - 1, next));
