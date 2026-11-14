@@ -1,4 +1,5 @@
 // Administrator AutoSSL and service certificate management.
+import { runPreflight } from '../preflight.mjs';
 import { all } from '../db.mjs';
 import { html as h, formatDate } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
@@ -145,7 +146,9 @@ export function register(router) {
     const r = setSslKeyType(ctx.body.type, ctx.user.username);
     return ctx.redirect(`${A}?flash=${encodeURIComponent(r.ok ? 'Typ klucza zapisany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
-  router.post(`${A}/issue`, (ctx) => {
+  router.post(`${A}/issue`, async (ctx) => {
+    const pre = await runPreflight('ssl-issue', { domain: ctx.body.domain, username: ctx.user.username, email: ctx.body.email });
+    if (pre.blocked) return ctx.redirect(`${A}?flash=${encodeURIComponent(`Preflight zablokował wystawienie: ${pre.checks.filter((c) => !c.ok && c.blocking).map((c) => c.label).join(', ')}`)}&type=error`);
     const r = issueCertificate(ctx.body.domain, { email: ctx.body.email, actor: ctx.user.username });
     return ctx.redirect(`${A}?flash=${encodeURIComponent(r.ok ? 'Certyfikat wystawiony' : r.error)}${r.ok ? '' : '&type=error'}`);
   });

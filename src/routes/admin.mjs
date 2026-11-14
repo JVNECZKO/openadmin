@@ -518,16 +518,32 @@ export function registerAdminRoutes(router) {
 
   /* ---------------------------------------------------------------- reboot */
   router.get('/admin/reboot', (ctx) => {
+    let activeJobs = [];
+    try { activeJobs = all("SELECT id, kind, target FROM operation_jobs WHERE status IN ('queued','running','cancelling') ORDER BY id LIMIT 20"); } catch { /* schema not ready */ }
+    const hostname = setting('server_name', 'localhost');
     const body = h`${card('Reboot server', h`
       <p class="small muted mb-18">A reboot restarts every service and drops all active sessions. This is simulated in the sandbox provider.</p>
       ${alert('All websites and mailboxes will be unavailable for 1–2 minutes.', 'warn')}
+      ${activeJobs.length ? alert(`Aktywne zadania blokują restart: ${activeJobs.map((j) => `#${j.id} ${j.kind}`).join(', ')}. Poczekaj na ich zakończenie.`, 'danger') : ''}
+      <div class="stack mb-18">
+        <div class="spread"><span>Aktywne joby</span>${badge(activeJobs.length ? String(activeJobs.length) : 'brak', activeJobs.length ? 'danger' : 'ok')}</div>
+        <div class="spread"><span>Hostname</span><code>${hostname}</code></div>
+        <div class="spread"><span>Efekt</span><span class="small">restart usług, przerwanie sesji, 1–2 min przerwy</span></div>
+      </div>
       <form method="post" action="/admin/reboot"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <button class="btn btn-danger" type="submit" data-confirm="Reboot the server now?">${icon('refresh', { size: 16 })} Reboot now</button></form>`)}`;
+        <div class="field"><label class="field-label" for="reboot-confirm">Wpisz hostname <code>${hostname}</code>, aby potwierdzić</label><input id="reboot-confirm" name="confirm_hostname" autocomplete="off" required></div>
+        <label class="check-field"><input type="checkbox" name="understand" value="1" required><span>Rozumiem, że wszystkie strony i poczta zostaną chwilowo niedostępne.</span></label>
+        <div class="form-actions"><button class="btn btn-danger" type="submit" ${activeJobs.length ? 'disabled' : ''}>${icon('refresh', { size: 16 })} Reboot now</button></div></form>`)}`;
     return page(ctx, { title: 'Reboot', subtitle: 'Restart the server', body });
   });
   router.post('/admin/reboot', (ctx) => {
+    const hostname = setting('server_name', 'localhost');
+    if (String(ctx.body.confirm_hostname || '') !== hostname || ctx.body.understand !== '1') return ctx.redirect(`${A}/reboot?flash=${encodeURIComponent('Potwierdź hostname i skutki restartu.')}&type=error`);
+    let active = [];
+    try { active = all("SELECT id FROM operation_jobs WHERE status IN ('queued','running','cancelling') LIMIT 1"); } catch { /* ignore */ }
+    if (active.length) return ctx.redirect(`${A}/reboot?flash=${encodeURIComponent('Aktywne zadanie blokuje restart.')}&type=error`);
     const result = systemProvider().reboot();
-    audit(ctx.user.username, 'admin', 'server.reboot', result.ok ? 'requested' : 'failed', ctx.ip);
+    audit(ctx.user.username, 'admin', 'server.reboot', `${hostname} · ${result.ok ? 'requested' : 'failed'}`, ctx.ip);
     return ctx.redirect('/admin?flash=' + encodeURIComponent(result.output) + (result.ok ? '' : '&type=error'));
   });
 

@@ -1,6 +1,7 @@
 // Admin page for web server selection, vhost generation and deployment.
 import fs from 'node:fs';
 import path from 'node:path';
+import { runPreflight } from '../preflight.mjs';
 import { all, get, setting, setSetting, audit } from '../db.mjs';
 import { html as h, formatDate } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
@@ -163,9 +164,11 @@ export function register(router) {
     return page(ctx, { title: 'Web Server', subtitle: 'Nginx, Apache, OpenLiteSpeed and LiteSpeed Enterprise', body });
   });
 
-  router.post('/admin/web-server/active', (ctx) => {
+  router.post('/admin/web-server/active', async (ctx) => {
     const id = String(ctx.body.server);
     if (!SERVERS[id]) return ctx.redirect('/admin/web-server?flash=Unknown%20server&type=error');
+    const pre = await runPreflight('web-engine', { engine: id });
+    if (pre.blocked) return ctx.redirect(`/admin/web-server?flash=${encodeURIComponent(`Preflight zablokował przełączenie: ${pre.checks.filter((c) => !c.ok && c.blocking).map((c) => c.label).join(', ')}`)}&type=error`);
     setSetting('web_server', id);
     generateAll(id);
     const deployed = deploy(id);

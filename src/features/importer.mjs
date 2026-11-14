@@ -1,6 +1,7 @@
 // Admin UI for cPanel / DirectAdmin backup migration.
 import fs from 'node:fs';
 import path from 'node:path';
+import { runPreflight } from '../preflight.mjs';
 import { config } from '../config.mjs';
 import { all, setting } from '../db.mjs';
 import { html as h } from '../util.mjs';
@@ -49,7 +50,7 @@ export function register(router) {
     return page(ctx, { title: 'Migracja z cPanel / DirectAdmin', subtitle: 'Import konta z backupu', body, wide: true });
   });
 
-  router.post('/admin/import', (ctx) => {
+  router.post('/admin/import', async (ctx) => {
     const target = String(ctx.body.target || '');
     let file = String(ctx.body.path || '').trim();
     let temp = null;
@@ -72,6 +73,8 @@ export function register(router) {
     let detected;
     try { detected = detectKind(file); } catch (e) { detected = { ok: false, error: e.message }; }
     if (!detected.ok) { try { fs.rmSync(temp, { force: true }); } catch {} return ctx.redirect('/admin/import?flash=' + encodeURIComponent(detected.error) + '&type=error'); }
+    const pre = await runPreflight('import', { source: file, targetUsername: target });
+    if (pre.blocked) { try { fs.rmSync(temp, { force: true }); } catch {} return ctx.redirect('/admin/import?flash=' + encodeURIComponent(`Preflight zablokował import: ${pre.checks.filter((c) => !c.ok && c.blocking).map((c) => c.label).join(', ')}`) + '&type=error'); }
     let result;
     try { result = importArchive({ filePath: file, targetUsername: target }); }
     catch (e) { result = { ok: false, error: e.message }; }

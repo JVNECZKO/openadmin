@@ -67,8 +67,9 @@ export function register(router) {
     const diskPct = lim.disk_mb ? Math.round((storage.used / lim.disk_mb) * 100) : 0;
     const bwPct = lim.bandwidth_mb ? Math.round((bw / lim.bandwidth_mb) * 100) : 0;
     const body = h`
-      ${diskPct >= 80 ? alert(`Dysk zajęty w ${diskPct}% limitu. ${diskPct >= 100 ? 'Nowe pliki mogą zostać odrzucone.' : 'Zaplanuj czyszczenie lub zwiększ pakiet.'}`, diskPct >= 100 ? 'danger' : 'warn') : ''}
-      ${bwPct >= 80 ? alert(`Transfer zajęty w ${bwPct}% limitu.`, bwPct >= 100 ? 'danger' : 'warn') : ''}
+      ${diskPct >= 80 ? alert(`Dysk zajęty w ${diskPct}% limitu. ${diskPct >= 100 ? 'Nowe pliki mogą zostać odrzucone.' : diskPct >= 90 ? 'Stan krytyczny — natychmiast zaplanuj czyszczenie lub zwiększ pakiet.' : 'Zaplanuj czyszczenie lub zwiększ pakiet.'}`, diskPct >= 90 ? 'danger' : 'warn') : ''}
+      ${bwPct >= 80 ? alert(`Transfer zajęty w ${bwPct}% limitu.${bwPct >= 90 ? ' Stan krytyczny.' : ''}`, bwPct >= 90 ? 'danger' : 'warn') : ''}
+      ${!series.length ? alert('Brak danych pomiarowych. Admin może uruchomić zbieranie w Administracja → Statystyki.', 'info') : ''}
       <div class="stat-grid">
         <div class="stat-card"><div class="stat-icon">${icon('chart', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Bandwidth (30d)</span><strong class="stat-value">${formatBytes(bw)}</strong><span class="stat-sub">${lim.bandwidth_mb ? 'of ' + formatBytes(lim.bandwidth_mb) : 'unlimited'}</span></div></div>
         <div class="stat-card"><div class="stat-icon tone-ok">${icon('database', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Disk used</span><strong class="stat-value">${formatBytes(storage.used)}</strong><span class="stat-sub">${storage.files} inodes</span></div></div>
