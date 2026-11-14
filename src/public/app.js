@@ -1440,6 +1440,7 @@
       event.preventDefault();
       const command = input.value.trim();
       if (!command) return;
+      const formData = new URLSearchParams(new FormData(form));
       const line = document.createElement('div');
       line.className = 'tline tline-pending';
       line.textContent = `$ ${command}`;
@@ -1451,7 +1452,7 @@
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'X-Requested-With': 'fetch' },
-          body: new URLSearchParams(new FormData(form)),
+          body: formData,
         });
         const data = await res.json().catch(() => ({}));
         const out = document.createElement('div');
