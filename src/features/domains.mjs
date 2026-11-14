@@ -38,7 +38,7 @@ export function userDomains(ctx) {
     dnsCount: get('SELECT COUNT(*) n FROM dns_records WHERE domain_id = ?', d.id).n,
   }));
   const body = h`
-    ${alert(`Domains use <strong>/home/${ctx.user.username}/domains/&lt;domain&gt;/public_html</strong> as their document root, exactly like DirectAdmin.`, 'info')}
+    ${alert(h`Domeny używają katalogu <strong>/home/${ctx.user.username}/domains/&lt;domena&gt;/public_html</strong> jako document root — tak jak w DirectAdmin.`, 'info')}
     ${listCard({
       title: 'Domains', sub: `${rows.length} domain${rows.length === 1 ? '' : 's'}${lim.domains ? ` of ${lim.domains} allowed` : ' · unlimited'}`,
       columns: [
@@ -64,7 +64,7 @@ export function userDomains(ctx) {
       ],
       empty: 'No domains yet. Add your first domain to get started.',
     })}`;
-  return page(ctx, { title: 'Domains', subtitle: 'Manage the domains hosted on your account', body });
+  return page(ctx, { title: 'Domeny', subtitle: 'Zarządzaj domenami na swoim koncie', body });
 }
 
 export function domainCreatePage(ctx, error = '', values = {}) {
