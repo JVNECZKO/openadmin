@@ -1,0 +1,43 @@
+{
+  "name": "openadmin",
+  "version": "1.0.0",
+  "description": "OpenAdmin — a free, open-source, DirectAdmin-compatible hosting control panel",
+  "homepage": "https://openadmin.live",
+  "author": "OpenAdmin contributors",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "bin": {
+    "openadmin": "./bin/openadmin.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs",
+    "install-panel": "node bin/openadmin.mjs install",
+    "test": "node --test tests/",
+    "site": "bash site/build.sh"
+  },
+  "keywords": [
+    "control-panel",
+    "directadmin",
+    "hosting",
+    "web-hosting",
+    "dns",
+    "email",
+    "free",
+    "open-source",
+    "self-hosted"
+  ],
+  "files": [
+    "bin",
+    "src",
+    "docs",
+    "install.sh",
+    "README.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "LICENSE"
+  ]
+}

@@ -1,0 +1,38 @@
+# Runtime data and secrets
+data/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.sqlite
+*.db
+*.tar.gz
+*.zip
+backups/
+tmp/
+id_rsa*
+.ssh/
+.npmrc
+
+# Local tooling
+node_modules/
+coverage/
+*.log
+*.pid
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Research artefacts are not redistributed
+recon/
+
+# Landing page build output
+site/dist/
+site/download/*.tar.gz
+site/content/*.json
+site/preview/

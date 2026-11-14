@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.woff2 binary
+*.tar.gz binary
+
+install.sh text eol=lf
+site/build.sh text eol=lf
+bin/openadmin.mjs text eol=lf

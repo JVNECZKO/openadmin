@@ -1,0 +1,1364 @@
+[
+  {
+    "name": "DASHBOARD",
+    "url": "/",
+    "title": "Dashboard",
+    "level": "user",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "LOGIN_REDIRECT",
+    "url": "/:pathMatch(.*)*",
+    "title": "Page not found",
+    "level": ":pathMatch(.*)*",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_BACKUPS",
+    "url": "/admin-backup-and-restore",
+    "title": "Backup and Restore",
+    "level": "admin",
+    "commands": [
+      "CMD_ADMIN_BACKUP"
+    ],
+    "legacy": [
+      "/CMD_ADMIN_BACKUP",
+      "/CMD_ADMIN_BACKUP_MODIFY"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_SSL",
+    "url": "/admin-ssl",
+    "title": "Admin SSL",
+    "level": "admin",
+    "commands": [
+      "CMD_ADMIN_SSL"
+    ],
+    "legacy": [
+      "/CMD_ADMIN_SSL"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_LIST_ALL_USERS",
+    "url": "/admin/all-users",
+    "title": "Show All Users",
+    "level": "admin",
+    "commands": [
+      "CMD_ALL_USER_SHOW"
+    ],
+    "legacy": [
+      "/CMD_ALL_USER_SHOW"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_BACKUPS",
+    "url": "/admin/backups",
+    "title": "Backup and Restore",
+    "level": "admin",
+    "commands": [
+      "CMD_ADMIN_BACKUP"
+    ],
+    "legacy": [
+      "/CMD_ADMIN_BACKUP",
+      "/CMD_ADMIN_BACKUP_MODIFY"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_BRUTE_FORCE_MONITOR",
+    "url": "/admin/brute-force-monitor",
+    "title": "Brute Force Monitor",
+    "level": "admin",
+    "commands": [
+      "CMD_BRUTE_FORCE_MONITOR"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_CRONJOBS",
+    "url": "/admin/cron-jobs",
+    "title": "All User Cron Jobs",
+    "level": "admin",
+    "commands": [
+      "CMD_ADMIN_CRON_JOBS"
+    ],
+    "legacy": [
+      "/CMD_ADMIN_CRON_JOBS"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_CUSTOM_HTTPD",
+    "url": "/admin/custom-httpd",
+    "title": "Custom HTTPD Configurations",
+    "level": "admin",
+    "commands": [
+      "CMD_CUSTOM_HTTPD"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_CUSTOMBUILD",
+    "url": "/admin/custombuild",
+    "title": "CustomBuild",
+    "level": "admin",
+    "commands": [
+      "CMD_CUSTOMBUILD"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_CUSTOMIZE_LOGIN_PAGE",
+    "url": "/admin/customize-skin/login-page/:tab?",
+    "title": "Login Customization",
+    "level": "admin",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_DB_MONITOR",
+    "url": "/admin/db-monitor",
+    "title": "DB Monitor",
+    "level": "admin",
+    "commands": [
+      "CMD_DB_MONITOR"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_EMAIL_SUMMARY",
+    "url": "/admin/email-summary",
+    "title": "E-mail Summary",
+    "level": "admin",
+    "commands": [
+      "CMD_EMAIL_LOGS_SUMMARY"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_EMAIL_TRACKING",
+    "url": "/admin/email-tracking",
+    "title": "E-mail Tracking",
+    "level": "admin",
+    "commands": [
+      "CMD_EMAIL_LOGS"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_FILE_EDITOR",
+    "url": "/admin/file-editor",
+    "title": "System file editor",
+    "level": "admin",
+    "commands": [
+      "CMD_ADMIN_FILE_EDITOR"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_IP_MANAGER",
+    "url": "/admin/ip-manager",
+    "title": "IP Management",
+    "level": "admin",
+    "commands": [
+      "CMD_IP_MANAGER"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_LICENSE",
+    "url": "/admin/license",
+    "title": "Licensing",
+    "level": "admin",
+    "commands": [
+      "CMD_LICENSE"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_LOG_VIEWER",
+    "url": "/admin/log-viewer",
+    "title": "Log Viewer",
+    "level": "admin",
+    "commands": [
+      "CMD_LOG_VIEWER"
+    ],
+    "legacy": [
+      "/CMD_LOG_VIEWER"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_MAIL_QUEUE",
+    "url": "/admin/mail-queue",
+    "title": "Mail Queue Administration",
+    "level": "admin",
+    "commands": [
+      "CMD_MAIL_QUEUE"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_MAINTENANCE",
+    "url": "/admin/maintenance",
+    "title": "Maintenance",
+    "level": "admin",
+    "commands": [
+      "CMD_MAINTENANCE"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_MODSECURITY",
+    "url": "/admin/modsecurity",
+    "title": "ModSecurity",
+    "level": "admin",
+    "commands": [
+      "CMD_MOD_SECURITY"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_MULTI_SERVER",
+    "url": "/admin/multi-server",
+    "title": "Multi Server Setup",
+    "level": "admin",
+    "commands": [
+      "CMD_MULTI_SERVER"
+    ],
+    "legacy": [
+      "/CMD_MULTI_SERVER"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_PHP_SAFE_MODE",
+    "url": "/admin/php-safe-mode",
+    "title": "PHP Settings",
+    "level": "admin",
+    "commands": [
+      "CMD_PHP_SAFE_MODE"
+    ],
+    "legacy": [
+      "/CMD_PHP_SAFE_MODE"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_PLUGIN_MANAGER",
+    "url": "/admin/plugin-manager",
+    "title": "Plugin Manager",
+    "level": "admin",
+    "commands": [
+      "CMD_PLUGIN_MANAGER"
+    ],
+    "legacy": [
+      "/CMD_PLUGIN_MANAGER"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_RESELLER_PACKAGES",
+    "url": "/admin/reseller-packages",
+    "title": "Manage Reseller Packages",
+    "level": "admin",
+    "commands": [
+      "CMD_MANAGE_RESELLER_PACKAGES",
+      "CMD_RESELLER_PACKAGES"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_SERVER_TLS",
+    "url": "/admin/server-tls",
+    "title": "Server TLS Certificate",
+    "level": "admin",
+    "commands": [
+      "CMD_SERVER_TLS"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_SERVICES",
+    "url": "/admin/services",
+    "title": "System Services",
+    "level": "admin",
+    "commands": [
+      "CMD_SYSTEM_SERVICES"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_SETTINGS",
+    "url": "/admin/settings",
+    "title": "Administrator Settings",
+    "level": "admin",
+    "commands": [
+      "CMD_ADMIN_SETTINGS"
+    ],
+    "legacy": [
+      "/CMD_ADMIN_SETTINGS"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_SKINS",
+    "url": "/admin/skins",
+    "title": "Skins",
+    "level": "reseller",
+    "commands": [
+      "CMD_SKINS"
+    ],
+    "legacy": [
+      "/CMD_SKINS"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_SSL",
+    "url": "/admin/ssl",
+    "title": "Admin SSL",
+    "level": "admin",
+    "commands": [
+      "CMD_ADMIN_SSL"
+    ],
+    "legacy": [
+      "/CMD_ADMIN_SSL"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_SYSTEM_BACKUP_SETTINGS",
+    "url": "/admin/system-backup/:tab?",
+    "title": "Settings",
+    "level": "admin",
+    "commands": [],
+    "legacy": [
+      "/CMD_SYSTEM_BACKUP"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_SYSTEM_PACKAGES",
+    "url": "/admin/system-packages",
+    "title": "System Packages",
+    "level": "admin",
+    "commands": [
+      "CMD_SYSTEM_PACKAGES"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_UPDATES",
+    "url": "/admin/updates",
+    "title": "Updates",
+    "level": "admin",
+    "commands": [
+      "CMD_VERSION"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_LIST_ADMINS",
+    "url": "/admin/users/admins",
+    "title": "Administrators",
+    "level": "admin",
+    "commands": [
+      "CMD_ADMIN_SHOW"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_MOVE_USERS",
+    "url": "/admin/users/move",
+    "title": "Move Users Between Resellers",
+    "level": "admin",
+    "commands": [
+      "CMD_MOVE_USERS"
+    ],
+    "legacy": [
+      "/CMD_MOVE_USERS"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_USERS_RESELLERS",
+    "url": "/admin/users/resellers",
+    "title": "Resellers",
+    "level": "admin",
+    "commands": [
+      "CMD_RESELLER_SHOW"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_LIST_ADMINS",
+    "url": "/admins",
+    "title": "Administrators",
+    "level": "admin",
+    "commands": [
+      "CMD_ADMIN_SHOW"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "API_DOCS",
+    "url": "/api-docs",
+    "title": "API Documentation",
+    "level": "user",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "DEV_PLAYGROUND",
+    "url": "/dev/playground",
+    "title": "DEV Playground",
+    "level": "user",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "LOGIN_MAIN",
+    "url": "/login",
+    "title": null,
+    "level": "user",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "LOGIN_ACCOUNT_DISABLED",
+    "url": "/login/account-disabled",
+    "title": null,
+    "level": "user",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "LOGIN_LICENSE_EXPIRED",
+    "url": "/login/license-expired",
+    "title": null,
+    "level": "user",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "LOGIN_LOST_PASSWORD",
+    "url": "/login/lost-password",
+    "title": null,
+    "level": "user",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_MESSAGE_TEMPLATES",
+    "url": "/message-templates",
+    "title": "Message templates",
+    "level": "reseller",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "NETDATA",
+    "url": "/netdata",
+    "title": "Netdata server metrics",
+    "level": "admin",
+    "commands": [
+      "CMD_NETDATA_SOCK"
+    ],
+    "legacy": [
+      "/CMD_NETDATA_SOCK/"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "PHPMYADMIN",
+    "url": "/phpmyadmin/:database?",
+    "title": "phpMyAdmin",
+    "level": "user",
+    "commands": [
+      "CMD_PHPMYADMIN"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "PLUGIN",
+    "url": "/plugin",
+    "title": "Plugins",
+    "level": "user",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_PROCESS_MONITOR",
+    "url": "/process-monitor",
+    "title": "Process Monitor",
+    "level": "admin",
+    "commands": [
+      "CMD_PROCESS_MONITOR"
+    ],
+    "legacy": [
+      "/CMD_PROCESS_MONITOR"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_RESELLER_PACKAGES",
+    "url": "/reseller-packages",
+    "title": "Manage Reseller Packages",
+    "level": "admin",
+    "commands": [
+      "CMD_MANAGE_RESELLER_PACKAGES",
+      "CMD_RESELLER_PACKAGES"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_STATS",
+    "url": "/reseller-stats",
+    "title": "Reseller Statistics",
+    "level": "reseller",
+    "commands": [
+      "CMD_RESELLER_STATS"
+    ],
+    "legacy": [
+      "/CMD_RESELLER_STATS"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_BACKUPS",
+    "url": "/reseller/backups",
+    "title": "Manage User Backups",
+    "level": "reseller",
+    "commands": [
+      "CMD_USER_BACKUP"
+    ],
+    "legacy": [
+      "/CMD_USER_BACKUP",
+      "/CMD_USER_BACKUP_MODIFY"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_CPANEL_IMPORT",
+    "url": "/reseller/cpanel-import",
+    "title": "cPanel Import",
+    "level": "reseller",
+    "commands": [
+      "CMD_CPANEL_IMPORT"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_CUSTOMIZE_SKIN",
+    "url": "/reseller/customize-skin",
+    "title": "Customize Evolution Skin",
+    "level": "reseller",
+    "commands": [
+      "CMD_SKIN_CUSTOMIZATION"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_DNS",
+    "url": "/reseller/dns-zones",
+    "title": "DNS Administration",
+    "level": "reseller",
+    "commands": [
+      "CMD_DNS_RESELLER",
+      "CMD_DNS_ADMIN"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_IP_CONFIG",
+    "url": "/reseller/ip-config",
+    "title": "IP Management",
+    "level": "reseller",
+    "commands": [
+      "CMD_IP_CONFIG"
+    ],
+    "legacy": [
+      "/CMD_IP_CONFIG"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_MESSAGE_USERS",
+    "url": "/reseller/message-users",
+    "title": "Message All Users",
+    "level": "reseller",
+    "commands": [
+      "CMD_TICKET_CREATE"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_NAMESERVERS",
+    "url": "/reseller/nameservers",
+    "title": "Name Servers",
+    "level": "reseller",
+    "commands": [
+      "CMD_NAME_SERVER"
+    ],
+    "legacy": [
+      "/CMD_NAME_SERVER"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_PASSWORDS",
+    "url": "/reseller/passwords",
+    "title": "Change Passwords",
+    "level": "reseller",
+    "commands": [
+      "CMD_SEARCH",
+      "CMD_JSON_VALIDATE",
+      "CMD_USER_PASSWD"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_SECURITY_TXT",
+    "url": "/reseller/security-txt",
+    "title": "Security.txt Report",
+    "level": "reseller",
+    "commands": [
+      "CMD_SECURITY_TXT"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_SKINS",
+    "url": "/reseller/skins",
+    "title": "Skins",
+    "level": "reseller",
+    "commands": [
+      "CMD_SKINS"
+    ],
+    "legacy": [
+      "/CMD_SKINS"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_TICKETS",
+    "url": "/reseller/tickets",
+    "title": "Manage Tickets",
+    "level": "reseller",
+    "commands": [
+      "CMD_TICKET",
+      "CMD_TICKET_MANAGE"
+    ],
+    "legacy": [
+      "/CMD_TICKET_MANAGE"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_USER_PACKAGES",
+    "url": "/reseller/user-packages",
+    "title": "Manage User Packages",
+    "level": "reseller",
+    "commands": [
+      "CMD_MANAGE_USER_PACKAGES"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_LIST_MY_USERS",
+    "url": "/reseller/users",
+    "title": "My Users",
+    "level": "reseller",
+    "commands": [
+      "CMD_USER_SHOW"
+    ],
+    "legacy": [
+      "/CMD_USER_SHOW",
+      "/CMD_SHOW_USER"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "RESELLER_CREATE_USER",
+    "url": "/reseller/users/create-user",
+    "title": "Add New User",
+    "level": "reseller",
+    "commands": [
+      "CMD_MANAGE_USER_PACKAGES"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_USERS_RESELLERS",
+    "url": "/resellers",
+    "title": "Resellers",
+    "level": "admin",
+    "commands": [
+      "CMD_RESELLER_SHOW"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_RESOURCE_LIMITS",
+    "url": "/resource-usage",
+    "title": "Resource usage",
+    "level": "user",
+    "commands": [
+      "CMD_RESOURCE_USAGE"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "ROUNDCUBE",
+    "url": "/roundcube",
+    "title": "Webmail: Roundcube",
+    "level": "user",
+    "commands": [
+      "CMD_EMAIL_POP"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "RSPAMD",
+    "url": "/rspamd",
+    "title": "Rspamd spam filtering system",
+    "level": "admin",
+    "commands": [
+      "CMD_RSPAMD_SOCK"
+    ],
+    "legacy": [
+      "/CMD_RSPAMD_SOCK/"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "ADMIN_SERVER_STATS",
+    "url": "/server-stats",
+    "title": "Server Statistics",
+    "level": "admin",
+    "commands": [
+      "CMD_ADMIN_STATS"
+    ],
+    "legacy": [
+      "/CMD_ADMIN_STATS"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "SITE_HELPER",
+    "url": "/site-helper",
+    "title": "Help",
+    "level": "user",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "SQUIRRELMAIL",
+    "url": "/squirrelmail",
+    "title": "Webmail: Squirrelmail",
+    "level": "user",
+    "commands": [
+      "CMD_EMAIL_POP"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_STATS",
+    "url": "/stats",
+    "title": "User statistics",
+    "level": "user",
+    "commands": [
+      "CMD_USER_STATS"
+    ],
+    "legacy": [
+      "/CMD_USER_STATS"
+    ],
+    "needsDomain": true
+  },
+  {
+    "name": "ADMIN_SYSTEM_BACKUP",
+    "url": "/system-backup",
+    "title": "System Backup",
+    "level": "admin",
+    "commands": [
+      "CMD_SYSTEM_BACKUP"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "SYSTEM_INFO",
+    "url": "/system-info",
+    "title": "System Information",
+    "level": "user",
+    "commands": [
+      "CMD_SYSTEM_INFO"
+    ],
+    "legacy": [
+      "/CMD_SYSTEM_INFO"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_BACKUP",
+    "url": "/user-backups",
+    "title": "Backup and Restore",
+    "level": "user",
+    "commands": [
+      "CMD_SITE_BACKUP"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "RESELLER_USER_PACKAGES",
+    "url": "/user-packages",
+    "title": "Manage User Packages",
+    "level": "reseller",
+    "commands": [
+      "CMD_MANAGE_USER_PACKAGES"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_CLAMAV",
+    "url": "/user/clamav",
+    "title": "ClamAV",
+    "level": "user",
+    "commands": [
+      "CMD_CLAMAV"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_CREATE_TICKET",
+    "url": "/user/create-ticket",
+    "title": "Create Ticket",
+    "level": "user",
+    "commands": [
+      "CMD_TICKET_CREATE"
+    ],
+    "legacy": [
+      "/CMD_TICKET_CREATE"
+    ],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_CRONJOBS",
+    "url": "/user/cronjobs",
+    "title": "Cron Jobs",
+    "level": "user",
+    "commands": [
+      "CMD_CRON_JOBS"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_DATABASE_MANAGEMENT",
+    "url": "/user/database",
+    "title": "Databases",
+    "level": "user",
+    "commands": [
+      "CMD_DB_SHOW"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_DNS",
+    "url": "/user/dns-records",
+    "title": "DNS Management",
+    "level": "user",
+    "commands": [
+      "CMD_DNS_CONTROL"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_DOMAIN_POINTERS",
+    "url": "/user/domain-pointers",
+    "title": "Domain Pointers",
+    "level": "user",
+    "commands": [
+      "CMD_DOMAIN_POINTER"
+    ],
+    "legacy": [
+      "/CMD_DOMAIN_POINTER"
+    ],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_DOMAIN_STATISTICS",
+    "url": "/user/domain-statistics",
+    "title": "Site summary & logs",
+    "level": "user",
+    "commands": [
+      "CMD_USER_STATS"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_DOMAINS",
+    "url": "/user/domains",
+    "title": "Domains",
+    "level": "user",
+    "commands": [
+      "CMD_ADDITIONAL_DOMAINS",
+      "CMD_DOMAIN"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_EMAIL_ACCOUNTS",
+    "url": "/user/email/accounts",
+    "title": "E-mail Accounts",
+    "level": "user",
+    "commands": [
+      "CMD_EMAIL_POP"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_EMAIL_AUTORESPONDERS",
+    "url": "/user/email/autoresponders",
+    "title": "Autoresponders",
+    "level": "user",
+    "commands": [
+      "CMD_EMAIL_AUTORESPONDER"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_EMAIL_CATCH_ALL",
+    "url": "/user/email/catch-all",
+    "title": "Catch-All E-mail",
+    "level": "user",
+    "commands": [
+      "CMD_EMAIL_CATCH_ALL"
+    ],
+    "legacy": [
+      "/CMD_EMAIL_CATCH_ALL"
+    ],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_EMAIL_FILTERS",
+    "url": "/user/email/filters",
+    "title": "SPAM Filters",
+    "level": "user",
+    "commands": [
+      "CMD_EMAIL_FILTER"
+    ],
+    "legacy": [
+      "/CMD_EMAIL_FILTER"
+    ],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_EMAIL_FORWARDERS",
+    "url": "/user/email/forwarders",
+    "title": "Forwarders",
+    "level": "user",
+    "commands": [
+      "CMD_EMAIL_FORWARDER"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_EMAIL_LISTS",
+    "url": "/user/email/lists",
+    "title": "Mailing Lists",
+    "level": "user",
+    "commands": [
+      "CMD_EMAIL_LIST"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_EMAIL_SPAMASSASSIN",
+    "url": "/user/email/spamassassin",
+    "title": "SpamAssassin Setup",
+    "level": "user",
+    "commands": [
+      "CMD_SPAMASSASSIN"
+    ],
+    "legacy": [
+      "/CMD_SPAMASSASSIN"
+    ],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_EMAIL_TRACKING",
+    "url": "/user/email/tracking",
+    "title": "E-mail Tracking",
+    "level": "user",
+    "commands": [
+      "CMD_EMAIL_LOGS"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_EMAIL_VACATIONS",
+    "url": "/user/email/vacations",
+    "title": "Vacation Messages",
+    "level": "user",
+    "commands": [
+      "CMD_EMAIL_VACATION"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_FILEMANAGER",
+    "url": "/user/filemanager",
+    "title": "File Manager",
+    "level": "user",
+    "commands": [
+      "CMD_FILE_MANAGER_READ"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_FILEMANAGER_EDIT",
+    "url": "/user/filemanager/edit",
+    "title": "File Edit",
+    "level": "user",
+    "commands": [
+      "CMD_FILE_MANAGER_READ"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_FTP_ACCOUNTS",
+    "url": "/user/ftp-accounts",
+    "title": "FTP Management",
+    "level": "user",
+    "commands": [
+      "CMD_FTP"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_GIT_VERSION",
+    "url": "/user/git-version",
+    "title": "Git",
+    "level": "user",
+    "commands": [
+      "CMD_GIT"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_HANDLERS",
+    "url": "/user/handlers",
+    "title": "Apache Handlers",
+    "level": "user",
+    "commands": [
+      "CMD_HANDLERS"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_HOTLINKS",
+    "url": "/user/hotlinks",
+    "title": "Hotlink Protection",
+    "level": "user",
+    "commands": [
+      "CMD_HOTLINK"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_IMAPSYNC",
+    "url": "/user/imapsync",
+    "title": "IMAPSync Migrations",
+    "level": "user",
+    "commands": [
+      "CMD_IMAPSYNC"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_LOGIN_KEYS",
+    "url": "/user/login-keys",
+    "title": "Login Keys",
+    "level": "user",
+    "commands": [
+      "CMD_LOGIN_KEYS"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_MESSAGES",
+    "url": "/user/messages",
+    "title": "Messages",
+    "level": "user",
+    "commands": [
+      "CMD_TICKET"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_MIMETYPES",
+    "url": "/user/mimetypes",
+    "title": "MIME types",
+    "level": "user",
+    "commands": [
+      "CMD_MIME_TYPES"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_MODSECURITY",
+    "url": "/user/modsecurity",
+    "title": "Web Application Firewall",
+    "level": "user",
+    "commands": [
+      "CMD_MOD_SECURITY"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_NGINX_TEMPLATES",
+    "url": "/user/nginx-templates",
+    "title": "Nginx Templates",
+    "level": "user",
+    "commands": [
+      "CMD_NGINX_TEMPLATES"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_PERL_MODULES",
+    "url": "/user/perl-modules",
+    "title": "Perl Modules",
+    "level": "user",
+    "commands": [
+      "CMD_PERL_MODULES"
+    ],
+    "legacy": [
+      "/CMD_PERL_MODULES"
+    ],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_PHP_SETTINGS",
+    "url": "/user/php-settings",
+    "title": "PHP Settings",
+    "level": "user",
+    "commands": [
+      "CMD_PHP_SETTINGS"
+    ],
+    "legacy": [
+      "/CMD_PHP_SETTINGS"
+    ],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_PROFILE",
+    "url": "/user/profile",
+    "title": "User Profile",
+    "level": "user",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_PROTECTED_DIRECTORIES",
+    "url": "/user/protected-directories",
+    "title": "Password Protected Directories",
+    "level": "user",
+    "commands": [
+      "CMD_PROTECTED_DIRECTORIES"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_REDIRECTS",
+    "url": "/user/redirects",
+    "title": "Site Redirects",
+    "level": "user",
+    "commands": [
+      "CMD_REDIRECT"
+    ],
+    "legacy": [
+      "/CMD_REDIRECT"
+    ],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_REDIS",
+    "url": "/user/redis",
+    "title": "Redis",
+    "level": "user",
+    "commands": [
+      "CMD_REDIS"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_SSH_KEYS",
+    "url": "/user/ssh-keys",
+    "title": "SSH Keys",
+    "level": "user",
+    "commands": [
+      "CMD_SSH_KEYS"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_SSL",
+    "url": "/user/ssl",
+    "title": "SSL/TLS Certificates",
+    "level": "user",
+    "commands": [
+      "CMD_DOMAIN_TLS"
+    ],
+    "legacy": [
+      "/CMD_SSL"
+    ],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_SUBDOMAINS",
+    "url": "/user/subdomains",
+    "title": "Subdomain Management",
+    "level": "user",
+    "commands": [
+      "CMD_SUBDOMAIN"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_TERMINAL",
+    "url": "/user/terminal",
+    "title": "Terminal",
+    "level": "user",
+    "commands": [
+      "CMD_TERMINAL"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_TICKETS",
+    "url": "/user/tickets",
+    "title": "Tickets",
+    "level": "user",
+    "commands": [
+      "CMD_TICKET"
+    ],
+    "legacy": [],
+    "needsDomain": false
+  },
+  {
+    "name": "USER_UNIT",
+    "url": "/user/unit",
+    "title": "Nginx Unit",
+    "level": "user",
+    "commands": [
+      "CMD_UNIT"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "USER_WORDPRESS",
+    "url": "/user/wordpress",
+    "title": "WordPress Manager",
+    "level": "user",
+    "commands": [
+      "CMD_WORDPRESS"
+    ],
+    "legacy": [],
+    "needsDomain": true
+  },
+  {
+    "name": "GLOBAL_RESOURCE_LIMITS",
+    "url": "/users-resource-usage",
+    "title": "Resource usage",
+    "level": "reseller",
+    "commands": [],
+    "legacy": [],
+    "needsDomain": false
+  }
+]
