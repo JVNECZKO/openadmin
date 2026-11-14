@@ -23,12 +23,15 @@ import { generateAll } from '../webserver.mjs';
 import { deployPools } from '../phpfpm.mjs';
 import { apply } from '../apply.mjs';
 import { userHome } from '../paths.mjs';
+import { featureSets } from '../plancenter.mjs';
 
 const LIMIT_FIELDS = [
   ['domains', 'Domains'], ['subdomains', 'Subdomains'], ['emails', 'Email accounts'], ['email_quota_mb', 'Mailbox quota (MB)'],
   ['ftp', 'FTP accounts'], ['databases', 'Databases'], ['bandwidth_mb', 'Bandwidth (MB/mo)'], ['disk_mb', 'Disk quota (MB)'],
   ['inodes', 'Inodes'], ['cron', 'Cron jobs'], ['ssl', 'SSL certificates'], ['users', 'Users (resellers)'], ['ips', 'IP addresses'],
   ['packages', 'Packages (resellers)'], ['autoresponders', 'Autoresponders'], ['forwarders', 'Forwarders'], ['mailing_lists', 'Mailing lists'],
+  ['cpu_percent', 'CPU limit (%)'], ['memory_mb', 'Memory limit (MB)'], ['io_read_mbps', 'IO read (MB/s)'], ['io_write_mbps', 'IO write (MB/s)'],
+  ['max_processes', 'Max processes'],
 ];
 const BOOL_LIMITS = [['dns_control', 'DNS control'], ['ssh', 'SSH access'], ['cgi', 'CGI scripts'], ['spam', 'Spam filter'], ['catch_all', 'Catch-all email'], ['wordpress', 'WordPress manager'], ['nodejs', 'Node.js apps'], ['python', 'Python apps'], ['git', 'Git']];
 const PHP = ['8.4', '8.3', '8.2', '8.1', '7.4'];
@@ -65,6 +68,21 @@ export function packagesPage(ctx, { owner = null, type = 'user', path = '/resell
   return page(ctx, { title: type === 'reseller' ? 'Reseller Packages' : 'User Packages', subtitle: 'Define storage, feature and account limits', body });
 }
 
+function copySkeleton(username) {
+  const src = setting('skeleton_directory', '/etc/skel');
+  if (!fs.existsSync(src)) return;
+  const home = `/home/${username}`;
+  try {
+    fs.mkdirSync(home, { recursive: true });
+    for (const ent of fs.readdirSync(src)) {
+      const to = path.join(home, ent);
+      if (fs.existsSync(to)) continue;
+      fs.cpSync(path.join(src, ent), to, { recursive: true, errorOnExist: false, force: false });
+    }
+    systemProvider().chownUser(username);
+  } catch { /* skeleton is best effort */ }
+}
+
 function fmtLimit(v, unit = '') {
   if (v === undefined || v === null) return '—';
   if (Number(v) === 0) return 'unlimited';
@@ -73,8 +91,8 @@ function fmtLimit(v, unit = '') {
 
 export function packageForm(ctx, { path, type, existing = null }) {
   const limits = existing ? safeJson(existing.limits, {}) : (type === 'reseller'
-    ? { users: 50, domains: 500, subdomains: 1000, emails: 1000, databases: 200, bandwidth_mb: 0, disk_mb: 102400, ips: 2, packages: 20, php: ['8.3'], dns_control: 1 }
-    : { domains: 10, subdomains: 25, emails: 50, ftp: 10, databases: 10, bandwidth_mb: 102400, disk_mb: 10240, cron: 5, ssl: 10, php: ['8.3'], dns_control: 0 });
+    ? { users: 50, domains: 500, subdomains: 1000, emails: 1000, databases: 200, bandwidth_mb: 0, disk_mb: 102400, ips: 2, packages: 20, php: ['8.3'], dns_control: 1, cpu_percent: 0, memory_mb: 0, io_read_mbps: 0, io_write_mbps: 0, max_processes: 200 }
+    : { domains: 10, subdomains: 25, emails: 50, ftp: 10, databases: 10, bandwidth_mb: 102400, disk_mb: 10240, cron: 5, ssl: 10, php: ['8.3'], dns_control: 0, cpu_percent: 0, memory_mb: 0, io_read_mbps: 0, io_write_mbps: 0, max_processes: 100 });
   const body = h`${card(existing ? `Edit package · ${existing.name}` : 'Create package', h`
     <form method="post" action="${path}${existing ? '/' + encodeURIComponent(existing.name) : '/create'}" class="oa-form">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -91,6 +109,9 @@ export function packageForm(ctx, { path, type, existing = null }) {
         </div>`)}
       </div>
       <h3 class="form-section">Features</h3>
+      <div class="field field-full"><label class="field-label">Feature set</label>
+        <select name="feature_set"><option value="">— ręcznie —</option>${featureSets().map((f) => h`<option value="${f.name}" ${limits.feature_set === f.name ? 'selected' : ''}>${f.name}</option>`)}</select>
+        <p class="field-help">Wybranie feature setu nadpisuje poniższe przełączniki funkcji.</p></div>
       <div class="form-grid form-grid-3">
         ${BOOL_LIMITS.map(([k, label]) => h`<div class="field"><label class="check-field"><input type="checkbox" name="bool_${k}" value="1" ${Number(limits[k]) ? 'checked' : ''}> <span>${label}</span></label></div>`)}
         <div class="field field-full"><label class="field-label">PHP versions</label>
@@ -118,6 +139,14 @@ export function savePackage(ctx, { type, owner, path }) {
   limits.dns_control = ctx.body.bool_dns_control ? 1 : 0;
   limits.php = [].concat(ctx.body.php || []).filter((v) => PHP.includes(v));
   if (!limits.php.length) limits.php = ['8.3'];
+  if (ctx.body.feature_set) {
+    const fs = get('SELECT * FROM feature_sets WHERE name = ?', String(ctx.body.feature_set));
+    if (fs) {
+      const features = safeJson(fs.features, {});
+      for (const [k, v] of Object.entries(features)) limits[k] = v ? 1 : 0;
+      limits.feature_set = fs.name;
+    }
+  }
   const exists = get('SELECT * FROM packages WHERE name = ?', name);
   if (exists) {
     if (owner && exists.owner && exists.owner !== owner) return ctx.redirect(`${path}?flash=You%20cannot%20edit%20this%20package&type=error`);
@@ -125,6 +154,7 @@ export function savePackage(ctx, { type, owner, path }) {
   } else {
     run('INSERT INTO packages(name, owner, type, limits, created_at) VALUES(?,?,?,?,?)', name, owner, type, JSON.stringify(limits), nowIso());
   }
+  try { deployPools(); } catch { /* apply status records failures */ }
   return ctx.redirect(`${path}?flash=` + encodeURIComponent(`Package ${name} saved`));
 }
 
@@ -226,6 +256,7 @@ export function createUser(ctx, { path, level = 'user', owner = null }) {
       provisionDomain(username, domain);
     }
     homeDir(username);
+    copySkeleton(username);
     if (ctx.body.notify) {
       run('INSERT INTO messages(level, username, subject, body, created_at) VALUES(?,?,?,?,?)', 'user', username,
         'Witaj w OpenAdmin', `Twoje konto jest gotowe.\nUżytkownik: ${username}\nPanel: https://${setting('server_name', 'localhost')}:2222\nDomeny: ${domain || '—'}`, ts);
@@ -240,6 +271,12 @@ export function createUser(ctx, { path, level = 'user', owner = null }) {
 
 export function updateUser(ctx, { path, target }) {
   const password = String(ctx.body.password || '');
+  const shell = !!ctx.body.shell_enabled;
+  if (shell !== !!target.shell_enabled) {
+    const r = systemProvider().setShell(target.username, shell);
+    if (!r.ok) return ctx.redirect(`${path}/${target.id}?flash=${encodeURIComponent('Shell change failed: ' + (r.output || 'unknown'))}&type=error`);
+    run('UPDATE users SET shell_enabled = ? WHERE id = ?', shell ? 1 : 0, target.id);
+  }
   if (password && password.length < 8) return ctx.redirect(`${path}/${target.id}?flash=Password%20too%20short&type=error`);
   run(`UPDATE users SET email = ?, package = ?, domain = ?, ip = ?, notes = ?, suspended = ?, must_change_password = ? WHERE id = ?`,
     String(ctx.body.email || target.email), String(ctx.body.package || target.package), String(ctx.body.domain || '').toLowerCase(),
@@ -271,6 +308,7 @@ export function userDetailPage(ctx, { path, target }) {
           <div class="field"><label class="field-label">New password</label><div class="field-control"><input id="upass" name="password" type="password" placeholder="leave blank to keep">
             <button class="btn btn-secondary btn-sm" type="button" data-genpass="#upass" style="margin-left:8px">Generate</button></div></div>
           <div class="field"><label class="field-label">Notes</label><input name="notes" value="${target.notes || ''}"></div>
+          <div class="field field-full"><label class="check-field"><input type="checkbox" name="shell_enabled" value="1" ${target.shell_enabled ? 'checked' : ''}> <span>Shell access (SSH/terminal)</span></label></div>
           <div class="field field-full"><label class="check-field"><input type="checkbox" name="suspend" value="1" ${target.suspended ? 'checked' : ''}> <span>Suspend account</span></label></div>
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Save account</button>
@@ -329,6 +367,7 @@ export function deleteUser(ctx, { path, target }) {
   try { fs.rmSync(userHome(target.username), { recursive: true, force: true }); } catch { /* ignore */ }
   try { apply({ web: true, dns: true, mail: true, pools: true }); } catch { /* ignore */ }
   audit(ctx.user.username, ctx.user.level, 'user.delete', target.username, ctx.ip);
+  try { deployPools(); } catch { /* apply status records failures */ }
   return ctx.redirect(`${path}?flash=` + encodeURIComponent(`Account ${target.username} deleted`));
 }
 

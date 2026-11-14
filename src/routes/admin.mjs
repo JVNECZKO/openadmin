@@ -1,5 +1,6 @@
 // Administrator routes: server, resellers, users, packages, settings, tools.
 import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { all, get, run, nowIso, setting, setSetting, audit, hashPassword, transaction } from '../db.mjs';
@@ -27,6 +28,25 @@ import { mailStatus, deployMail, syncMail } from '../mail.mjs';
 import { register as registerSetup } from '../features/setup.mjs';
 import { register as registerHealth } from '../features/health.mjs';
 import { register as registerImporter } from '../features/importer.mjs';
+import { register as registerSecurityCenter } from '../features/security-center.mjs';
+import { register as registerMailOps } from '../features/mail-ops.mjs';
+import { register as registerBackupCenter } from '../features/backup-center.mjs';
+import { register as registerPhpManager } from '../features/php-manager.mjs';
+import { register as registerPlanCenter } from '../features/plan-center.mjs';
+import { register as registerDnsCenter } from '../features/dns-center.mjs';
+import { register as registerImportLive } from '../features/import-live.mjs';
+import { register as registerUpdateCenter } from '../features/update-center.mjs';
+import { register as registerApiKeys } from '../features/api-keys.mjs';
+import { register as registerNotifications } from '../features/notifications.mjs';
+import { register as registerResellerTools } from '../features/reseller-tools.mjs';
+import { register as registerSupportAccess } from '../features/support-access.mjs';
+import { register as registerSslCenter } from '../features/ssl-center.mjs';
+import { register as registerLogCenter } from '../features/log-center.mjs';
+import { register as registerStorage } from '../features/storage-center.mjs';
+import { register as registerPanelConfig } from '../features/panel-config.mjs';
+import { register as registerUserTools } from '../features/user-tools.mjs';
+import { register as registerPostgres } from '../features/postgres-center.mjs';
+import { register as registerMultiServer } from '../features/multiserver.mjs';
 
 const A = '/admin';
 
@@ -99,6 +119,25 @@ export function registerAdminRoutes(router) {
   registerSetup(router);
   registerHealth(router);
   registerImporter(router);
+  registerSecurityCenter(router);
+  registerMailOps(router);
+  registerBackupCenter(router);
+  registerPhpManager(router);
+  registerPlanCenter(router);
+  registerDnsCenter(router);
+  registerImportLive(router);
+  registerUpdateCenter(router);
+  registerApiKeys(router);
+  registerNotifications(router);
+  registerResellerTools(router);
+  registerSupportAccess(router);
+  registerSslCenter(router);
+  registerLogCenter(router);
+  registerStorage(router);
+  registerPanelConfig(router);
+  registerUserTools(router);
+  registerPostgres(router);
+  registerMultiServer(router);
   router.get('/admin', (ctx) => adminDashboard(ctx));
 
   /* ------------------------------------------------------------ system info */
@@ -183,14 +222,68 @@ export function registerAdminRoutes(router) {
   router.get('/admin/processes', (ctx) => {
     const result = systemProvider().processes();
     const rows = result.rows || [];
+    const logs = all('SELECT * FROM process_log ORDER BY id DESC LIMIT 50');
     const body = h`${card('Process list', h`
       ${result.ok ? '' : alert(result.error, 'error')}
-      ${result.simulated ? alert('Showing the host process list from the sandbox provider; service control is simulated.', 'info') : ''}
+      ${result.simulated ? alert('Showing the host process list from the sandbox provider; kill/action is simulated.', 'info') : ''}
       <div class="table-wrap"><table class="data-table">
-        <thead><tr><th>PID</th><th>User</th><th>CPU %</th><th>MEM %</th><th>Command</th></tr></thead>
-        <tbody>${rows.map((p) => h`<tr><td class="cell-mono">${p.pid}</td><td>${p.user}</td><td>${p.cpu.toFixed(1)}</td><td>${p.mem.toFixed(1)}</td><td class="cell-mono truncate" style="max-width:620px;display:block">${p.command}</td></tr>`)}</tbody>
-      </table></div>`, { sub: `${rows.length} process(es) · load ${os.loadavg()[0].toFixed(2)} · ${os.cpus().length} cores`, padded: false })}`;
-    return page(ctx, { title: 'Process Monitor', subtitle: 'Running processes on the server', body });
+        <thead><tr><th>PID</th><th>User</th><th>CPU %</th><th>MEM %</th><th>Command</th><th></th></tr></thead>
+        <tbody>${rows.map((p) => h`<tr><td class="cell-mono">${p.pid}</td><td>${p.user}</td><td>${p.cpu.toFixed(1)}</td><td>${p.mem.toFixed(1)}</td><td class="cell-mono truncate" style="max-width:520px;display:block">${p.command}</td>
+          <td class="col-actions"><div class="row-actions">
+            <form method="post" action="/admin/processes/${p.pid}/kill" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="icon-btn danger" type="submit" title="Kill" onclick="return confirm('Wysłać SIGTERM do PID ${p.pid}?')">${icon('close', { size: 16 })}</button></form>
+            <form method="post" action="/admin/processes/${p.pid}/trace" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="icon-btn" type="submit" title="Trace">${icon('eye', { size: 16 })}</button></form>
+          </div></td></tr>`)}</tbody>
+      </table></div>`, { sub: `${rows.length} process(es) · load ${os.loadavg()[0].toFixed(2)} · ${os.cpus().length} cores`, padded: false })}
+      ${card('Kill all by user', h`<form method="post" action="/admin/processes/user" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <select name="user">${[...new Set(rows.map((r) => r.user))].map((u) => h`<option>${u}</option>`)}</select>
+        <button class="btn btn-danger" type="submit" onclick="return confirm('Wysłać SIGTERM do wszystkich procesów tego użytkownika?')">Kill all</button></form>`)}
+      ${logs.length ? card('Process action log', table({
+        columns: [{ label: 'Czas', render: (r) => formatDate(r.created_at, { time: true }) }, { label: 'Akcja', key: 'action' }, { label: 'PID', key: 'pid' }, { label: 'Użytkownik', key: 'user' }, { label: 'Wynik', key: 'result' }],
+        rows: logs,
+      }), { padded: false }) : ''}`;
+    return page(ctx, { title: 'Process Monitor', subtitle: 'Running processes, kill and trace', body, wide: true });
+  });
+
+  const protectedPids = () => new Set([1, process.pid, process.ppid]);
+  function killProcess(pid, actor) {
+    const n = Number(pid);
+    if (!Number.isInteger(n) || n < 2) return { ok: false, error: 'Invalid PID' };
+    if (protectedPids().has(n)) return { ok: false, error: 'Ten proces jest chroniony' };
+    if (config.provider !== 'linux') {
+      run('INSERT INTO process_log(action, pid, user, command, result, created_at) VALUES(?,?,?,?,?,?)', 'kill', n, actor, '', 'simulated', nowIso());
+      return { ok: true, simulated: true };
+    }
+    try {
+      process.kill(n, 'SIGTERM');
+      run('INSERT INTO process_log(action, pid, user, command, result, created_at) VALUES(?,?,?,?,?,?)', 'kill', n, actor, '', 'SIGTERM sent', nowIso());
+      return { ok: true };
+    } catch (e) {
+      run('INSERT INTO process_log(action, pid, user, command, result, created_at) VALUES(?,?,?,?,?,?)', 'kill', n, actor, '', e.message, nowIso());
+      return { ok: false, error: e.message };
+    }
+  }
+  router.post('/admin/processes/:pid/kill', (ctx) => {
+    const r = killProcess(ctx.params.pid, ctx.user.username);
+    return ctx.redirect('/admin/processes?flash=' + encodeURIComponent(r.ok ? `Wysłano SIGTERM do ${ctx.params.pid}` : r.error) + (r.ok ? '' : '&type=error'));
+  });
+  router.post('/admin/processes/:pid/trace', (ctx) => {
+    const pid = Number(ctx.params.pid);
+    if (!Number.isInteger(pid) || pid < 2) return ctx.redirect('/admin/processes?flash=Invalid%20PID&type=error');
+    if (config.provider !== 'linux') {
+      return page(ctx, { title: 'Process trace', subtitle: `PID ${pid}`, body: h`${card('Sandbox trace', h`<pre class="code-block">PID ${pid}: trace simulated in sandbox.</pre>`)}` });
+    }
+    const strace = spawnSync('sh', ['-c', `command -v strace && timeout 3 strace -f -p ${pid} -e trace=network,file -s 120 2>&1 || true`], { encoding: 'utf8', timeout: 8000 });
+    const proc = spawnSync('sh', ['-c', `cat /proc/${pid}/status 2>/dev/null | head -20; echo ---; readlink /proc/${pid}/cwd 2>/dev/null; cat /proc/${pid}/cmdline 2>/dev/null | tr '\0' ' '`], { encoding: 'utf8', timeout: 5000 });
+    const output = `${strace.stdout || ''}\n${proc.stdout || ''}`.trim() || 'Brak danych (proces zakończony lub ptrace niedozwolony).';
+    return page(ctx, { title: 'Process trace', subtitle: `PID ${pid}`, body: h`${card('Trace', h`<pre class="code-block small">${output.slice(0, 20000)}</pre>`)}` });
+  });
+  router.post('/admin/processes/user', (ctx) => {
+    const rows = systemProvider().processes().rows || [];
+    const user = String(ctx.body.user || '');
+    const pids = [...new Set(rows.filter((r) => r.user === user).map((r) => r.pid))];
+    let ok = 0;
+    for (const pid of pids) if (killProcess(pid, ctx.user.username).ok) ok++;
+    return ctx.redirect('/admin/processes?flash=' + encodeURIComponent(`Wysłano SIGTERM do ${ok} procesów użytkownika ${user}`));
   });
 
   /* ------------------------------------------------------------------ logs */

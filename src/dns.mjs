@@ -28,11 +28,12 @@ export function renderZone(domain) {
   const ns1 = setting('ns1', 'ns1.localhost');
   const ns2 = setting('ns2', 'ns2.localhost');
   const ip = setting('server_ip', '127.0.0.1');
+  const zoneTtl = Number(get('SELECT dns_ttl FROM domains WHERE name = ?', domain)?.dns_ttl || 3600);
   const soaNs = ns1.endsWith('.') ? ns1 : ns1 + '.';
   const lines = [
     `; OpenAdmin zone for ${domain}`,
     `; generated ${nowIso()}`,
-    '$TTL 3600',
+    `$TTL ${zoneTtl}`,
     `@   IN  SOA ${soaNs} postmaster.${domain}. (`,
     `        ${serial(domain)} ; serial`,
     '        3600       ; refresh',
@@ -62,7 +63,7 @@ export function renderZone(domain) {
   }
   // Always advertise the server IP for the apex when no A record exists.
   if (!records.some((r) => r.type === 'A' && (r.name === '@' || r.name === domain))) {
-    lines.push(`@\t3600\tIN\tA\t${ip}`);
+    lines.push(`@\t${zoneTtl}\tIN\tA\t${ip}`);
   }
   return lines.join('\n') + '\n';
 }

@@ -402,7 +402,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   ip TEXT,
   ua TEXT,
   created_at TEXT NOT NULL,
-  expires_at TEXT NOT NULL
+  expires_at TEXT NOT NULL,
+  support INTEGER NOT NULL DEFAULT 0,
+  support_token TEXT
 );
 
 CREATE TABLE IF NOT EXISTS login_attempts (
@@ -501,6 +503,281 @@ CREATE TABLE IF NOT EXISTS cron_log (
   exit_code INTEGER,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ip_blocks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  cidr TEXT NOT NULL UNIQUE,
+  reason TEXT,
+  created_by TEXT,
+  expires_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS root_ssh_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  fingerprint TEXT,
+  private_path TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS country_blocks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  country TEXT NOT NULL UNIQUE,
+  mode TEXT NOT NULL DEFAULT 'block',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mail_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id TEXT,
+  domain TEXT,
+  sender TEXT,
+  recipient TEXT,
+  status TEXT NOT NULL,
+  reason TEXT,
+  raw TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mail_events_created ON mail_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_mail_events_domain ON mail_events(domain);
+
+CREATE TABLE IF NOT EXISTS mail_filters (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  domain TEXT,
+  kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  action TEXT NOT NULL DEFAULT 'reject',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mail_routing (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  domain TEXT NOT NULL UNIQUE,
+  router TEXT NOT NULL DEFAULT 'local',
+  target TEXT,
+  split INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS remote_smtp (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL DEFAULT 587,
+  username TEXT,
+  password_enc TEXT,
+  tls INTEGER NOT NULL DEFAULT 1,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS backup_servers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  host TEXT,
+  port INTEGER,
+  path TEXT,
+  username TEXT,
+  password_enc TEXT,
+  key_enc TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_test_at TEXT,
+  last_test_ok INTEGER,
+  last_test_output TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS backup_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'server',
+  target_user TEXT,
+  components TEXT NOT NULL DEFAULT '[]',
+  server_id INTEGER REFERENCES backup_servers(id) ON DELETE SET NULL,
+  schedule TEXT NOT NULL DEFAULT 'daily',
+  retention_days INTEGER NOT NULL DEFAULT 14,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_run_at TEXT,
+  last_status TEXT,
+  last_output TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS backup_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER REFERENCES backup_jobs(id) ON DELETE SET NULL,
+  filename TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'running',
+  size_mb REAL NOT NULL DEFAULT 0,
+  server_id INTEGER,
+  local_path TEXT,
+  remote_path TEXT,
+  output TEXT,
+  started_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS feature_sets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  features TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dns_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  records TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS blacklist_domains (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  domain TEXT NOT NULL UNIQUE,
+  reason TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS import_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source TEXT NOT NULL,
+  host TEXT,
+  username TEXT,
+  target TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  progress INTEGER NOT NULL DEFAULT 0,
+  log TEXT,
+  options TEXT,
+  created_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  key_hash TEXT NOT NULL,
+  scopes TEXT NOT NULL DEFAULT '[]',
+  allowed_ips TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  revoked_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  level TEXT NOT NULL DEFAULT 'info',
+  title TEXT NOT NULL,
+  body TEXT,
+  link TEXT,
+  read_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notification_channels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  config_enc TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS support_access (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token_hash TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'read',
+  expires_at TEXT NOT NULL,
+  revoked_at TEXT,
+  last_used_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS autossl_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  domain TEXT NOT NULL,
+  action TEXT NOT NULL,
+  status TEXT NOT NULL,
+  detail TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS storage_paths (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  path TEXT NOT NULL UNIQUE,
+  type TEXT NOT NULL DEFAULT 'ext4',
+  alert_percent INTEGER NOT NULL DEFAULT 90,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reseller_plans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  privileges TEXT NOT NULL DEFAULT '{}',
+  limits TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS process_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL,
+  pid INTEGER,
+  user TEXT,
+  command TEXT,
+  result TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS postgres_databases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  db_name TEXT NOT NULL UNIQUE,
+  db_user TEXT NOT NULL,
+  password_enc TEXT,
+  size_mb REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS servers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  token_enc TEXT,
+  role TEXT NOT NULL DEFAULT 'web',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_seen_at TEXT,
+  last_status TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS webdisks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  username TEXT NOT NULL,
+  domain TEXT NOT NULL,
+  path TEXT NOT NULL,
+  password_enc TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS country_email_policy (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  country TEXT NOT NULL UNIQUE,
+  action TEXT NOT NULL DEFAULT 'reject',
+  created_at TEXT NOT NULL
+);
+
 `;
 
 export function nowIso() {
@@ -538,6 +815,23 @@ export function getDb() {
     if (appCols.length && !appCols.some((c) => c.name === 'data_dir')) db.exec('ALTER TABLE app_installs ADD COLUMN data_dir TEXT');
     if (!userCols.some((c) => c.name === 'language')) db.exec("ALTER TABLE users ADD COLUMN language TEXT NOT NULL DEFAULT 'pl'");
     if (!userCols.some((c) => c.name === 'ui_mode')) db.exec("ALTER TABLE users ADD COLUMN ui_mode TEXT NOT NULL DEFAULT 'simple'");
+    if (!userCols.some((c) => c.name === 'shell_enabled')) db.exec('ALTER TABLE users ADD COLUMN shell_enabled INTEGER NOT NULL DEFAULT 0');
+    if (!userCols.some((c) => c.name === 'demo')) db.exec('ALTER TABLE users ADD COLUMN demo INTEGER NOT NULL DEFAULT 0');
+    if (!userCols.some((c) => c.name === 'reseller_plan')) db.exec('ALTER TABLE users ADD COLUMN reseller_plan TEXT');
+    if (!userCols.some((c) => c.name === 'home_path')) db.exec('ALTER TABLE users ADD COLUMN home_path TEXT');
+    if (!userCols.some((c) => c.name === 'webdisk_enabled')) db.exec('ALTER TABLE users ADD COLUMN webdisk_enabled INTEGER NOT NULL DEFAULT 0');
+    const pkgCols = db.prepare('PRAGMA table_info(packages)').all();
+    if (!pkgCols.some((c) => c.name === 'features')) db.exec("ALTER TABLE packages ADD COLUMN features TEXT NOT NULL DEFAULT '{}'");
+    if (!pkgCols.some((c) => c.name === 'resources')) db.exec("ALTER TABLE packages ADD COLUMN resources TEXT NOT NULL DEFAULT '{}'");
+    const domCols = db.prepare('PRAGMA table_info(domains)').all();
+    if (!domCols.some((c) => c.name === 'dns_ttl')) db.exec('ALTER TABLE domains ADD COLUMN dns_ttl INTEGER NOT NULL DEFAULT 3600');
+    const sslCols = db.prepare('PRAGMA table_info(ssl_certs)').all();
+    if (!sslCols.some((c) => c.name === 'key_type')) db.exec("ALTER TABLE ssl_certs ADD COLUMN key_type TEXT DEFAULT 'rsa2048'");
+    const jobCols = db.prepare('PRAGMA table_info(backup_jobs)').all();
+    if (jobCols.length && !jobCols.some((c) => c.name === 'target_user')) db.exec('ALTER TABLE backup_jobs ADD COLUMN target_user TEXT');
+    const sessCols = db.prepare('PRAGMA table_info(sessions)').all();
+    if (sessCols.length && !sessCols.some((c) => c.name === 'support')) db.exec('ALTER TABLE sessions ADD COLUMN support INTEGER NOT NULL DEFAULT 0');
+    if (sessCols.length && !sessCols.some((c) => c.name === 'support_token')) db.exec('ALTER TABLE sessions ADD COLUMN support_token TEXT');
   } catch { /* table created by schema */ }
   return db;
 }

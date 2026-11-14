@@ -18,12 +18,15 @@ function brandMark(size = 30) {
 }
 
 function sidebar({ user, level, caps, path, counts, storage, version }) {
+  const brand = setting('brand_name', 'OpenAdmin');
+  const subtitle = setting('brand_subtitle', level === 'admin' ? 'Server' : level === 'reseller' ? 'Reseller' : 'Control Panel');
+  const logo = setting('brand_logo', '');
   const groups = navFor(level, caps, { admin: user.level === 'admin', reseller: user.level !== 'user', lang: user?.language || 'pl', mode: user?.ui_mode || 'simple' });
   return html`<aside class="sidebar" id="sidebar" data-sidebar>
     <div class="sidebar-brand">
       <a href="/${level}" class="brand-link">
-        ${brandMark(34)}
-        <span class="brand-text"><strong>OpenAdmin</strong><em>${level === 'admin' ? 'Server' : level === 'reseller' ? 'Reseller' : 'Control Panel'}</em></span>
+        ${logo ? html`<img class="brand-logo" src="${logo}" alt="${brand}" width="34" height="34">` : brandMark(34)}
+        <span class="brand-text"><strong>${brand}</strong><em>${subtitle}</em></span>
       </a>
       <button class="icon-btn only-mobile" type="button" data-sidebar-close aria-label="Close menu">${icon('x', { size: 18 })}</button>
     </div>
@@ -57,7 +60,7 @@ function sidebar({ user, level, caps, path, counts, storage, version }) {
         <div class="storage-sub"><span>${storage.percent}% of ${storage.total ? formatBytes(storage.total) : 'unlimited'}</span><span>${storage.files} files</span></div>
       </div>` : ''}
       <div class="sidebar-meta">
-        <span>OpenAdmin v${version}</span>
+        <span>${brand} v${version}</span>
         <span class="badge badge-ok">Free</span>
       </div>
     </div>
@@ -104,13 +107,14 @@ export function renderPage({
   actions = [], counts = null, storage = null, wide = false, searchIndex = [],
 }) {
   const path = active || '/';
-  const docTitle = title ? `${title} · OpenAdmin` : 'OpenAdmin';
+  const docTitle = title ? `${title} · ${setting('brand_name', 'OpenAdmin')}` : setting('brand_name', 'OpenAdmin');
   return html`<!DOCTYPE html>
 <html lang="${htmlLang(user.language || 'pl')}" data-skin="${user.skin || 'evolution'}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
+  <meta name="csrf-token" content="${csrf}">
   <title>${docTitle}</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/app.css?v=${VERSION}">
@@ -135,7 +139,7 @@ export function renderPage({
         ${setting('template:footer.html', '') ? raw(`<div class="template-footer">${setting('template:footer.html', '')}</div>`) : ''}
       </main>
       <footer class="app-footer">
-        <span>OpenAdmin ${VERSION} · free &amp; open source (AGPL-3.0) · unlimited accounts</span>
+        <span>${setting('brand_footer', `OpenAdmin ${VERSION} · free & open source (AGPL-3.0) · unlimited accounts`)}</span>
         <span class="footer-links"><a href="/api/v1/openapi.json">API</a><a href="/help">Documentation</a><a href="/admin/license">License</a></span>
       </footer>
     </div>
@@ -174,7 +178,8 @@ export function renderLogin({ message = '', error = '', csrf = '', serverName = 
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>Sign in · OpenAdmin</title>
+  <meta name="csrf-token" content="${csrf}">
+  <title>Sign in · ${setting('brand_name', 'OpenAdmin')}</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/app.css?v=${VERSION}">
 </head>
@@ -182,7 +187,7 @@ export function renderLogin({ message = '', error = '', csrf = '', serverName = 
   <div class="login-wrap">
     <section class="login-panel">
       <div class="login-brand">
-        <a class="brand-link" href="/">${brandMark(38)}<span class="brand-text"><strong>OpenAdmin</strong><em>${serverName || 'Hosting Control Panel'}</em></span></a>
+        <a class="brand-link" href="/">${brandMark(38)}<span class="brand-text"><strong>${setting('brand_name', 'OpenAdmin')}</strong><em>${serverName || 'Hosting Control Panel'}</em></span></a>
       </div>
       <div class="login-card">
         ${setting('template:login.html', '') ? raw(`<div class="template-login">${setting('template:login.html', '')}</div>`) : ''}
@@ -207,7 +212,7 @@ export function renderLogin({ message = '', error = '', csrf = '', serverName = 
         ${notice ? '' : ''}
         <p class="login-help">Need an account? Contact your hosting provider. This panel is free software under the AGPL-3.0.</p>
       </div>
-      <footer class="login-foot"><span>OpenAdmin v${VERSION}</span><span>100% free · no license fees</span></footer>
+      <footer class="login-foot"><span>${setting('brand_name', 'OpenAdmin')} v${VERSION}</span><span>100% free · no license fees</span></footer>
     </section>
     <aside class="login-aside">
       <div class="aside-glow"></div>

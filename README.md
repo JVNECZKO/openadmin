@@ -193,6 +193,32 @@ The OpenAPI 3 document is served at <code>/api/v1/openapi.json</code>. See [docs
 To report a vulnerability, please use GitHub private vulnerability reporting as described in
 [SECURITY.md](SECURITY.md).
 
+## Advanced operations
+
+The second phase adds the operational depth audited from Webuzo:
+
+- **Security Center** — nftables IP blocks, SSH hardening, root keys, password
+  policy, country blocks, compiler/wheel groups, fork-bomb limits, SMTP egress,
+  ModSecurity policy.
+- **Mail Operations Center** — address diagnosis, Exim queue, delivery events,
+  RBL/sender filters, routing, remote SMTP.
+- **Backup Center** — local/SFTP/FTP/S3 destinations, scheduled jobs, retention,
+  dry-run and real restore.
+- **Plans & limits** — feature sets, resource limits, per-user systemd cgroups
+  for PHP-FPM when CPU/memory limits are set.
+- **PHP / Web Stack** — MultiPHP, INI, extensions, FPM tuning, Apache modules.
+- **DNS Operations** — zone TTL, MX, templates, cleanup.
+- **Live transfer** — cPanel/DirectAdmin SSH+rsync batch transfer.
+- **Update Center**, **API keys + MCP**, **notification channels**, **reseller
+  privilege plans**, **support access**, **AutoSSL**, **log center**, **process
+  actions**, **storage destinations**, **panel branding/ACL** and **WebDisk**.
+- **Application catalogue** — Joomla, Drupal, PrestaShop, Moodle (web installer
+  where the project has no CLI).
+- **PostgreSQL**, **multi-server registry**, **demo accounts**, **shell/skeleton**.
+
+See [docs/PLATFORM-FEATURES.md](docs/PLATFORM-FEATURES.md) for prerequisites and
+explicit limitations (GeoIP, IO quotas, remote transfer DBs, translations).
+
 ## Compatibility
 
 OpenAdmin is an independent implementation. It shares the <code>CMD_API_*</code> names, parameters and
@@ -208,6 +234,7 @@ See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the command matrix.
 - [Linux deployment](docs/LINUX-DEPLOY.md) — Nginx, Apache, OpenLiteSpeed, BIND, Exim, Dovecot
 - [Migration import](docs/IMPORT.md) — cPanel and DirectAdmin archives
 - [Webuzo audit](docs/WEBUZO-AUDIT.md) — feature gaps and QoL roadmap (read-only production audit)
+- [Platform features](docs/PLATFORM-FEATURES.md) — Security Center, Mail Ops, backups, limits, MCP, WebDisk
 - [Roundcube](docs/ROUNDCUBE.md) — mail client setup
 - [Frontend reconstruction](docs/recon.md) — how the compatibility surface was recovered
 - [Landing page source](site/README.md) — build and deploy the marketing site

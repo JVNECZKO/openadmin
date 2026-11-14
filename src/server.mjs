@@ -117,8 +117,9 @@ export async function handle(req, res) {
     }
 
     let body = {};
+    let rawBody = null;
     if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE') {
-      const rawBody = await readBody(req);
+      rawBody = await readBody(req);
       const ct = String(req.headers['content-type'] || '');
       if (ct.includes('application/json')) {
         try { body = JSON.parse(rawBody.toString('utf8') || '{}'); } catch { body = {}; }
@@ -132,10 +133,10 @@ export async function handle(req, res) {
     }
 
     const levelFromPath = pathname.startsWith('/admin') ? 'admin' : pathname.startsWith('/reseller') ? 'reseller' : 'user';
-    const isApi = pathname.startsWith('/api/') || pathname.startsWith('/CMD_');
+    const isApi = pathname.startsWith('/api/') || pathname.startsWith('/CMD_') || pathname === '/webdisk' || pathname.startsWith('/webdisk/');
 
     const ctx = {
-      req, res, url, path: pathname, query, params: {}, body,
+      req, res, url, path: pathname, query, params: {}, body, rawBody,
       session, user, csrf: session?.csrf || '',
       ip, started, level: levelFromPath, isApi, cookies,
       caps: user ? capabilities(user) : {},
@@ -145,6 +146,19 @@ export async function handle(req, res) {
       redirect: (loc, opts) => redirect(res, loc, opts),
       page: null,
     };
+
+    // Global panel ACL: read-only applies to non-admin roles.
+    if (!isApi && user && req.method !== 'GET' && user.level !== 'admin') {
+      try {
+        const acl = JSON.parse(setting('panel_acl', '{}') || '{}');
+        if (acl.read_only) return sendHtml(res, renderError({ code: 403, title: 'Panel is read-only', message: 'Administrator włączył tryb tylko do odczytu.', user, level: levelFromPath }), 403);
+      } catch { /* ignore */ }
+    }
+
+    // Support sessions are read-only.
+    if (session?.support && req.method !== 'GET' && pathname !== '/logout') {
+      return sendHtml(res, renderError({ code: 403, title: 'Support access is read-only', message: 'Ten link nie pozwala zmieniać konfiguracji.', user, level: levelFromPath }), 403);
+    }
 
     // CSRF protection for browser form posts (API uses per-request credentials).
     if (!isApi && req.method === 'POST' && session && pathname !== '/reset-password') {
@@ -200,6 +214,7 @@ export async function handle(req, res) {
   } catch (err) {
     const status = err.status || 500;
     console.error(`[openadmin] ${req.method} ${pathname} -> ${status}:`, err.message);
+    if (process.env.OA_DEBUG) console.error(err.stack);
     if (String(req.url).startsWith('/api/') || String(req.url).startsWith('/CMD_')) {
       return sendJson(res, { error: 1, text: err.message, details: err.stack?.split('\n').slice(0, 3).join(' | ') || '' }, status);
     }

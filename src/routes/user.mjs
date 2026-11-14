@@ -11,8 +11,11 @@ import * as twofa from '../features/twofa.mjs';
 import * as hostedApps from '../features/hosted-apps.mjs';
 import * as wizards from '../features/wizards.mjs';
 import * as help from '../features/help.mjs';
+import { register as registerNotifications } from '../features/notifications.mjs';
+import { register as registerWebdisk } from '../features/webdisk.mjs';
+import { register as registerAppCatalog } from '../features/app-catalog.mjs';
 
-const features = [dashboard, domains, email, files, databases, security, account, advanced, twofa, hostedApps, wizards, help];
+const features = [dashboard, domains, email, files, databases, security, account, advanced, twofa, hostedApps, wizards, help, { register: registerNotifications }, { register: registerWebdisk }, { register: registerAppCatalog }];
 
 export function registerUserRoutes(router) {
   for (const f of features) f.register(router);

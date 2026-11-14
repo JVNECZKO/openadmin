@@ -66,7 +66,9 @@ export function validatePem(cert, key) {
 
 export function generateSelfSigned(domain, days = 365) {
   const paths = certPaths(domain);
-  const r = openssl(['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', String(days),
+  const keyType = setting('ssl_key_type', 'rsa2048');
+  const keyArgs = keyType === 'ecdsa-p256' ? ['-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256'] : keyType === 'rsa4096' ? ['-newkey', 'rsa:4096'] : ['-newkey', 'rsa:2048'];
+  const r = openssl(['req', '-x509', ...keyArgs, '-nodes', '-days', String(days),
     '-keyout', paths.key, '-out', paths.cert, '-subj', `/CN=${domain}`,
     '-addext', `subjectAltName=DNS:${domain},DNS:www.${domain}`]);
   if (!r.ok) return { ok: false, error: r.output || 'openssl failed' };
@@ -76,6 +78,7 @@ export function generateSelfSigned(domain, days = 365) {
   run(`INSERT INTO ssl_certs(domain, username, type, issuer, expires_at, status, cert, key, created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
     domain, null, 'self-signed', `OpenAdmin Self-Signed (${domain})`, info.expiresAt, 'active',
     fs.readFileSync(paths.cert, 'utf8'), fs.readFileSync(paths.key, 'utf8'), nowIso());
+  run("UPDATE ssl_certs SET key_type = ? WHERE domain = ? AND status = 'active'", keyType, domain);
   return { ok: true, expiresAt: info.expiresAt, paths };
 }
 

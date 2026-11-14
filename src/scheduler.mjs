@@ -2,13 +2,20 @@
 import fs from 'node:fs';
 import { all, get, run, nowIso, setting, setSetting } from './db.mjs';
 import { createServerBackup, backupPath } from './backups.mjs';
+import { runDueJobs } from './backupcenter.mjs';
 import { sendMail, mtaStatus } from './mta.mjs';
+import { dispatch, channels, addNotification } from './notifications.mjs';
 
 export function notifyAdmin(subject, body) {
   const admin = get("SELECT * FROM users WHERE level = 'admin' ORDER BY id LIMIT 1");
   const email = setting('notify_email', admin?.email || '');
   run('INSERT INTO messages(level, username, subject, body, created_at) VALUES(?,?,?,?,?)',
     'admin', admin?.username || null, subject, body, nowIso());
+  if (channels().some((c) => c.enabled)) {
+    dispatch(subject, body, { userId: admin?.id || null, level: 'warn' }).catch(() => {});
+    return { ok: true, emailed: true, output: 'Dispatched to notification channels' };
+  }
+  addNotification({ userId: admin?.id || null, level: 'warn', title: subject, body });
   if (!email || !mtaStatus().available) return { ok: false, emailed: false };
   const sent = sendMail({ from: `panel@${setting('server_name', 'localhost')}`, to: email, subject: `[OpenAdmin] ${subject}`, body });
   return { ok: true, emailed: sent.ok, output: sent.output };
@@ -73,6 +80,7 @@ export function startScheduler() {
   if (timer) return timer;
   const tick = () => {
     try { runBackupJob(); } catch (e) { console.warn('[openadmin] backup:', e.message); }
+    try { runDueJobs(); } catch (e) { console.warn('[openadmin] backup jobs:', e.message); }
     try { checkCertificateExpiry(); } catch (e) { console.warn('[openadmin] certs:', e.message); }
   };
   setTimeout(tick, 60 * 1000).unref?.();

@@ -1497,3 +1497,548 @@ test('Nextcloud installer validates input and the app page offers it', async () 
   assert.match(page, /Zainstaluj Nextcloud/);
   assert.match(page, /Zainstaluj WordPress/);
 });
+
+test('security center renders and blocks/removes an IP in sandbox', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/security?tab=firewall', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Security Center/);
+  assert.match(page, /IP block/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const add = await fetch(base + '/admin/security/ipblock/add', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, cidr: '198.51.100.0/24', reason: 'test' }).toString(),
+  });
+  assert.equal(add.status, 302);
+  const row = db.get("SELECT * FROM ip_blocks WHERE cidr = '198.51.100.0/24'");
+  assert.ok(row);
+  assert.ok(fs.existsSync(path.join(dataDir, 'simulated', 'etc', 'openadmin', 'firewall.nft')));
+  const del = await fetch(base + `/admin/security/ipblock/${row.id}/delete`, {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(del.status, 302);
+  assert.equal(db.get("SELECT * FROM ip_blocks WHERE cidr = '198.51.100.0/24'"), null);
+});
+
+test('security policy, SSH and root key import persist safely', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/security?tab=policy', { headers: { Cookie: cookie } })).text();
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  await fetch(base + '/admin/security/policy', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, minlen: '14', minclass: '4', maxrepeat: '2' }).toString(),
+  });
+  assert.equal(getSettingValue('security_password_policy').minlen, 14);
+  const ssh = await fetch(base + '/admin/security/ssh', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, port: '2222', permit_root_login: 'prohibit-password', max_auth_tries: '4' }).toString(),
+  });
+  assert.equal(ssh.status, 302);
+  const conf = fs.readFileSync(path.join(dataDir, 'simulated', 'etc', 'ssh', 'sshd_config.d', '99-openadmin.conf'), 'utf8');
+  assert.match(conf, /Port 2222/);
+  const pub = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE7u5fakekeyfortestonly000000000000000000000 test@example';
+  const key = await fetch(base + '/admin/security/keys/import', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, name: 'test-key', public_key: pub }).toString(),
+  });
+  assert.equal(key.status, 302);
+  assert.ok(db.get("SELECT * FROM root_ssh_keys WHERE name = 'test-key'"));
+  assert.match(fs.readFileSync(path.join(dataDir, 'simulated', 'root', '.ssh', 'authorized_keys'), 'utf8'), /ssh-ed25519/);
+});
+
+function getSettingValue(key) {
+  const row = db.get('SELECT value FROM settings WHERE key = ?', key);
+  return row ? JSON.parse(row.value) : null;
+}
+
+test('mail operations center renders, diagnoses and filters mail', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/mail?tab=filters', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Mail Operations Center/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const diag = await fetch(base + '/admin/mail/diagnose', {
+    method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, address: 'info@example.com' }).toString(),
+  });
+  assert.equal(diag.status, 200);
+  assert.match(await diag.text(), /Diagnoza/);
+  const f = await fetch(base + '/admin/mail/filters', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, kind: 'sender_domain', value: 'spam.example', action: 'reject' }).toString(),
+  });
+  assert.equal(f.status, 302);
+  assert.ok(db.get("SELECT * FROM mail_filters WHERE value = 'spam.example'"));
+  const q = await fetch(base + '/admin/mail?tab=queue', { headers: { Cookie: cookie } });
+  assert.equal(q.status, 200);
+  assert.match(await q.text(), /Kolejka/);
+});
+
+test('mail settings and blacklist persist', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/mail?tab=settings', { headers: { Cookie: cookie } })).text();
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  await fetch(base + '/admin/mail/settings', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, rbl: 'zen.spamhaus.org', sender_blacklist: 'bad.example' }).toString(),
+  });
+  const cfg = JSON.parse(db.get("SELECT value FROM settings WHERE key = 'mail_ops_settings'").value);
+  assert.deepEqual(cfg.rbl, ['zen.spamhaus.org']);
+  const bl = await fetch(base + '/admin/mail/blacklist', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, domain: 'blocked.example' }).toString(),
+  });
+  assert.equal(bl.status, 302);
+  assert.ok(db.get("SELECT * FROM blacklist_domains WHERE domain = 'blocked.example'"));
+});
+
+test('backup center creates a local server, runs a job and dry-runs restore', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/backup-center?tab=servers', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Backup Center/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const target = path.join(dataDir, 'remote-backups');
+  const srv = await fetch(base + '/admin/backup-center/servers', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, name: 'test-local', type: 'local', path: target }).toString(),
+  });
+  assert.equal(srv.status, 302);
+  assert.ok(db.get("SELECT * FROM backup_servers WHERE name = 'test-local'"));
+  const server = db.get("SELECT * FROM backup_servers WHERE name = 'test-local'");
+  const job = await fetch(base + '/admin/backup-center/jobs', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, name: 'test-job', scope: 'user', target_user: 'demouser', server_id: String(server.id), schedule: 'daily', retention_days: '7' }).toString(),
+  });
+  assert.equal(job.status, 302);
+  const row = db.get("SELECT * FROM backup_jobs WHERE name = 'test-job'");
+  assert.ok(row);
+  const run = await fetch(base + `/admin/backup-center/jobs/${row.id}/run`, {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(run.status, 302);
+  const r = db.get('SELECT * FROM backup_runs WHERE job_id = ? ORDER BY id DESC', row.id);
+  assert.equal(r.status, 'complete');
+  assert.ok(fs.existsSync(r.local_path));
+  assert.ok(fs.existsSync(path.join(target, r.filename)));
+  const dry = await fetch(base + `/admin/backup-center/runs/${r.id}/dry`, {
+    method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(dry.status, 200);
+  assert.match(await dry.text(), /Dry-run restore/);
+});
+
+test('PHP stack manager renders and saves FPM settings', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/php?tab=fpm&user=demouser', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /PHP \/ Web Stack/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const res = await fetch(base + '/admin/php/fpm?user=demouser', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, pm: 'ondemand', 'pm.max_children': '12', 'pm.max_requests': '300' }).toString(),
+  });
+  assert.equal(res.status, 302);
+  const cfg = JSON.parse(db.get("SELECT value FROM settings WHERE key = 'fpm_pool:demouser'").value);
+  assert.equal(cfg['pm.max_children'], '12');
+  const overview = await (await fetch(base + '/admin/php', { headers: { Cookie: cookie } })).text();
+  assert.match(overview, /Wersje PHP|Nie znaleziono/);
+});
+
+test('plans page creates feature set and toggles global feature', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/plans?tab=sets', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Plans & Limits/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const r = await fetch(base + '/admin/plans/sets', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, name: 'no-ftp', f_ftp: '1' }).toString(),
+  });
+  assert.equal(r.status, 302);
+  assert.ok(db.get("SELECT * FROM feature_sets WHERE name = 'no-ftp'"));
+  const off = await fetch(base + '/admin/plans/features/ftp', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(off.status, 302);
+  assert.ok(JSON.parse(db.get("SELECT value FROM settings WHERE key = 'disabled_features'").value).includes('ftp'));
+  const lim = (await import('../src/auth.mjs')).limitsFor(db.get("SELECT * FROM users WHERE username='demouser'"));
+  assert.equal(Number(lim.ftp), 0);
+});
+
+test('DNS operations changes zone TTL and MX', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/dns-ops?tab=zones', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /DNS Operations/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const ttl = await fetch(base + '/admin/dns-ops/zones/example.com/ttl', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, ttl: '7200' }).toString(),
+  });
+  assert.equal(ttl.status, 302);
+  assert.equal(db.get("SELECT dns_ttl FROM domains WHERE name = 'example.com'").dns_ttl, 7200);
+  const mx = await fetch(base + '/admin/dns-ops/mx', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, domain: 'example.com', host: 'mail.example.com', priority: '5' }).toString(),
+  });
+  assert.equal(mx.status, 302);
+  assert.ok(db.get("SELECT * FROM dns_records WHERE domain_id = (SELECT id FROM domains WHERE name='example.com') AND type='MX' AND value='mail.example.com'"));
+});
+
+test('live transfer creates and runs a sandbox job', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/import-live', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Live transfer/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const create = await fetch(base + '/admin/import-live/create', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, source: 'cpanel', host: 'source.example.com', username: 'alice', password: 'secret', target: 'demouser' }).toString(),
+  });
+  assert.equal(create.status, 302);
+  const job = db.get("SELECT * FROM import_jobs WHERE host = 'source.example.com'");
+  assert.ok(job);
+  const run = await fetch(base + `/admin/import-live/jobs/${job.id}/run`, {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(run.status, 302);
+  assert.equal(db.get('SELECT status FROM import_jobs WHERE id = ?', job.id).status, 'complete');
+});
+
+test('update center renders and OS dry-run is safe', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/updates-center?tab=os', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Update Center/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const dry = await fetch(base + '/admin/updates-center/os/dry', {
+    method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(dry.status, 200);
+  assert.match(await dry.text(), /Pakiety|Sandbox|Brak aktualizacji/);
+});
+
+test('API key authenticates REST and MCP with read scope', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/api-keys', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /API Keys & MCP/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const admin = db.get("SELECT * FROM users WHERE username='demoadmin'");
+  const create = await fetch(base + '/admin/api-keys/create', {
+    method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, user_id: String(admin.id), name: 'mcp-test', scopes: 'read' }).toString(),
+  });
+  assert.equal(create.status, 200);
+  const html = await create.text();
+  const secret = /<pre class="code-block">(oa_[^<]+)<\/pre>/.exec(html)?.[1];
+  assert.ok(secret);
+  const api = await fetch(base + '/api/v1/domains', { headers: { 'X-API-Key': secret } });
+  assert.equal(api.status, 200);
+  const init = await fetch(base + '/mcp', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+  });
+  assert.equal(init.status, 200);
+  const initJson = await init.json();
+  assert.equal(initJson.result.serverInfo.name, 'OpenAdmin');
+  const tools = await fetch(base + '/mcp', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+  }).then((r) => r.json());
+  assert.ok(tools.result.tools.some((t) => t.name === 'list_domains'));
+  const call = await fetch(base + '/mcp', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'list_domains', arguments: {} } }),
+  }).then((r) => r.json());
+  assert.match(call.result.content[0].text, /example\.com/);
+});
+
+test('notification center and webhook channel work', async () => {
+  const http = await import('node:http');
+  let received = null;
+  const server = http.createServer((req, res) => { let b = ''; req.on('data', (c) => b += c); req.on('end', () => { received = b; res.writeHead(200); res.end('ok'); }); });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port;
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/notifications?tab=channels', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Centrum powiadomień/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const add = await fetch(base + '/admin/notifications/channels', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, name: 'test-hook', type: 'webhook', url: `http://127.0.0.1:${port}/hook` }).toString(),
+  });
+  assert.equal(add.status, 302);
+  const ch = db.get("SELECT * FROM notification_channels WHERE name = 'test-hook'");
+  assert.ok(ch);
+  const test = await fetch(base + `/admin/notifications/channels/${ch.id}/test`, {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(test.status, 302);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.match(received || '', /Test OpenAdmin/);
+  const user = await fetch(base + '/user/notifications', { headers: { Cookie: await loginAs('demouser') } });
+  assert.equal(user.status, 200);
+  server.close();
+});
+
+test('reseller tools creates plan, assigns and changes ownership', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/reseller-tools?tab=plans', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Reseller Tools/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const plan = await fetch(base + '/admin/reseller-tools/plans', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, name: 'test-reseller-plan', users: '10', domains: '100' }).toString(),
+  });
+  assert.equal(plan.status, 302);
+  assert.ok(db.get("SELECT * FROM reseller_plans WHERE name = 'test-reseller-plan'"));
+  const assign = await fetch(base + '/admin/reseller-tools/plans/assign', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, username: 'demoreseller', plan: 'test-reseller-plan' }).toString(),
+  });
+  assert.equal(assign.status, 302);
+  assert.equal(db.get("SELECT reseller_plan FROM users WHERE username='demoreseller'").reseller_plan, 'test-reseller-plan');
+});
+
+test('support access link creates a read-only session', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/support-access', { headers: { Cookie: cookie } })).text();
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const create = await fetch(base + '/admin/support-access/create', {
+    method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, hours: '2' }).toString(),
+  });
+  const html = await create.text();
+  const link = /<pre class="code-block">(\/support\/[^<]+)<\/pre>/.exec(html)?.[1];
+  assert.ok(link);
+  const redeem = await fetch(base + link, { redirect: 'manual' });
+  assert.equal(redeem.status, 302);
+  const setCookie = redeem.headers.get('set-cookie');
+  assert.ok(setCookie);
+  const supportCookie = setCookie.split(';')[0];
+  const admin = await fetch(base + '/admin', { headers: { Cookie: supportCookie } });
+  assert.equal(admin.status, 200);
+  const post = await fetch(base + '/admin/support-access/create', {
+    method: 'POST', headers: { Cookie: supportCookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, hours: '1' }).toString(),
+  });
+  assert.equal(post.status, 403);
+});
+
+test('AutoSSL center renders and records key type', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/ssl-center', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /AutoSSL Center/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const r = await fetch(base + '/admin/ssl-center/keytype', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, type: 'ecdsa-p256' }).toString(),
+  });
+  assert.equal(r.status, 302);
+  assert.equal(db.get("SELECT value FROM settings WHERE key = 'ssl_key_type'").value, 'ecdsa-p256');
+});
+
+test('log center tails a simulated log and saves rotation', async () => {
+  const logDir = path.join(dataDir, 'simulated', 'var', 'log');
+  fs.mkdirSync(logDir, { recursive: true });
+  fs.writeFileSync(path.join(logDir, 'test.log'), 'first line\nneedle line\nlast line\n');
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/log-center?source=sim%3Atest.log&q=needle', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /needle line/);
+  const rotPage = await (await fetch(base + '/admin/log-center?tab=rotation', { headers: { Cookie: cookie } })).text();
+  const csrf = rotPage.match(/name="_csrf" value="([^"]+)"/)[1];
+  const rot = await fetch(base + '/admin/log-center/rotation', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, config: '/var/log/openadmin/*.log {\n daily\n rotate 7\n}\n' }).toString(),
+  });
+  assert.equal(rot.status, 302);
+  assert.match(fs.readFileSync(path.join(dataDir, 'simulated', 'etc', 'logrotate.d', 'openadmin'), 'utf8'), /rotate 7/);
+});
+
+test('process monitor offers kill and trace safely', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/processes', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Process Monitor/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const bad = await fetch(base + '/admin/processes/999999/kill', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(bad.status, 302);
+  const trace = await fetch(base + '/admin/processes/1/trace', {
+    method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(trace.status, 200);
+});
+
+test('storage destination can be added and measured', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/storage', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Storage Destinations/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const path2 = path.join(dataDir, 'storage-test');
+  const r = await fetch(base + '/admin/storage/add', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, name: 'test-storage', path: path2, type: 'ext4', alert_percent: '90' }).toString(),
+  });
+  assert.equal(r.status, 302);
+  assert.ok(db.get("SELECT * FROM storage_paths WHERE path = ?", path2));
+  assert.ok(fs.existsSync(path2));
+});
+
+test('panel configuration saves branding and ACL', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/panel-config?tab=branding', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Panel Configuration/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const b = await fetch(base + '/admin/panel-config/branding', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, name: 'TestPanel', subtitle: 'Hosting', footer: 'Test footer' }).toString(),
+  });
+  assert.equal(b.status, 302);
+  const dash = await (await fetch(base + '/admin', { headers: { Cookie: cookie } })).text();
+  assert.match(dash, /TestPanel/);
+  const a = await fetch(base + '/admin/panel-config/access', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, disable_domains: '1' }).toString(),
+  });
+  assert.equal(a.status, 302);
+  const { capabilities } = await import('../src/auth.mjs');
+  const cap = capabilities(db.get("SELECT * FROM users WHERE username='demouser'"));
+  assert.equal(cap.domains, false);
+  db.run("DELETE FROM settings WHERE key IN ('brand_name','brand_subtitle','brand_footer','panel_acl')");
+});
+
+test('user tools creates demo, toggles shell and saves skeleton', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/user-tools?tab=shell', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /User Tools/);
+  const csrf = page.match(/name="csrf-token" content="([^"]+)"/)[1];
+  const shell = await fetch(base + '/admin/user-tools/shell/demouser', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(shell.status, 302);
+  assert.equal(db.get("SELECT shell_enabled FROM users WHERE username='demouser'").shell_enabled, 1);
+  const demo = await fetch(base + '/admin/user-tools/demo', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, label: 'demotest' }).toString(),
+  });
+  assert.equal(demo.status, 200);
+  assert.ok(db.get("SELECT * FROM users WHERE demo = 1 AND username LIKE 'demotest%'"));
+  const skel = path.join(dataDir, 'skeleton-test');
+  fs.mkdirSync(skel, { recursive: true });
+  const s = await fetch(base + '/admin/user-tools/skeleton', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, path: skel }).toString(),
+  });
+  assert.equal(s.status, 302);
+  assert.equal(db.get("SELECT value FROM settings WHERE key='skeleton_directory'").value, skel);
+});
+
+test('PostgreSQL manager renders and reports availability', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/postgres', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /PostgreSQL/);
+  assert.match(page, /Utwórz bazę|nie jest gotowy/);
+});
+
+test('multi-server registry adds, tests and removes a node', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/multiserver', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Multi Server/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const add = await fetch(base + '/admin/multiserver/add', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, name: 'self', url: base, role: 'web' }).toString(),
+  });
+  assert.equal(add.status, 302);
+  const node = db.get("SELECT * FROM servers WHERE name = 'self'");
+  assert.ok(node);
+  const test = await fetch(base + `/admin/multiserver/${node.id}/test`, {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(test.status, 302);
+  assert.match(db.get('SELECT last_status FROM servers WHERE id = ?', node.id).last_status, /^ok/);
+});
+
+test('WebDisk account supports WebDAV PUT/GET/PROPFIND/DELETE', async () => {
+  const cookie = await loginAs('demouser');
+  const page = await (await fetch(base + '/user/webdisk', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /WebDisk/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const create = await fetch(base + '/user/webdisk/create', {
+    method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, domain: 'example.com', subpath: 'webdavtest', password: 'WebdavPass123!' }).toString(),
+  });
+  assert.equal(create.status, 200);
+  const html = await create.text();
+  const login = /Login: <code>([^<]+)<\/code>/.exec(html)?.[1];
+  assert.ok(login);
+  const auth = 'Basic ' + Buffer.from(`${login}:WebdavPass123!`).toString('base64');
+  const put = await fetch(base + '/webdisk/hello.txt', { method: 'PUT', headers: { Authorization: auth, 'Content-Type': 'application/octet-stream' }, body: 'hello webdav' });
+  assert.equal(put.status, 201);
+  const get = await fetch(base + '/webdisk/hello.txt', { headers: { Authorization: auth } });
+  assert.equal(get.status, 200);
+  assert.equal(await get.text(), 'hello webdav');
+  const prop = await fetch(base + '/webdisk/', { method: 'PROPFIND', headers: { Authorization: auth, Depth: '1' } });
+  assert.equal(prop.status, 207);
+  assert.match(await prop.text(), /hello\.txt/);
+  const del = await fetch(base + '/webdisk/hello.txt', { method: 'DELETE', headers: { Authorization: auth } });
+  assert.equal(del.status, 204);
+  const w = db.get("SELECT * FROM webdisks WHERE username = ?", login);
+  db.run('DELETE FROM webdisks WHERE id = ?', w.id);
+});
+
+test('app catalogue renders and validates installs', async () => {
+  const cookie = await loginAs('demouser');
+  const page = await (await fetch(base + '/user/app-catalog', { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Katalog aplikacji/);
+  assert.match(page, /Joomla/); assert.match(page, /Drupal/); assert.match(page, /PrestaShop/); assert.match(page, /Moodle/);
+  const { installApp } = await import('../src/appcatalog.mjs');
+  const user = db.get("SELECT * FROM users WHERE username='demouser'");
+  const foreign = installApp('joomla', { user, domain: 'not-owned.example', adminPass: 'long-enough-pass' });
+  assert.equal(foreign.ok, false);
+  assert.match(foreign.error, /nie należy/);
+  const weak = installApp('joomla', { user, domain: 'example.com', adminPass: 'short' });
+  assert.equal(weak.ok, false);
+  assert.match(weak.error, /8 znaków/);
+});
+
+test('server backup restore restores settings and files from a real archive', async () => {
+  const { createServerBackup, backupPath } = await import('../src/backups.mjs');
+  const { restoreRun } = await import('../src/backupcenter.mjs');
+  const admin = db.get("SELECT * FROM users WHERE username='demoadmin'");
+  db.run("INSERT INTO settings(key,value) VALUES('restore_probe','before') ON CONFLICT(key) DO UPDATE SET value='before'");
+  const b = createServerBackup(admin, 'all');
+  assert.equal(b.ok, true, b.error);
+  const rid = db.run("INSERT INTO backup_runs(job_id,filename,status,size_mb,local_path,started_at) VALUES(NULL,?,?,?,?,?)", b.filename, 'complete', b.size, backupPath(b.filename), new Date().toISOString()).lastInsertRowid;
+  db.run("UPDATE settings SET value='after' WHERE key='restore_probe'");
+  const r = restoreRun(rid, { dryRun: false, actor: 'demoadmin' });
+  assert.equal(r.ok, true, r.error);
+  assert.equal(db.get("SELECT value FROM settings WHERE key='restore_probe'").value, 'before');
+  db.run("DELETE FROM settings WHERE key='restore_probe'");
+  db.run('DELETE FROM backup_runs WHERE id = ?', rid);
+  db.run('DELETE FROM backups WHERE filename = ?', b.filename);
+  fs.rmSync(backupPath(b.filename), { force: true });
+});
+
+test('country email filter stores policy and reports GeoIP support', async () => {
+  const cookie = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/admin/mail?tab=settings', { headers: { Cookie: cookie } })).text();
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const r = await fetch(base + '/admin/mail/countries', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, country: 'ru' }).toString(),
+  });
+  assert.equal(r.status, 302);
+  assert.ok(db.get("SELECT * FROM country_email_policy WHERE country='ru'"));
+  const del = await fetch(base + '/admin/mail/countries/ru/delete', {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf }).toString(),
+  });
+  assert.equal(del.status, 302);
+  assert.equal(db.get("SELECT * FROM country_email_policy WHERE country='ru'"), null);
+});

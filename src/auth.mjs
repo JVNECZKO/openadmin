@@ -52,12 +52,13 @@ export function login(username, password, { ip = '', ua = '' } = {}) {
   return { ok: true, user: { ...user, last_login: nowIso() } };
 }
 
-export function createSession(user, { ip = '', ua = '' } = {}) {
+export function createSession(user, { ip = '', ua = '', support = false, supportToken = null, ttlHours = null } = {}) {
   const token = crypto.randomBytes(32).toString('hex');
   const csrf = crypto.randomBytes(24).toString('hex');
-  const expires = new Date(Date.now() + config.sessionTtlHours * 3600 * 1000).toISOString();
-  run('INSERT INTO sessions(token, user_id, csrf, ip, ua, created_at, expires_at) VALUES(?,?,?,?,?,?,?)',
-    token, user.id, csrf, ip, String(ua).slice(0, 250), nowIso(), expires);
+  const hours = Math.min(config.sessionTtlHours, Math.max(1, Number(ttlHours || config.sessionTtlHours)));
+  const expires = new Date(Date.now() + hours * 3600 * 1000).toISOString();
+  run('INSERT INTO sessions(token, user_id, csrf, ip, ua, created_at, expires_at, support, support_token) VALUES(?,?,?,?,?,?,?,?,?)',
+    token, user.id, csrf, ip, String(ua).slice(0, 250), nowIso(), expires, support ? 1 : 0, supportToken);
   return { token, csrf, expires };
 }
 
@@ -71,7 +72,7 @@ export function getSession(token) {
   }
   const user = userById(s.user_id);
   if (!user || isSuspended(user)) return null;
-  return { session: s, user };
+  return { session: s, user, support: s.support === 1 };
 }
 
 export function destroySession(token) {
@@ -106,19 +107,30 @@ export function checkCsrf(session, provided, { api = false } = {}) {
 /** Package limits for a user (admin/reseller get permissive defaults). */
 export function limitsFor(user) {
   if (user.level === 'admin') {
-    return { domains: 0, subdomains: 0, emails: 0, ftp: 0, databases: 0, bandwidth_mb: 0, disk_mb: 0, cron: 0, ssl: 0, users: 0, ips: 0, packages: 0, php: ['8.4', '8.3', '8.2', '8.1'], dns_control: 1, ssh: 1, wordpress: 1, inodes: 0, email_quota_mb: 0 };
+    return { domains: 0, subdomains: 0, emails: 0, ftp: 0, databases: 0, bandwidth_mb: 0, disk_mb: 0, cron: 0, ssl: 0, users: 0, ips: 0, packages: 0, php: ['8.4', '8.3', '8.2', '8.1'], dns_control: 1, ssh: 1, wordpress: 1, inodes: 0, email_quota_mb: 0, max_processes: 0, cpu_percent: 0, memory_mb: 0, io_read_mbps: 0, io_write_mbps: 0 };
   }
   const pkg = user.package ? get('SELECT * FROM packages WHERE name = ?', user.package) : null;
   const defaults = user.level === 'reseller'
-    ? { users: 50, domains: 500, emails: 1000, ftp: 100, databases: 200, bandwidth_mb: 0, disk_mb: 0, cron: 20, ssl: 100, ips: 2, packages: 20, php: ['8.3', '8.2', '8.1'], dns_control: 1, wordpress: 1 }
-    : { domains: 10, subdomains: 25, emails: 50, ftp: 10, databases: 10, bandwidth_mb: 102400, disk_mb: 10240, cron: 5, ssl: 10, php: ['8.3'], dns_control: 0, wordpress: 1 };
-  return { ...defaults, ...(pkg ? safeJson(pkg.limits, {}) : {}) };
+    ? { users: 50, domains: 500, emails: 1000, ftp: 100, databases: 200, bandwidth_mb: 0, disk_mb: 0, cron: 20, ssl: 100, ips: 2, packages: 20, php: ['8.3', '8.2', '8.1'], dns_control: 1, wordpress: 1, max_processes: 200, cpu_percent: 0, memory_mb: 0 }
+    : { domains: 10, subdomains: 25, emails: 50, ftp: 10, databases: 10, bandwidth_mb: 102400, disk_mb: 10240, cron: 5, ssl: 10, php: ['8.3'], dns_control: 0, wordpress: 1, max_processes: 100, cpu_percent: 0, memory_mb: 0 };
+  const merged = { ...defaults, ...(pkg ? safeJson(pkg.limits, {}) : {}) };
+  if (user.level === 'reseller' && user.reseller_plan) {
+    const rp = get('SELECT * FROM reseller_plans WHERE name = ?', user.reseller_plan);
+    if (rp) Object.assign(merged, safeJson(rp.limits, {}));
+  }
+  try {
+    const disabled = JSON.parse(setting('disabled_features', '[]') || '[]');
+    if (Array.isArray(disabled)) for (const key of disabled) merged[key] = 0;
+  } catch { /* ignore */ }
+  return merged;
 }
 
 export function capabilities(user) {
   const l = limitsFor(user);
+  let acl = {};
+  try { acl = JSON.parse(setting('panel_acl', '{}') || '{}'); } catch { acl = {}; }
   const on = (v) => Number(v) !== 0;
-  return {
+  const cap = {
     domains: on(l.domains),
     subdomains: on(l.subdomains),
     emails: on(l.emails),
@@ -143,6 +155,11 @@ export function capabilities(user) {
     php: l.php || ['8.3'],
     phone: true,
   };
+  if (acl.disable_domains) cap.domains = false;
+  if (acl.disable_emails) cap.emails = false;
+  if (acl.disable_ssh) { cap.ssh = false; }
+  if (acl.disable_system_apps) { cap.nodejs = false; cap.python = false; }
+  return cap;
 }
 
 export function requireLevel(user, level) {

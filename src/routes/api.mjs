@@ -8,6 +8,8 @@ import { spawn } from 'node:child_process';
 import { all, get, run, nowIso, hashPassword, setting, audit, verifyPassword } from '../db.mjs';
 import { config, VERSION, ROOT } from '../config.mjs';
 import { basicAuth, findUser, apiLogin, limitsFor, checkCsrf } from '../auth.mjs';
+import { keyFromRequest } from '../apikeys.mjs';
+import { handleMcp } from '../mcp.mjs';
 import { html as h, formatBytes, isDomain, isEmail } from '../util.mjs';
 import { homeDir, resolveUserPath, displayPath, provisionDomain } from '../features/files.mjs';
 import { createZone } from '../features/domains.mjs';
@@ -55,6 +57,8 @@ function ok(text = '') { return { error: 0, text }; }
 
 /** Authenticate an API request: Basic auth (password or login key) or a panel session + CSRF. */
 function authenticate(ctx) {
+  const keyUser = keyFromRequest(ctx.req.headers, ctx.ip, ctx.req.method);
+  if (keyUser) return keyUser;
   const auth = basicAuth(ctx.req.headers.authorization || '');
   if (auth) {
     if (auth.password.includes(':')) {
@@ -88,6 +92,11 @@ function jsonOk(res, data = {}) { return res.json ? res.json({ ok: true, ...data
 /* ------------------------------------------------------------------ REST */
 export function registerApiRoutes(router) {
   const api = (method, p, handler) => router.add(method, p, handler);
+
+  api('POST', '/mcp', async (ctx) => {
+    const out = await handleMcp(ctx);
+    return { status: out.status || 200, json: out.json ?? { ok: true } };
+  });
 
   api('GET', '/api/v1/openapi.json', (ctx) => {
     const doc = openapiDoc();

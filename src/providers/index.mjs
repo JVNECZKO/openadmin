@@ -83,6 +83,9 @@ const sandbox = {
   setSystemPassword() {
     return { ok: true, simulated: true, output: 'System password unchanged in sandbox (FTP registry updated)' };
   },
+  setShell(username, enabled) {
+    return { ok: true, simulated: true, output: `Shell ${enabled ? 'enabled' : 'disabled'} for ${username} in sandbox` };
+  },
   createFtpUser(username, home, password) {
     const dir = path.join(config.dataDir, 'ftp');
     fs.mkdirSync(dir, { recursive: true });
@@ -209,6 +212,11 @@ const linux = {
     if (process.getuid && process.getuid() !== 0) return { ok: false, output: 'Root privileges are required' };
     const r = run('userdel', ['-r', username]);
     return { ok: r.ok, output: r.ok ? `System user ${username} removed` : (r.stderr || r.error) };
+  },
+  setShell(username, enabled) {
+    if (process.getuid && process.getuid() !== 0) return { ok: false, output: 'Root privileges required' };
+    const r = run('usermod', ['-s', enabled ? '/bin/bash' : '/usr/sbin/nologin', username]);
+    return { ok: r.ok, output: r.ok ? `Shell ${enabled ? 'enabled' : 'disabled'} for ${username}` : (r.stderr || r.error) };
   },
   setSystemPassword(username, password) {
     if (process.getuid && process.getuid() !== 0) return { ok: false, output: 'Root privileges are required' };

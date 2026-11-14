@@ -243,3 +243,21 @@
     window.location.href = url.toString();
   }));
 })();
+
+/* Inject the session CSRF token into server-rendered action forms that do not
+   carry one (table row actions, compact icon forms). */
+(function () {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  if (!meta || !meta.content) return;
+  function inject() {
+    document.querySelectorAll('form[method="post"], form[method="POST"]').forEach(function (f) {
+      if (f.querySelector('input[name="_csrf"]')) return;
+      var i = document.createElement('input');
+      i.type = 'hidden'; i.name = '_csrf'; i.value = meta.content;
+      f.appendChild(i);
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', inject);
+  else inject();
+  new MutationObserver(inject).observe(document.body, { childList: true, subtree: true });
+})();

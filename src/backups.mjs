@@ -149,7 +149,7 @@ export function createServerBackup(admin, scope = 'all') {
 export function inspectArchive(filename) {
   const file = backupPath(filename);
   if (!fs.existsSync(file)) return { ok: false, error: 'Archive not found' };
-  const list = spawnSync('tar', ['-tzf', file], { encoding: 'utf8', timeout: 60000 });
+  const list = spawnSync('tar', ['-tzf', file], { encoding: 'utf8', timeout: 300000, maxBuffer: 256 * 1024 * 1024 });
   if (list.status !== 0) return { ok: false, error: (list.stderr || 'invalid archive').trim() };
   const entries = list.stdout.split('\n').filter(Boolean);
   const unsafe = entries.filter((e) => e.startsWith('/') || e.split('/').includes('..'));

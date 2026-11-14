@@ -86,8 +86,9 @@ export function table({ columns, rows, empty = 'Nothing here yet', rowKey = 'id'
           ${actions.length ? html`<td class="col-actions"><div class="row-actions">${actions.map((a) => {
             if (a.show && !a.show(row)) return '';
             if (a.form) {
+              const confirmText = typeof a.confirm === 'function' ? a.confirm(row) : a.confirm;
               return html`<form method="post" action="${a.form(row)}" class="inline">
-                ${a.confirm ? raw(`<button type="submit" class="icon-btn ${a.danger ? 'danger' : ''}" title="${e(a.label)}" onclick="return confirm('${e(a.confirm)}')">${icon(a.icon || 'trash', { size: 16 }).value}</button>`) : ''}
+                ${confirmText ? raw(`<button type="submit" class="icon-btn ${a.danger ? 'danger' : ''}" title="${e(a.label)}" onclick="return confirm('${e(confirmText)}')">${icon(a.icon || 'trash', { size: 16 }).value}</button>`) : ''}
               </form>`;
             }
             return html`<a class="icon-btn${a.danger ? ' danger' : ''}" href="${typeof a.href === 'function' ? a.href(row) : a.href}" title="${a.label}">${icon(a.icon || 'edit', { size: 16 })}</a>`;

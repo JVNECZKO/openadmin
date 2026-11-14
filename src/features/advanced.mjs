@@ -473,8 +473,8 @@ export function register(router) {
 
   /* ------------------------------------------------------------- terminal */
   router.get('/user/terminal', (ctx) => {
-    if (!ctx.caps.ssh) {
-      return page(ctx, { title: 'Terminal', subtitle: 'Shell access', body: alert('Shell access is disabled for your package. Ask your reseller to enable SSH in your package settings.', 'warn') });
+    if (!ctx.caps.ssh || (ctx.user.level === 'user' && !ctx.user.shell_enabled)) {
+      return page(ctx, { title: 'Terminal', subtitle: 'Shell access', body: alert('Shell access is disabled for this account. Ask an administrator to enable it.', 'warn') });
     }
     const history = String(ctx.query.out || '');
     const body = h`${card('Sandbox terminal', h`
@@ -491,7 +491,7 @@ export function register(router) {
   });
 
   router.post('/user/terminal', (ctx) => {
-    if (!ctx.caps.ssh) return ctx.redirect('/user/terminal?flash=Shell%20access%20disabled&type=error');
+    if (!ctx.caps.ssh || (ctx.user.level === 'user' && !ctx.user.shell_enabled)) return ctx.redirect('/user/terminal?flash=Shell%20access%20disabled&type=error');
     const cmd = String(ctx.body.command || '').trim();
     const out = runSandboxCommand(ctx.user.username, cmd);
     return ctx.redirect('/user/terminal?out=' + encodeURIComponent(`$ ${cmd}\n${out}`));
