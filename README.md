@@ -207,6 +207,7 @@ See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the command matrix.
 - [Compatibility](docs/COMPATIBILITY.md) — DirectAdmin command matrix
 - [Linux deployment](docs/LINUX-DEPLOY.md) — Nginx, Apache, OpenLiteSpeed, BIND, Exim, Dovecot
 - [Migration import](docs/IMPORT.md) — cPanel and DirectAdmin archives
+- [Webuzo audit](docs/WEBUZO-AUDIT.md) — feature gaps and QoL roadmap (read-only production audit)
 - [Roundcube](docs/ROUNDCUBE.md) — mail client setup
 - [Frontend reconstruction](docs/recon.md) — how the compatibility surface was recovered
 - [Landing page source](site/README.md) — build and deploy the marketing site
