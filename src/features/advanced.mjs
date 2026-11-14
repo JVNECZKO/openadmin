@@ -14,6 +14,7 @@ import { homeDir, resolveUserPath, displayPath, provisionDomain } from './files.
 import { generateAll } from '../webserver.mjs';
 import { installWordPress, wordpressStatus } from '../wordpress.mjs';
 import { installNextcloud, nextcloudStatus } from '../nextcloud.mjs';
+import { appIcon } from '../ui/appicons.mjs';
 import { apply } from '../apply.mjs';
 import { dropDatabase, dropAccount } from '../mariadb.mjs';
 
@@ -303,75 +304,12 @@ export function register(router) {
   });
 
   /* --------------------------------------------------------- app installer */
-  router.get('/user/app-installer', (ctx) => {
-    const rows = all('SELECT * FROM wordpress WHERE domain IN (SELECT name FROM domains WHERE user_id = ?) ORDER BY created_at DESC', ctx.user.id);
-    const ncRows = all('SELECT * FROM app_installs WHERE user_id = ? AND type = ? ORDER BY created_at DESC', ctx.user.id, 'nextcloud');
-    const ready = wordpressStatus();
-    const ncReady = nextcloudStatus();
-    const canInstall = ready.php && ready.mariadb;
-    const canNc = ncReady.php && ncReady.curl && ncReady.unzip && ncReady.mariadb;
-    const body = h`
-      ${alert('Instalator pobiera oficjalny WordPress, tworzy prawdziwą bazę MariaDB i konfiguruje witrynę. Hasło administratora pokazujemy tylko raz.', 'info')}
-      ${!canInstall ? alert(`Instalator nie jest gotowy: ${!ready.php ? 'brak PHP CLI. ' : ''}${!ready.mariadb ? 'brak połączenia z MariaDB. ' : ''}Skontaktuj się z administratorem serwera.`, 'warn') : ''}
-      ${card('Zainstaluj WordPress', h`<form method="post" action="/user/app-installer/wordpress" class="oa-form">
-        <input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <div class="form-grid">
-          <div class="field"><label class="field-label">Domena</label><select name="domain">${visibleDomains(ctx.user).map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select></div>
-          <div class="field"><label class="field-label">Ścieżka</label><input name="path" value="/" placeholder="/blog"></div>
-          <div class="field"><label class="field-label">Tytuł witryny</label><input name="title" placeholder="Moja strona"></div>
-          <div class="field"><label class="field-label">E-mail administratora</label><input name="admin_email" type="email" placeholder="ty@example.com"></div>
-          <div class="field"><label class="field-label">Login administratora</label><input name="admin_user" value="admin"></div>
-          <div class="field"><label class="field-label">Hasło administratora</label><div class="field-control"><input id="wpPass" name="admin_password" type="password" minlength="8" required><button class="btn btn-secondary btn-sm" type="button" data-genpass="#wpPass" style="margin-left:8px">Generuj</button></div></div>
-        </div>
-        <div class="form-actions"><button class="btn btn-primary" type="submit" ${canInstall ? '' : 'disabled'}>${icon('download', { size: 16 })} Zainstaluj WordPress</button></div>
-      </form>`, { sub: ready.cli ? 'wp-cli gotowy' : 'wp-cli zostanie pobrany przy pierwszej instalacji' })}
-      ${card('Zainstalowane aplikacje', h`${rows.length ? table({
-        columns: [
-          { label: 'Domena', render: (r) => h`<span class="cell-strong">${r.domain}${r.path === '/' ? '' : r.path}</span>` },
-          { label: 'Wersja', key: 'version' },
-          { label: 'Administrator', key: 'admin_user' },
-          { label: 'Zainstalowano', render: (r) => formatDate(r.created_at) },
-        ],
-        rows,
-        actions: [
-          { label: 'Otwórz', href: (r) => `http://${r.domain}${r.path === '/' ? '' : r.path}`, icon: 'globe' },
-          { label: 'Panel WP', href: (r) => `http://${r.domain}${r.path === '/' ? '' : r.path}/wp-admin/`, icon: 'lock' },
-          { label: 'Usuń', form: (r) => `/user/app-installer/wordpress/${r.id}/delete`, confirm: 'Usunąć witrynę wraz z bazą danych?', icon: 'trash', danger: true },
-        ],
-      }) : emptyState('Nie zainstalowano jeszcze żadnej aplikacji.')}`)}
-      ${card('Zainstaluj Nextcloud', h`
-        ${!canNc ? alert('Nextcloud wymaga php, curl, unzip i MariaDB na serwerze.', 'warn') : ''}
-        <form method="post" action="/user/app-installer/nextcloud" class="oa-form">
-          <input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <div class="form-grid">
-            <div class="field"><label class="field-label">Domena</label><select name="domain">${visibleDomains(ctx.user).map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select></div>
-            <div class="field"><label class="field-label">Ścieżka</label><input name="path" value="/" readonly></div>
-            <div class="field"><label class="field-label">Login administratora</label><input name="admin_user" value="admin"></div>
-            <div class="field"><label class="field-label">Hasło administratora</label><input name="admin_password" type="password" minlength="8" required></div>
-          </div>
-          <p class="small muted">Zalecana osobna subdomena, np. <code>cloud.twojadomena.pl</code>, instalacja w katalogu głównym.</p>
-          <div class="form-actions"><button class="btn btn-primary" type="submit" ${canNc ? '' : 'disabled'}>Zainstaluj Nextcloud</button></div>
-        </form>`)}
-      ${card('Zainstalowane Nextcloud', h`${ncRows.length ? table({
-        columns: [
-          { label: 'Domena', render: (r) => h`<span class="cell-strong">${r.domain}${r.path === '/' ? '' : r.path}</span>` },
-          { label: 'Wersja', key: 'version' },
-          { label: 'Administrator', key: 'admin_user' },
-          { label: 'Zainstalowano', render: (r) => formatDate(r.created_at) },
-        ],
-        rows: ncRows,
-        actions: [
-          { label: 'Otwórz', href: (r) => `https://${r.domain}${r.path === '/' ? '' : r.path}/`, icon: 'globe' },
-          { label: 'Usuń', form: (r) => `/user/app-installer/nextcloud/${r.id}/delete`, confirm: 'Usunąć Nextcloud wraz z bazą?', icon: 'trash', danger: true },
-        ],
-      }) : emptyState('Brak instalacji Nextcloud.')}`)}
-      ${card('Więcej aplikacji', h`<p class="small muted">Katalog obsługuje WordPress i Nextcloud. Kolejne aplikacje są w przygotowaniu — nie pokazujemy przycisków, które nic nie robią.</p>`)}`;
-    return page(ctx, { title: 'Instalator aplikacji', subtitle: 'WordPress jednym kliknięciem', body });
-  });
+  // One discoverable application page: the unified catalogue.
+  router.get('/user/app-installer', (ctx) => ctx.redirect('/user/app-catalog'));
 
   router.post('/user/app-installer/wordpress', (ctx) => {
     const d = domainFor(ctx.user, ctx.body.domain);
-    if (!d) return ctx.redirect('/user/app-installer?flash=Wybierz%20w%C5%82asn%C4%85%20domen%C4%99&type=error');
+    if (!d) return ctx.redirect('/user/app-catalog?flash=Wybierz%20w%C5%82asn%C4%85%20domen%C4%99&type=error');
     const result = installWordPress({
       user: ctx.user, domain: d.name, subpath: ctx.body.path || '/',
       title: ctx.body.title || d.name, adminUser: ctx.body.admin_user || 'admin',
@@ -379,7 +317,7 @@ export function register(router) {
       locale: 'pl_PL',
     });
     audit(ctx.user.username, ctx.user.level, 'wordpress.install', `${d.name}${ctx.body.path || '/'}`, ctx.ip);
-    if (!result.ok) return ctx.redirect('/user/app-installer?flash=' + encodeURIComponent(result.error) + '&type=error');
+    if (!result.ok) return ctx.redirect('/user/app-catalog?flash=' + encodeURIComponent(result.error) + '&type=error');
     apply({ web: true });
     const body = h`${card('WordPress zainstalowany', h`
       ${alert('Zapisz hasło administratora teraz — nie pokażemy go ponownie.', 'warn')}
@@ -391,14 +329,14 @@ export function register(router) {
         ['Baza danych', result.db],
         ['Wersja', result.version || 'najnowsza'],
       ])}
-      <div class="row mt-18"><a class="btn btn-primary" href="/user/app-installer">Wróć do instalatora</a></div>`)}`;
+      <div class="row mt-18"><a class="btn btn-primary" href="/user/app-catalog">Wróć do aplikacji</a></div>`)}`;
     return page(ctx, { title: 'Gotowe', subtitle: 'WordPress działa', body });
   });
 
   router.post('/user/app-installer/wordpress/:id/delete', (ctx) => {
     const row = get('SELECT * FROM wordpress WHERE id = ?', Number(ctx.params.id));
     const d = row ? get('SELECT * FROM domains WHERE name = ? AND user_id = ?', row.domain, ctx.user.id) : null;
-    if (!row || !d) return ctx.redirect('/user/app-installer?flash=Nie%20znaleziono&type=error');
+    if (!row || !d) return ctx.redirect('/user/app-catalog?flash=Nie%20znaleziono&type=error');
     dropDatabase(row.db_name);
     dropAccount(row.db_name);
     run('DELETE FROM databases WHERE db_name = ? AND user_id = ?', row.db_name, ctx.user.id);
@@ -406,19 +344,19 @@ export function register(router) {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
     run('DELETE FROM wordpress WHERE id = ?', row.id);
     audit(ctx.user.username, ctx.user.level, 'wordpress.delete', row.domain, ctx.ip);
-    return ctx.redirect('/user/app-installer?flash=Witryna%20usuni%C4%99ta');
+    return ctx.redirect('/user/app-catalog?flash=Witryna%20usuni%C4%99ta');
   });
 
   router.post('/user/app-installer/nextcloud', (ctx) => {
     const d = domainFor(ctx.user, ctx.body.domain);
-    if (!d) return ctx.redirect('/user/app-installer?flash=Wybierz%20w%C5%82asn%C4%85%20domen%C4%99&type=error');
+    if (!d) return ctx.redirect('/user/app-catalog?flash=Wybierz%20w%C5%82asn%C4%85%20domen%C4%99&type=error');
     const result = installNextcloud({
       user: ctx.user, domain: d.name, subpath: ctx.body.path || '/cloud',
       adminUser: ctx.body.admin_user || 'admin', adminPass: String(ctx.body.admin_password || ''),
       adminEmail: ctx.user.email || '', scheme: 'https',
     });
     audit(ctx.user.username, ctx.user.level, 'nextcloud.install', `${d.name}${ctx.body.path || '/cloud'}`, ctx.ip);
-    if (!result.ok) return ctx.redirect('/user/app-installer?flash=' + encodeURIComponent(result.error) + '&type=error');
+    if (!result.ok) return ctx.redirect('/user/app-catalog?flash=' + encodeURIComponent(result.error) + '&type=error');
     apply({ web: true });
     const body = h`${card('Nextcloud zainstalowany', h`
       ${alert('Zapisz hasło administratora teraz — nie pokażemy go ponownie.', 'warn')}
@@ -427,13 +365,13 @@ export function register(router) {
         ['Login', result.adminUser], ['Hasło', h`<code>${result.adminPass}</code>`],
         ['Baza', result.db], ['Wersja', result.version || 'najnowsza'],
       ])}
-      <div class="row mt-18"><a class="btn btn-primary" href="/user/app-installer">Wróć</a></div>`)}`;
+      <div class="row mt-18"><a class="btn btn-primary" href="/user/app-catalog">Wróć do aplikacji</a></div>`)}`;
     return page(ctx, { title: 'Gotowe', subtitle: 'Nextcloud działa', body });
   });
 
   router.post('/user/app-installer/nextcloud/:id/delete', (ctx) => {
     const row = get("SELECT * FROM app_installs WHERE id = ? AND user_id = ? AND type = 'nextcloud'", Number(ctx.params.id), ctx.user.id);
-    if (!row) return ctx.redirect('/user/app-installer?flash=Nie%20znaleziono&type=error');
+    if (!row) return ctx.redirect('/user/app-catalog?flash=Nie%20znaleziono&type=error');
     dropDatabase(row.db_name); dropAccount(row.db_name);
     run('DELETE FROM databases WHERE db_name = ? AND user_id = ?', row.db_name, ctx.user.id);
     const root = path.join(homeDir(ctx.user.username), 'domains', row.domain, 'public_html', row.path === '/' ? '' : row.path);
@@ -441,7 +379,7 @@ export function register(router) {
     if (row.data_dir) { try { fs.rmSync(row.data_dir, { recursive: true, force: true }); } catch { /* ignore */ } }
     run('DELETE FROM app_installs WHERE id = ?', row.id);
     audit(ctx.user.username, ctx.user.level, 'nextcloud.delete', row.domain, ctx.ip);
-    return ctx.redirect('/user/app-installer?flash=Nextcloud%20usuni%C4%99ty');
+    return ctx.redirect('/user/app-catalog?flash=Nextcloud%20usuni%C4%99ty');
   });
 
   router.get('/user/wordpress', (ctx) => {
@@ -457,7 +395,7 @@ export function register(router) {
           { label: 'Status', render: (r) => badge(r.status === 'active' ? 'aktywna' : r.status, 'ok') },
         ],
         rows, empty: 'Brak witryn WordPress.',
-        createHref: '/user/app-installer', createLabel: 'Zainstaluj WordPress',
+        createHref: '/user/app-catalog', createLabel: 'Zainstaluj WordPress',
         actions: [
           { label: 'Otwórz', href: (r) => `http://${r.domain}${r.path === '/' ? '' : r.path}`, icon: 'globe' },
           { label: 'Usuń', form: (r) => `/user/app-installer/wordpress/${r.id}/delete`, confirm: 'Usunąć witrynę?', icon: 'trash', danger: true },

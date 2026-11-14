@@ -1494,8 +1494,9 @@ test('Nextcloud installer validates input and the app page offers it', async () 
   assert.match(weak.error, /8 znaków/);
   const cookie = await loginAs('demouser');
   const page = await (await fetch(base + '/user/app-installer', { headers: { Cookie: cookie } })).text();
-  assert.match(page, /Zainstaluj Nextcloud/);
-  assert.match(page, /Zainstaluj WordPress/);
+  assert.match(page, /Nextcloud/);
+  assert.match(page, /WordPress/);
+  assert.match(page, /app-tile-grid/);
 });
 
 test('security center renders and blocks/removes an IP in sandbox', async () => {
@@ -1995,7 +1996,8 @@ test('WebDisk account supports WebDAV PUT/GET/PROPFIND/DELETE', async () => {
 test('app catalogue renders and validates installs', async () => {
   const cookie = await loginAs('demouser');
   const page = await (await fetch(base + '/user/app-catalog', { headers: { Cookie: cookie } })).text();
-  assert.match(page, /Katalog aplikacji/);
+  assert.match(page, /Aplikacje/);
+  assert.match(page, /WordPress/); assert.match(page, /Nextcloud/);
   assert.match(page, /Joomla/); assert.match(page, /Drupal/); assert.match(page, /PrestaShop/); assert.match(page, /Moodle/);
   const { installApp } = await import('../src/appcatalog.mjs');
   const user = db.get("SELECT * FROM users WHERE username='demouser'");
@@ -2109,4 +2111,26 @@ test('primary user CRUD resources support update', async () => {
   const dbRow = db.get("SELECT * FROM databases WHERE user_id=(SELECT id FROM users WHERE username='demouser') LIMIT 1");
   page = await (await fetch(base + `/user/databases/${dbRow.id}/password`, { headers: { Cookie: cookie } })).text();
   assert.match(page, /Zmiana hasła/);
+});
+
+test('user and reseller catalog pages use visual tiles', async () => {
+  const user = await loginAs('demouser');
+  const dash = await (await fetch(base + '/user', { headers: { Cookie: user } })).text();
+  assert.match(dash, /Wszystkie narzędzia/);
+  assert.match(dash, /Strefy DNS/);
+  assert.match(dash, /Bazy danych/);
+  const catalog = await (await fetch(base + '/user/app-catalog', { headers: { Cookie: user } })).text();
+  assert.match(catalog, /app-tile-grid/);
+  assert.match(catalog, /PrestaShop/);
+  assert.match(catalog, /WordPress/);
+  assert.doesNotMatch(catalog, /&lt;div class="app-empty"/);
+  const installer = await (await fetch(base + '/user/app-installer', { headers: { Cookie: user } })).text();
+  assert.match(installer, /WordPress/);
+  assert.match(installer, /app-tile-grid/);
+  const reseller = await loginAs('demoreseller');
+  const apps = await (await fetch(base + '/reseller/apps', { headers: { Cookie: reseller } })).text();
+  assert.match(apps, /Aplikacje klientów/);
+  assert.match(apps, /app-tile-grid/);
+  const domains = await (await fetch(base + '/reseller/domains', { headers: { Cookie: reseller } })).text();
+  assert.match(domains, /Domeny klientów/);
 });

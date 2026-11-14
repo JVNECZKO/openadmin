@@ -11,6 +11,10 @@ import { usersPage, userForm, createUser, updateUser, userDetailPage, toggleSusp
 import { usageChartCard } from '../ui/pages/widgets.mjs';
 import { rebuildZone } from '../dns.mjs';
 import { apply } from '../apply.mjs';
+import { appIcon } from '../ui/appicons.mjs';
+import { listApps, installApp } from '../appcatalog.mjs';
+import { installWordPress } from '../wordpress.mjs';
+import { installNextcloud } from '../nextcloud.mjs';
 
 const R = '/reseller';
 
@@ -25,39 +29,51 @@ function resellerDashboard(ctx) {
   const body = h`
     <div class="hero">
       <div>
-        <h2>Reseller dashboard</h2>
-        <p>You manage <strong>${users.length}</strong> user account(s) and <strong>${domains.length}</strong> domain(s) on this server. Create packages, provision accounts and monitor usage.</p>
-        <div class="row mt-18">${badge('Package: ' + (ctx.user.package || 'reseller'), 'brand')}${badge('Free license', 'ok')}${badge('Unlimited reseller', 'ok')}</div>
+        <h2>Pulpit resellera</h2>
+        <p>Zarządzasz <strong>${users.length}</strong> kontem/klientami i <strong>${domains.length}</strong> domenami. Twórz pakiety, zakładaj konta i pilnuj limitów.</p>
+        <div class="row mt-18">${badge('Pakiet: ' + (ctx.user.package || 'reseller'), 'brand')}${badge('Darmowa licencja', 'ok')}${badge('Bez limitu resellera', 'ok')}</div>
       </div>
       <div class="hero-actions">
-        ${btn('Create user', { href: '/reseller/users/create', icon: 'plus' })}
-        ${btn('New package', { href: '/reseller/packages/create', variant: 'secondary', icon: 'archive' })}
+        ${btn('Utwórz klienta', { href: '/reseller/users/create', icon: 'plus' })}
+        ${btn('Nowy pakiet', { href: '/reseller/packages/create', variant: 'secondary', icon: 'archive' })}
       </div>
     </div>
     <div class="stat-grid">
-      ${statCard({ label: 'Users', value: `${users.length}${lim.users ? ' / ' + lim.users : ''}`, sub: 'hosted accounts', icon: 'users', href: '/reseller/users' })}
-      ${statCard({ label: 'Domains', value: String(domains.length), sub: 'across your users', icon: 'globe', href: '/reseller/dns' })}
-      ${statCard({ label: 'Disk used', value: formatBytes(disk), sub: lim.disk_mb ? 'of ' + formatBytes(lim.disk_mb) : 'unlimited', icon: 'database', tone: 'warn' })}
-      ${statCard({ label: 'Bandwidth (30d)', value: formatBytes(bw), sub: 'reseller traffic', icon: 'chart', tone: 'ok', href: '/reseller/statistics' })}
+      ${statCard({ label: 'Użytkownicy', value: `${users.length}${lim.users ? ' / ' + lim.users : ''}`, sub: 'konta klientów', icon: 'users', href: '/reseller/users' })}
+      ${statCard({ label: 'Domeny', value: String(domains.length), sub: 'w Twoim resellerze', icon: 'globe', href: '/reseller/dns' })}
+      ${statCard({ label: 'Użycie dysku', value: formatBytes(disk), sub: lim.disk_mb ? 'z ' + formatBytes(lim.disk_mb) : 'bez limitu', icon: 'database', tone: 'warn' })}
+      ${statCard({ label: 'Transfer (30 dni)', value: formatBytes(bw), sub: 'ruch resellera', icon: 'chart', tone: 'ok', href: '/reseller/statistics' })}
     </div>
     <div class="grid grid-2-1">
-      ${usageChartCard(series, { title: 'Reseller bandwidth', sub: 'Last 30 days across all users' })}
-      ${card('Recent users', h`${users.length ? h`<div class="timeline">${users.slice(-5).reverse().map((u) => h`<div class="timeline-item">
+      ${usageChartCard(series, { title: 'Transfer resellera', sub: 'Ostatnie 30 dni, wszyscy klienci' })}
+      ${card('Ostatnie konta', h`${users.length ? h`<div class="timeline">${users.slice(-5).reverse().map((u) => h`<div class="timeline-item">
         <div class="timeline-dot">${icon('user', { size: 15 })}</div>
         <div class="timeline-body"><div class="spread"><a class="link" href="/reseller/users/${u.id}"><strong>${u.username}</strong></a><span class="small muted">${timeAgo(u.created_at)}</span></div>
           <small>${u.domain || 'no domain'} · ${u.package}</small></div></div>`)}</div>` : emptyState('No users yet', { action: btn('Create the first user', { href: '/reseller/users/create', icon: 'plus' }) })}`, { actions: [h`<a class="link small" href="/reseller/users">All users</a>`] })}
     </div>
     <div class="grid grid-2">
-      ${card('Open tickets', h`${tickets.length ? h`<div class="timeline">${tickets.map((t) => h`<div class="timeline-item"><div class="timeline-dot">${icon('ticket', { size: 15 })}</div>
+      ${card('Otwarte zgłoszenia', h`${tickets.length ? h`<div class="timeline">${tickets.map((t) => h`<div class="timeline-item"><div class="timeline-dot">${icon('ticket', { size: 15 })}</div>
         <div class="timeline-body"><div class="spread"><a class="link" href="/reseller/tickets/${t.id}">${t.subject}</a><span class="small muted">${timeAgo(t.created_at)}</span></div><small>${t.username} · ${t.priority}</small></div></div>`)}</div>` : emptyState('No open tickets')}`, { actions: [h`<a class="link small" href="/reseller/tickets">All tickets</a>`] })}
-      ${card('Your limits', h`<div class="stack" style="gap:14px">
-        <div><div class="spread small"><span>Users</span><span>${users.length} / ${lim.users || '∞'}</span></div>${progress(users.length, lim.users || 1, { showText: false })}</div>
-        <div><div class="spread small"><span>Domains</span><span>${domains.length} / ${lim.domains || '∞'}</span></div>${progress(domains.length, lim.domains || 1, { showText: false })}</div>
-        <div><div class="spread small"><span>Disk</span><span>${formatBytes(disk)} / ${lim.disk_mb ? formatBytes(lim.disk_mb) : '∞'}</span></div>${progress(disk, lim.disk_mb || 1, { showText: false })}</div>
-        <div><div class="spread small"><span>IP addresses</span><span>${get("SELECT COUNT(*) n FROM ips WHERE owner = ?", ctx.user.username).n} / ${lim.ips || '∞'}</span></div></div>
+      ${card('Twoje limity', h`<div class="stack" style="gap:14px">
+        <div><div class="spread small"><span>Użytkownicy</span><span>${users.length} / ${lim.users || '∞'}</span></div>${progress(users.length, lim.users || 1, { showText: false })}</div>
+        <div><div class="spread small"><span>Domeny</span><span>${domains.length} / ${lim.domains || '∞'}</span></div>${progress(domains.length, lim.domains || 1, { showText: false })}</div>
+        <div><div class="spread small"><span>Dysk</span><span>${formatBytes(disk)} / ${lim.disk_mb ? formatBytes(lim.disk_mb) : '∞'}</span></div>${progress(disk, lim.disk_mb || 1, { showText: false })}</div>
+        <div><div class="spread small"><span>Adresy IP</span><span>${get("SELECT COUNT(*) n FROM ips WHERE owner = ?", ctx.user.username).n} / ${lim.ips || '∞'}</span></div></div>
       </div>`, { actions: [h`<a class="link small" href="/reseller/settings">Settings</a>`] })}
+    </div>
+    <div class="mt-24">
+      ${card('Szybkie akcje', h`<div class="quick-grid">
+        ${quickTile('/reseller/users/create', 'plus', 'Nowy klient', 'Konto + domena + pakiet')}
+        ${quickTile('/reseller/domains', 'globe', 'Domeny klientów', `${domains.length} domen`)}
+        ${quickTile('/reseller/packages/create', 'archive', 'Nowy pakiet', 'Limity i funkcje')}
+        ${quickTile('/reseller/apps', 'cart', 'Aplikacje', 'WordPress, sklep, chmura')}
+        ${quickTile('/reseller/dns', 'dns', 'DNS klientów', 'Strefy i rekordy')}
+        ${quickTile('/reseller/ip-manager', 'network', 'Adresy IP', 'Delegacja i zwalnianie')}
+        ${quickTile('/reseller/backups', 'archive', 'Kopie klientów', 'Archiwum kont')}
+        ${quickTile('/reseller/cpanel-import', 'download', 'Migracja cPanel', 'Przenieś konta')}
+      </div>`)}
     </div>`;
-  return page(ctx, { title: 'Reseller Dashboard', subtitle: 'Your accounts, packages and usage', body, counts: countForNav(ctx.user, 'reseller') });
+  return page(ctx, { title: 'Pulpit resellera', subtitle: 'Twoje konta, pakiety i wykorzystanie zasobów', body, counts: countForNav(ctx.user, 'reseller') });
 }
 
 function resellerStatistics(ctx) {
@@ -169,8 +185,107 @@ function ticketView(ctx, ticketId, base) {
   return page(ctx, { title: 'Ticket #' + t.id, subtitle: t.subject, body });
 }
 
+function resellerDomains(ctx) {
+  const rows = all(`SELECT d.*, u.username, u.package, u.id user_id FROM domains d JOIN users u ON u.id = d.user_id WHERE u.owner = ? ORDER BY d.name`, ctx.user.username);
+  const body = h`
+    ${alert('To są domeny Twoich klientów. DNS możesz edytować bezpośrednio; pozostałe zmiany wykonasz w panelu klienta.', 'info')}
+    <div class="grid grid-2">
+      ${card('Domeny klientów', h`${rows.length ? h`<div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Domena</th><th>Klient</th><th>Pakiet</th><th>PHP</th><th>SSL</th><th>Dysk</th><th></th></tr></thead>
+        <tbody>${rows.map((d) => h`<tr>
+          <td><a class="cell-strong" href="/reseller/dns?domain=${encodeURIComponent(d.name)}">${d.name}</a><span class="cell-sub">${d.docroot || ''}</span></td>
+          <td><a class="link" href="/reseller/users/${d.user_id}">${d.username}</a></td>
+          <td>${badge(d.package || 'default', 'brand')}</td>
+          <td>${d.php_version || '—'}</td>
+          <td>${d.ssl ? badge('SSL', 'ok') : badge('brak', 'muted')}</td>
+          <td>${formatBytes(d.disk_mb)}</td>
+          <td class="col-actions"><div class="row-actions">
+            <a class="icon-btn" href="/reseller/dns?domain=${encodeURIComponent(d.name)}" title="DNS">${icon('dns', { size: 16 })}</a>
+            <form method="post" action="/reseller/users/${d.user_id}/login-as" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="icon-btn" type="submit" title="Zarządzaj kontem">${icon('edit', { size: 16 })}</button></form>
+          </div></td>
+        </tr>`)}</tbody>
+      </table></div>` : emptyState('Brak domen — dodaj użytkownika i domenę.', { action: btn('Dodaj użytkownika', { href: '/reseller/users/create', icon: 'plus' }) })}`)}
+      ${card('Szybkie akcje', h`<div class="quick-grid" style="grid-template-columns:repeat(2,1fr)">
+        ${quickTile('/reseller/users/create', 'plus', 'Nowy klient', 'Konto + domena')}
+        ${quickTile('/reseller/packages', 'archive', 'Pakiety', 'Limity i funkcje')}
+        ${quickTile('/reseller/dns', 'dns', 'DNS', 'Strefy klientów')}
+        ${quickTile('/reseller/apps', 'cart', 'Aplikacje', 'WordPress i inne')}
+      </div>`)}
+    </div>`;
+  return page(ctx, { title: 'Domeny klientów', subtitle: 'Wszystkie domeny w Twoim resellerze', body, wide: true });
+}
+
+function quickTile(href, iconName, title, sub) {
+  return h`<a class="quick-tile" href="${href}">${icon(iconName, { size: 20 })}<strong>${title}</strong><span>${sub}</span></a>`;
+}
+
+function resellerApps(ctx, result) {
+  const users = visibleUsers(ctx.user, { level: 'user' });
+  const domains = all(`SELECT d.*, u.username FROM domains d JOIN users u ON u.id = d.user_id WHERE u.owner = ? ORDER BY d.name`, ctx.user.username);
+  const installed = [
+    ...all(`SELECT w.*, u.username, 'wordpress' type FROM wordpress w JOIN domains d ON d.name = w.domain JOIN users u ON u.id = d.user_id WHERE u.owner = ?`, ctx.user.username),
+    ...all(`SELECT a.*, u.username FROM app_installs a JOIN users u ON u.id = a.user_id WHERE u.owner = ? AND a.type IN ('nextcloud','joomla','drupal','prestashop','moodle')`, ctx.user.username),
+  ];
+  const apps = [
+    { key: 'wordpress', name: 'WordPress', desc: 'Strona, blog lub sklep', version: 'latest' },
+    { key: 'nextcloud', name: 'Nextcloud', desc: 'Prywatna chmura plików', version: '30' },
+    { key: 'prestashop', name: 'PrestaShop', desc: 'Sklep e-commerce', version: '8.2' },
+    { key: 'joomla', name: 'Joomla', desc: 'CMS / portal', version: '5.2' },
+    { key: 'drupal', name: 'Drupal', desc: 'CMS / portal', version: '11.1' },
+    { key: 'moodle', name: 'Moodle', desc: 'Platforma e-learning', version: '4.5' },
+  ];
+  const resultCard = result ? card('Instalacja zakończona', h`
+      <div class="app-tile-head mb-18">${appIcon(result.app, { size: 52 })}<div><h3>${result.name}</h3><p class="app-tile-sub">${result.user} · ${result.domain}</p></div></div>
+      ${result.warning ? alert(result.warning, 'warn') : ''}
+      ${kvList([['URL', h`<a class="link" href="${result.url}" target="_blank">${result.url}</a>`], ['Baza', result.db || '—'], ['DB user', result.dbUser || '—'], ['DB hasło', h`<code>${result.dbPass || '—'}</code>`], ['Admin', result.adminUser || 'admin'], ['Hasło admina', h`<code>${result.adminPass || '—'}</code>`]])}
+      <div class="row mt-18"><a class="btn btn-primary" href="/reseller/apps">Wróć do aplikacji</a></div>`) : '';
+  const body = h`
+    ${alert('Instalujesz aplikacje na domenach swoich klientów. Hasło administratora przekaż klientowi — pokazujemy je tylko raz.', 'info')}
+    ${resultCard}
+    <div class="app-tile-grid">
+      ${apps.map((a) => h`<article class="app-tile">
+        <div class="app-tile-head">${appIcon(a.key, { size: 52 })}<div><div class="app-tile-title"><h3>${a.name}</h3></div><p class="app-tile-sub">${a.desc}</p></div></div>
+        <div class="app-meta"><span>v${a.version}</span><span>PHP + MariaDB</span></div>
+        <div class="app-tile-actions"><details><summary class="btn btn-primary btn-sm">${icon('download', { size: 15 })} Zainstaluj dla klienta</summary>
+          <form method="post" action="/reseller/apps/install" class="oa-form app-install-form">
+            <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="app" value="${a.key}">
+            <div class="form-grid">
+              <div class="field field-full"><label class="field-label">Domena klienta</label><select name="domain" required>${domains.map((d) => h`<option value="${d.name}">${d.username} — ${d.name}</option>`)}</select></div>
+              <div class="field"><label class="field-label">Ścieżka</label><input name="path" value="${a.key === 'wordpress' || a.key === 'nextcloud' ? '/' : '/' + a.key}"></div>
+              <div class="field"><label class="field-label">Hasło admina</label><input name="admin_password" type="password" minlength="8" required></div>
+            </div>
+            <div class="form-actions"><button class="btn btn-primary" type="submit" ${users.length && domains.length ? '' : 'disabled'}>Zainstaluj ${a.name}</button></div>
+          </form></details></div>
+      </article>`)}
+    </div>
+    ${card('Zainstalowane aplikacje klientów', h`${installed.length ? installed.map((r) => h`<div class="app-installed">
+      ${appIcon(r.type, { size: 40 })}<div><strong>${r.type === 'wordpress' ? 'WordPress' : r.type === 'nextcloud' ? 'Nextcloud' : r.type[0].toUpperCase() + r.type.slice(1)}</strong><p class="app-tile-sub">${r.username} · ${r.domain}${r.path && r.path !== '/' ? r.path : ''}</p></div>
+      <div class="app-installed-actions"><a class="btn btn-secondary btn-sm" href="https://${r.domain}${r.path && r.path !== '/' ? r.path : ''}/" target="_blank">${icon('globe', { size: 15 })} Otwórz</a></div>
+    </div>`) : h`<div class="app-empty">Brak aplikacji u klientów.</div>`}`)}`;
+  return page(ctx, { title: 'Aplikacje klientów', subtitle: 'WordPress, Nextcloud, sklep i CMS jednym kliknięciem', body, wide: true });
+}
+
 export function registerResellerRoutes(router) {
   router.get('/reseller', (ctx) => resellerDashboard(ctx));
+  router.get('/reseller/domains', (ctx) => resellerDomains(ctx));
+  router.get('/reseller/apps', (ctx) => resellerApps(ctx));
+  router.post('/reseller/apps/install', (ctx) => {
+    const domainRow = get('SELECT * FROM domains WHERE name = ?', String(ctx.body.domain || ''));
+    const user = domainRow ? get("SELECT * FROM users WHERE id = ? AND level = 'user' AND owner = ?", domainRow.user_id, ctx.user.username) : null;
+    if (!user) return ctx.redirect('/reseller/apps?flash=Domena%20nie%20nale%C5%BCy%20do%20Twojego%20klienta&type=error');
+    const domain = domainFor(user, domainRow.name);
+    if (!domain) return ctx.redirect('/reseller/apps?flash=Domena%20nie%20nale%C5%BCy%20do%20klienta&type=error');
+    const app = String(ctx.body.app);
+    const args = { user, domain: domain.name, subpath: ctx.body.path || '/', adminUser: 'admin', adminPass: String(ctx.body.admin_password || ''), title: domain.name, adminEmail: user.email || '' };
+    let r;
+    if (app === 'wordpress') r = installWordPress(args);
+    else if (app === 'nextcloud') r = installNextcloud(args);
+    else r = installApp(app, args);
+    if (!r.ok) return ctx.redirect('/reseller/apps?flash=' + encodeURIComponent(r.error) + '&type=error');
+    audit(ctx.user.username, 'reseller', 'app.install', `${app}:${user.username}:${domain.name}`, ctx.ip);
+    const name = app === 'wordpress' ? 'WordPress' : app === 'nextcloud' ? 'Nextcloud' : (listApps().find((a) => a.key === app)?.name || app);
+    return resellerApps(ctx, { app, name, user: user.username, domain: domain.name, ...r });
+  });
 
   router.get('/reseller/users', (ctx) => usersPage(ctx, { path: `${R}/users` }));
   router.get('/reseller/users/suspended', (ctx) => usersPage(ctx, { path: `${R}/users`, suspended: 1, title: 'Suspended Users' }));

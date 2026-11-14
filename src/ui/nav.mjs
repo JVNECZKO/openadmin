@@ -4,7 +4,7 @@
 import { t } from '../i18n.mjs';
 
 const U = (key, label, href, icon, extra = {}) => ({ key, label, href, icon, ...extra });
-const SIMPLE_USER = new Set(['home', 'stats', 'messages', 'email', 'email-new', 'domains', 'websites', 'ssl', 'wordpress', 'installer', 'files', 'backups', 'password', 'twofa', 'tickets', 'interface', 'help']);
+const SIMPLE_USER = new Set(['home', 'stats', 'messages', 'email', 'email-new', 'forwarders', 'autoresponders', 'vacation', 'catchall', 'lists', 'spam', 'usage', 'domains', 'websites', 'subdomains', 'dns', 'pointers', 'redirects', 'ssl', 'wordpress', 'files', 'webdisk', 'ftp', 'backups', 'cron', 'databases', 'php', 'installer', 'app-catalog', 'hosted-apps', 'notifications', 'password', 'twofa', 'tickets', 'interface', 'help']);
 
 export function navFor(level, caps = {}, opts = {}) {
   const lang = opts.lang || 'pl';
@@ -43,6 +43,12 @@ export function navFor(level, caps = {}, opts = {}) {
       U('backups', 'Backups', '/user/backups', 'archive'),
       U('cron', 'Cron Jobs', '/user/cron', 'clock', { cap: caps.cron }),
     ] },
+    { title: 'Bazy i aplikacje', items: [
+      U('databases', 'Bazy danych', '/user/databases', 'database', { cap: caps.databases }),
+      U('php', 'Ustawienia PHP', '/user/php', 'php'),
+      U('installer', 'Aplikacje', '/user/app-catalog', 'cart'),
+      U('hosted-apps', 'Node.js / Python Apps', '/user/apps', 'code', { cap: caps.nodejs || caps.python || true }),
+    ] },
     { title: 'Account', items: [
       U('password', 'Password', '/user/password', 'key'),
       U('login-keys', 'Login Keys', '/user/login-keys', 'key', { cap: caps.loginKeys }),
@@ -54,17 +60,12 @@ export function navFor(level, caps = {}, opts = {}) {
       U('tickets', 'Tickets', '/user/tickets', 'ticket'),
     ] },
     { title: 'Advanced', items: [
-      U('databases', 'Databases', '/user/databases', 'database', { cap: caps.databases }),
-      U('php', 'PHP Settings', '/user/php', 'php'),
       U('error-pages', 'Error Pages', '/user/error-pages', 'file'),
       U('htaccess', 'htaccess', '/user/htaccess', 'lock'),
       U('handlers', 'Apache Handlers', '/user/handlers', 'server'),
       U('mime', 'MIME types', '/user/mime-types', 'file'),
       U('protected', 'Password Protected Directories', '/user/protected-directories', 'shield'),
       U('hotlink', 'Hotlink Protection', '/user/hotlink-protection', 'link'),
-      U('installer', 'App Installer', '/user/app-installer', 'cart'),
-      U('app-catalog', 'Katalog aplikacji', '/user/app-catalog', 'cart'),
-      U('hosted-apps', 'Node.js / Python Apps', '/user/apps', 'code', { cap: caps.nodejs || caps.python || true }),
       U('git', 'Git', '/user/git', 'tag', { cap: caps.git }),
       U('terminal', 'Terminal', '/user/terminal', 'terminal', { cap: caps.ssh }),
       U('clamav', 'ClamAV', '/user/clamav', 'shield', { cap: caps.spam }),
@@ -87,30 +88,32 @@ export function navFor(level, caps = {}, opts = {}) {
   userGroups = userGroups.map((g) => ({ ...g, title: t(lang, g.title), items: g.items.map((i) => ({ ...i, label: t(lang, i.label) })) }));
 
   const resellerGroups = [
-    { title: 'Reseller Overview', items: [
-      U('r-home', 'Dashboard', '/reseller', 'home'),
-      U('r-stats', 'Reseller Statistics', '/reseller/statistics', 'chart'),
-      U('r-messages', 'Messages', '/reseller/messages', 'bell'),
+    { title: 'Przegląd resellera', items: [
+      U('r-home', 'Pulpit', '/reseller', 'home'),
+      U('r-stats', 'Statystyki resellera', '/reseller/statistics', 'chart'),
+      U('r-messages', 'Wiadomości', '/reseller/messages', 'bell'),
     ] },
-    { title: 'User Management', items: [
-      U('r-users', 'My Users', '/reseller/users', 'users'),
-      U('r-create', 'Add New User', '/reseller/users/create', 'plus'),
-      U('r-suspended', 'Suspended Users', '/reseller/users/suspended', 'alert'),
-      U('r-packages', 'Manage User Packages', '/reseller/packages', 'archive'),
-      U('r-move', 'Move Users', '/reseller/users/move', 'arrowRight'),
+    { title: 'Zarządzanie użytkownikami', items: [
+      U('r-users', 'Moi użytkownicy', '/reseller/users', 'users'),
+      U('r-create', 'Dodaj użytkownika', '/reseller/users/create', 'plus'),
+      U('r-suspended', 'Zawieszeni użytkownicy', '/reseller/users/suspended', 'alert'),
+      U('r-domains', 'Domeny klientów', '/reseller/domains', 'globe'),
+      U('r-apps', 'Aplikacje klientów', '/reseller/apps', 'cart'),
+      U('r-packages', 'Pakiety użytkowników', '/reseller/packages', 'archive'),
+      U('r-move', 'Przenoszenie kont', '/reseller/users/move', 'arrowRight'),
     ] },
-    { title: 'Reseller Tools', items: [
-      U('r-ips', 'IP Management', '/reseller/ip-manager', 'network'),
-      U('r-dns', 'DNS Administration', '/reseller/dns', 'dns'),
-      U('r-ns', 'Name Servers', '/reseller/nameservers', 'server'),
-      U('r-backups', 'Backups', '/reseller/backups', 'archive'),
-      U('r-tickets', 'Tickets', '/reseller/tickets', 'ticket'),
-      U('r-import', 'cPanel Import', '/reseller/cpanel-import', 'download'),
-      U('r-passwords', 'Change Passwords', '/reseller/passwords', 'key'),
-      U('r-message', 'Message All Users', '/reseller/message-users', 'bell'),
+    { title: 'Narzędzia resellera', items: [
+      U('r-ips', 'Zarządzanie IP', '/reseller/ip-manager', 'network'),
+      U('r-dns', 'Administracja DNS', '/reseller/dns', 'dns'),
+      U('r-ns', 'Serwery nazw', '/reseller/nameservers', 'server'),
+      U('r-backups', 'Kopie zapasowe', '/reseller/backups', 'archive'),
+      U('r-tickets', 'Zgłoszenia', '/reseller/tickets', 'ticket'),
+      U('r-import', 'Import cPanel', '/reseller/cpanel-import', 'download'),
+      U('r-passwords', 'Zmiana haseł', '/reseller/passwords', 'key'),
+      U('r-message', 'Wiadomość do wszystkich', '/reseller/message-users', 'bell'),
       U('r-security', 'Security.txt', '/reseller/security-txt', 'shield'),
-      U('r-skins', 'Skins', '/reseller/customize-skin', 'paint'),
-      U('r-settings', 'Reseller Settings', '/reseller/settings', 'settings'),
+      U('r-skins', 'Motywy', '/reseller/customize-skin', 'paint'),
+      U('r-settings', 'Ustawienia resellera', '/reseller/settings', 'settings'),
     ] },
   ];
 
@@ -196,7 +199,7 @@ export function navFor(level, caps = {}, opts = {}) {
 
   const groups = [];
   if (level === 'admin') groups.push(...adminGroups, ...resellerGroups.map((g) => ({ ...g, title: 'Reseller · ' + g.title })), ...userGroups.map((g) => ({ ...g, title: 'User · ' + g.title })));
-  else if (level === 'reseller') groups.push(...resellerGroups, ...userGroups.map((g) => ({ ...g, title: 'User · ' + g.title })));
+  else if (level === 'reseller') groups.push(...resellerGroups);
   else groups.push(...userGroups);
 
   return groups.map((g) => ({ ...g, items: g.items.filter((i) => i.cap !== false) }));

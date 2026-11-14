@@ -23,7 +23,7 @@ export function register(router) {
           ${UI_MODES.map((m) => h`<option value="${m.id}" ${u.ui_mode === m.id ? 'selected' : ''}>${m.label}</option>`)}
         </select></div>
       </div>
-      <p class="small muted">Widok prosty pokazuje tylko najważniejsze funkcje: strony, pocztę, pliki, SSL, kopie i konto. Zaawansowany odsłania DNS, FTP, cron i ustawienia techniczne.</p>
+      <p class="small muted">Widok prosty pokazuje całe hostingowe centrum: strony, domeny i DNS, pocztę, pliki, FTP, bazy, cron, SSL, aplikacje, kopie i konto. Widok zaawansowany dodaje ustawienia techniczne (htaccess, handlery, MIME, terminal, Git, Redis itd.).</p>
       <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button></div>
     </form>`)}`;
     return page(ctx, { title: 'Język i widok', subtitle: 'Dostosuj panel do siebie', body });

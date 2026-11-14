@@ -8,6 +8,7 @@ import { html as h, formatBytes, timeAgo, formatDate } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, statCard, btn, badge, statusBadge, table, emptyState, progress, kvList, alert } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
+import { appIcon } from '../ui/appicons.mjs';
 import { quotaCard, usageChartCard, greeting } from '../ui/pages/widgets.mjs';
 import { visibleDomains, storageFor, usageSeries, countForNav } from '../core/access.mjs';
 
@@ -35,6 +36,10 @@ export function userDashboard(ctx) {
   const sslCount = get('SELECT COUNT(*) n FROM ssl_certs WHERE username = ?', u.username).n;
   const backupCount = get('SELECT COUNT(*) n FROM backups WHERE user_id = ?', u.id).n;
   const twofaOn = get('SELECT twofa_enabled e FROM users WHERE id = ?', u.id)?.e === 1;
+  const wpCount = get('SELECT COUNT(*) n FROM wordpress WHERE domain IN (SELECT name FROM domains WHERE user_id = ?)', u.id).n;
+  const ncCount = get('SELECT COUNT(*) n FROM app_installs WHERE user_id = ? AND type = ?', u.id, 'nextcloud').n;
+  const catalogCount = get("SELECT COUNT(*) n FROM app_installs WHERE user_id = ? AND type IN ('joomla','drupal','prestashop','moodle')", u.id).n;
+  const appTotal = wpCount + ncCount + catalogCount;
   const steps = [
     { done: domains.length > 0, label: 'Dodaj domenę', href: '/user/websites/new' },
     { done: siteReady, label: 'Wgraj stronę (index.html/php)', href: '/user/files' },
@@ -130,7 +135,44 @@ export function userDashboard(ctx) {
           <div class="timeline-dot">${icon('archive', { size: 15 })}</div>
           <div class="timeline-body"><div class="truncate">${b.filename}</div><small>${formatDate(b.created_at)} · ${formatBytes(b.size_mb)}</small></div>
         </div>`)}</div>` : emptyState(L('No backups yet', 'Brak kopii'), { icon: 'archive' })}`, { actions: [h`<a class="link small" href="/user/backups">${L('All backups', 'Wszystkie kopie')}</a>`] })}
-    </div>`;
+    </div>
+
+    <div class="mt-24">
+      ${card(L('Applications — one click', 'Aplikacje — jeden klik'), h`
+        <div class="app-tile-grid">
+          ${[
+            { key: 'wordpress', name: 'WordPress', desc: L('Website, blog or store', 'Strona, blog lub sklep'), href: '/user/app-catalog', count: wpCount },
+            { key: 'nextcloud', name: 'Nextcloud', desc: L('Private cloud and files', 'Prywatna chmura i pliki'), href: '/user/app-catalog', count: ncCount },
+            { key: 'prestashop', name: 'PrestaShop', desc: L('Online shop', 'Sklep internetowy'), href: '/user/app-catalog', count: 0 },
+            { key: 'joomla', name: 'Joomla', desc: L('CMS and portal', 'CMS i portal'), href: '/user/app-catalog', count: 0 },
+            { key: 'drupal', name: 'Drupal', desc: L('CMS and portal', 'CMS i portal'), href: '/user/app-catalog', count: 0 },
+            { key: 'moodle', name: 'Moodle', desc: L('E-learning platform', 'Platforma e-learning'), href: '/user/app-catalog', count: 0 },
+          ].map((a) => h`<a class="app-tile" href="${a.href}" style="text-decoration:none;color:inherit">
+            <div class="app-tile-head">${appIcon(a.key, { size: 46 })}<div><div class="app-tile-title"><h3>${a.name}</h3>${a.count ? badge(`${a.count}`, 'ok') : ''}</div><p class="app-tile-sub">${a.desc}</p></div></div>
+            <div class="app-tile-actions"><span class="btn btn-secondary btn-sm">${L('Open installer', 'Otwórz instalator')} ${icon('arrowRight', { size: 14 })}</span></div>
+          </a>`)}
+        </div>`, { sub: L(`${appTotal} installed application(s)`, `${appTotal} zainstalowanych aplikacji`), actions: [h`<a class="link small" href="/user/app-catalog">${L('Full catalogue', 'Cały katalog')} →</a>`] })}
+    </div>
+
+    ${card(L('All tools', 'Wszystkie narzędzia'), h`<div class="quick-grid">
+      ${quick('/user/domains', 'globe', L('Domains', 'Domeny'), L('Add, edit, delete', 'Dodaj, edytuj, usuń'))}
+      ${quick('/user/subdomains', 'network', L('Subdomains', 'Subdomeny'), L('blog, shop, api', 'blog, sklep, api'))}
+      ${quick('/user/dns', 'dns', L('DNS records', 'Rekordy DNS'), L('A, MX, TXT, CNAME', 'A, MX, TXT, CNAME'))}
+      ${quick('/user/redirects', 'arrowRight', L('Redirects', 'Przekierowania'), L('301 / 302', '301 / 302'))}
+      ${quick('/user/ssl', 'lock', L('SSL certificates', 'Certyfikaty SSL'), L('Let’s Encrypt', 'Let’s Encrypt'))}
+      ${quick('/user/email', 'mail', L('Mailboxes', 'Skrzynki e-mail'), L('IMAP / POP3 / SMTP', 'IMAP / POP3 / SMTP'))}
+      ${quick('/user/email/forwarders', 'arrowRight', L('Forwarders', 'Przekierowania poczty'), L('Aliases', 'Aliasy'))}
+      ${quick('/user/email/spam', 'shield', L('Spam filters', 'Filtry spamu'), L('Rules and blocklists', 'Reguły i blocklisty'))}
+      ${quick('/user/files', 'folder', L('File manager', 'Menedżer plików'), L('Upload, edit, zip', 'Wgraj, edytuj, zip'))}
+      ${quick('/user/ftp', 'upload', L('FTP accounts', 'Konta FTP'), L('Transfer files', 'Transfer plików'))}
+      ${quick('/user/databases', 'database', L('Databases', 'Bazy danych'), L('MariaDB + phpMyAdmin', 'MariaDB + phpMyAdmin'))}
+      ${quick('/user/cron', 'clock', L('Cron jobs', 'Zadania cron'), L('Scheduled tasks', 'Zaplanowane zadania'))}
+      ${quick('/user/webdisk', 'cloud', 'WebDisk', L('WebDAV access', 'Dostęp WebDAV'))}
+      ${quick('/user/backups', 'archive', L('Backups', 'Kopie zapasowe'), L('Download and restore', 'Pobierz i przywróć'))}
+      ${quick('/user/php', 'php', L('PHP settings', 'Ustawienia PHP'), L('Version and INI', 'Wersja i INI'))}
+      ${quick('/user/statistics', 'chart', L('Statistics', 'Statystyki'), L('Disk and bandwidth', 'Dysk i transfer'))}
+    </div>`, { sub: L('Everything your hosting account can do', 'Wszystko, co może Twoje konto hostingowe') })}
+  `;
 
   return page(ctx, {
     title: L('Dashboard', 'Pulpit'), subtitle: L('Overview of your hosting account', 'Przegląd Twojego konta hostingowego'), body,
