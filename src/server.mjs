@@ -237,7 +237,7 @@ export async function handle(req, res) {
     }
 
     // Support sessions are read-only.
-    if (session?.support && req.method !== 'GET' && pathname !== '/logout') {
+    if (session?.support && req.method !== 'GET' && pathname !== '/logout' && pathname !== '/impersonation/write') {
       return sendHtml(res, renderError({ code: 403, title: 'Support access is read-only', message: 'Ten link nie pozwala zmieniać konfiguracji.', user, level: levelFromPath }), 403);
     }
 

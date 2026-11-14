@@ -301,6 +301,19 @@ export function startImpersonation(actor, subjectId, {
   return { ok: true, token: session.token, csrf: session.csrf, expires: session.expires, subject, view, readOnly: !!readOnly };
 }
 
+
+/** Deliberate escalation from read-only preview to write mode. */
+export function enableImpersonationWrite(rawToken, { ip = '' } = {}) {
+  const state = impersonationRecord(rawToken);
+  if (!state.row) return { ok: false, code: 'not_impersonating', error: 'Nie jesteś w trybie podglądu.' };
+  const row = state.row;
+  const changed = run('UPDATE impersonations SET read_only = 0 WHERE session_hash = ? AND read_only = 1', row.session_hash);
+  if (!changed.changes) return { ok: true, already: true, subject: row.subject_username };
+  run('UPDATE sessions SET support = 0 WHERE token_hash = ?', row.session_hash);
+  audit(row.actor_username, row.actor_level, 'user.impersonate.write', row.subject_username, ip);
+  return { ok: true, subject: row.subject_username, actor: row.actor_username };
+}
+
 /**
  * End a preview session. The subject session is destroyed; the actor's original
  * session (kept in the browser's OA_PREVIEW_ACTOR cookie) is untouched.

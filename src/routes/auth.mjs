@@ -8,7 +8,7 @@ import { login, createSession, destroySession, findUser, checkCsrf } from '../au
 import { serializeCookie, clearCookie, hashSessionToken } from '../auth.mjs';
 import { passwordPolicyError } from '../security.mjs';
 import { openTotp, sealTotp } from '../secrets.mjs';
-import { stopImpersonation, resolvePreviewActor } from '../secrets.mjs';
+import { stopImpersonation, resolvePreviewActor, enableImpersonationWrite } from '../secrets.mjs';
 import { clearPreviewActorCookie } from '../apps.mjs';
 import { renderLogin } from '../ui/layout.mjs';
 import { page } from '../ui/respond.mjs';
@@ -140,6 +140,13 @@ export function registerAuthRoutes(router) {
   router.get('/logout', (ctx) => {
     ctx.res.setHeader('Allow', 'POST');
     return { status: 405, raw: 'Use POST /logout with a CSRF token', type: 'text' };
+  });
+
+  router.post('/impersonation/write', (ctx) => {
+    const token = ctx.cookies['OA_SESSION'];
+    const result = enableImpersonationWrite(token, { ip: ctx.ip });
+    if (!result.ok) return ctx.redirect('/login?expired=1');
+    return ctx.redirect(`/${ctx.user?.level || 'user'}?flash=${encodeURIComponent(`Tryb zapisu dla ${result.subject}`)}`);
   });
 
   router.post('/logout', (ctx) => {

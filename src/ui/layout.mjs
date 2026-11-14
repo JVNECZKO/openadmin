@@ -49,7 +49,11 @@ function impersonationBanner({ user, csrf }) {
     style="position:sticky;top:0;z-index:80;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 18px;background:#fff4d6;border-bottom:2px solid #d97706;color:#3b2a06;font-size:14px">
     <span aria-hidden="true" style="display:inline-flex">${icon('eye', { size: 18 })}</span>
     <span>Podglądasz konto <strong>${view.subject}</strong> (${humanLevel(view.subjectLevel)}) jako <strong>${view.actor}</strong> (${humanLevel(view.actorLevel)}). Start: ${started}. ${view.readOnly ? 'Tryb tylko do odczytu.' : 'Tryb zapisu.'}</span>
-    <form method="post" action="/logout" class="inline" style="margin-left:auto">
+    ${view.readOnly ? html`<form method="post" action="/impersonation/write" class="inline" style="margin-left:auto" data-confirm="Włączyć tryb zapisu? Zmiany będą wykonywane na koncie ${view.subject} i zostaną zapisane w audycie.">
+      <input type="hidden" name="_csrf" value="${csrf}">
+      <button class="btn btn-primary btn-sm" type="submit">Włącz tryb zapisu</button>
+    </form>` : ''}
+    <form method="post" action="/logout" class="inline" ${view.readOnly ? '' : 'style="margin-left:auto"'}>
       <input type="hidden" name="_csrf" value="${csrf}">
       <input type="hidden" name="stop_impersonation" value="1">
       <button class="btn btn-secondary btn-sm" type="submit">Zakończ podgląd</button>
