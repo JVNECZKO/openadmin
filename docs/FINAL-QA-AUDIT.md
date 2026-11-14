@@ -275,3 +275,12 @@ After the frozen audit, the following hardening landed and was verified by the b
 
 
 - **Statistics:** `/user/statistics` now breaks disk down into files/poczta/bazy/backupy, shows the measurement timestamp/source, 80/90/100% alerts, a 30-day transfer forecast, and CSV/JSON export. Tested in the smoke suite.
+
+---
+
+## 15. Final verification after P1 closeout
+
+- Full suite: **301/301 pass**; QA harness: **54/54 checks, 0 fail**, 350 route/width snapshots, 14/14 security checks, 27 axe pages with 0 serious/critical, 7/7 counter checks.
+- Live panel: `https://192.168.3.240:2222` returns HTTP 200; `/healthz` is liveness-only; `/user/statistics`, `/user/databases`, `/admin/bulk`, `/user/email/setup` render 200 for their roles.
+- Reset tokens use a scoped HttpOnly exchange; MariaDB credentials no longer appear in argv; protected-directory passwords follow the panel policy; temporary suspensions auto-expire; app/SSL/import/web-engine operations run preflight.
+- Remaining non-blocking P3: optional archive encryption/per-package RPO profile, multipart/resumable upload transport (the real 64 MB limit and client preflight are in place), and inline `style=` attributes keep `style-src` permissive while script CSP is nonce-strict.
