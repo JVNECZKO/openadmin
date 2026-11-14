@@ -252,3 +252,12 @@ After the frozen audit, the following hardening landed and was verified by the b
 - **Impersonation:** an explicit, audited “Włącz tryb zapisu” action escalates a read-only preview; the default remains read-only.
 - **Database onboarding:** password is optional and auto-generated with one-time credential display; the live `klient1` flow was re-tested and the temporary database removed.
 - **Test suite:** 299/299 passing, including a CSP regression test. Commits: `fca90d0`, `8e9f30d`, `5b1b5fd`.
+
+---
+
+## 13. Goal round 2 — bulk operations and mail onboarding
+
+- **Bulk actions (OA-030):** `/admin/bulk` and `/reseller/bulk` support scoped selection of users/domains, signed preview tokens, per-object permission revalidation, suspend/activate/package/backup/SSL/PHP/message actions, durable backup/ACME jobs, partial-failure reports and idempotent replay. Admin accounts and foreign tenants are blocked.
+- **Mail onboarding (OA user QoL):** mailbox setup guide at `/user/email/setup` with IMAP/SMTP settings, autoconfig URL, optional QR, SPF/DMARC/DKIM zone health and an IMAP/SMTP port probe. Existing public autoconfig remains the single source for mail clients.
+- **Deployment:** both changes are live on the panel; bulk and setup pages return HTTP 200 for the intended roles.
+- **Tests:** 299/299 passing (`node --test tests/*.test.mjs`). Commit `667eff7`.
