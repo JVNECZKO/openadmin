@@ -2134,3 +2134,23 @@ test('user and reseller catalog pages use visual tiles', async () => {
   const domains = await (await fetch(base + '/reseller/domains', { headers: { Cookie: reseller } })).text();
   assert.match(domains, /Domeny klientów/);
 });
+
+test('terminal commands return JSON without a page refresh and wizard has stepper hooks', async () => {
+  const admin = await loginAs('demoadmin');
+  const page = await (await fetch(base + '/user/terminal', { headers: { Cookie: admin } })).text();
+  assert.match(page, /term-form/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const res = await fetch(base + '/user/terminal', {
+    method: 'POST',
+    headers: { Cookie: admin, Accept: 'application/json', 'X-Requested-With': 'fetch', 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, command: 'pwd' }).toString(),
+  });
+  assert.equal(res.status, 200);
+  const json = await res.json();
+  assert.equal(json.ok, true);
+  assert.match(json.output, /\$ pwd/);
+  const wizard = await (await fetch(base + '/user/websites/new', { headers: { Cookie: admin } })).text();
+  assert.match(wizard, /data-wizard/);
+  assert.match(wizard, /data-wizard-indicator/);
+  assert.match(wizard, /data-wizard-next/);
+});
