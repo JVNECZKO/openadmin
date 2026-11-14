@@ -261,3 +261,5 @@ After the frozen audit, the following hardening landed and was verified by the b
 - **Mail onboarding (OA user QoL):** mailbox setup guide at `/user/email/setup` with IMAP/SMTP settings, autoconfig URL, optional QR, SPF/DMARC/DKIM zone health and an IMAP/SMTP port probe. Existing public autoconfig remains the single source for mail clients.
 - **Deployment:** both changes are live on the panel; bulk and setup pages return HTTP 200 for the intended roles.
 - **Tests:** 299/299 passing (`node --test tests/*.test.mjs`). Commit `667eff7`.
+
+- **Session rotation:** password changes and 2FA enable/disable reissue the panel session token/CSRF; read-only previews are never rotated so the actor cookie stays valid.
