@@ -47,6 +47,7 @@ const DEMO_PASS = 'demo';
 const MAX_UPLOAD_MB = Number(arg('max-upload-mb', '16'));
 const SKIP_SECURITY = flag('skip-security');
 const SKIP_VISUAL = flag('skip-visual');
+const CSP_SMOKE = flag('csp-smoke');
 const HEADLESS = !flag('show');
 const AXE_CANDIDATES = [
   process.env.AXE_PATH,
@@ -343,6 +344,10 @@ class Browser {
 
   async emulateLight() {
     await this.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+  }
+
+  async addInitScript(source) {
+    await this.send('Page.addScriptToEvaluateOnNewDocument', { source });
   }
 
   async setCookies(cookies) {
@@ -982,6 +987,178 @@ async function themeContrastCheck(browser, collectors, admin) {
   return { lightRatio, darkRatio };
 }
 
+/* -------------------------------------------------------- CSP smoke */
+async function cspSmoke(browser, collectors, admin, user) {
+  const add = (id, status, detail, evidence = null) => {
+    results.security.push({ id, status, detail, evidence });
+    record('smoke', id, status, detail, evidence);
+  };
+  const violations = [];
+  const consoleAll = [];
+  const capture = async (label) => {
+    try {
+      const found = await browser.evaluate('window.__cspViolations || []');
+      for (const item of found || []) violations.push({ where: label, ...item });
+    } catch { /* page may be navigating */ }
+    consoleAll.push(...(collectors.consoleErrors || []));
+    collectors.reset();
+  };
+  await browser.addInitScript(`window.__cspViolations=[];document.addEventListener('securitypolicyviolation',function(e){window.__cspViolations.push({directive:e.violatedDirective,blockedURI:e.blockedURI,sourceFile:e.sourceFile,line:e.lineNumber,sample:String(e.sample||'').slice(0,120)});});`);
+
+  /* 1. static CSP/markup contract on real responses */
+  const pages = [
+    ['/login', null], ['/admin', admin], ['/admin/users', admin], ['/user/app-catalog', user],
+  ];
+  const markup = [];
+  for (const [pathname, session] of pages) {
+    const res = await (session ? session.req(pathname) : new Http(base).req(pathname));
+    const csp = res.headers.get('content-security-policy') || '';
+    const scriptSrc = /(?:^|;)\s*script-src([^;]*)/i.exec(csp)?.[1]?.trim() || '';
+    const nonce = /'nonce-([^']+)'/.exec(scriptSrc)?.[1] || '';
+    const scripts = [...res.text.matchAll(/<script\b([^>]*)>/gi)].map((m) => m[1]);
+    const missingNonce = scripts.filter((attrs) => !/\bnonce\s*=/.test(attrs)).length;
+    const inlineEvents = [...res.text.matchAll(/\son(?:click|change|submit|input|load|error|focus|blur)\s*=/gi)].length;
+    markup.push({ pathname, csp, scriptSrc, nonce: !!nonce, scripts: scripts.length, missingNonce, inlineEvents });
+  }
+  const noUnsafe = markup.every((m) => !/unsafe-inline/i.test(m.scriptSrc) && m.nonce);
+  add('CSP-001-script-policy', noUnsafe ? 'pass' : 'fail',
+    markup.map((m) => `${m.pathname}: ${m.scriptSrc.replace(/'nonce-[^']+'/, "'nonce-…'")}`).join(' | '), { markup });
+  const cleanMarkup = markup.every((m) => m.missingNonce === 0 && m.inlineEvents === 0);
+  add('CSP-002-markup', cleanMarkup ? 'pass' : 'fail',
+    markup.map((m) => `${m.pathname}: scripts=${m.scripts} missingNonce=${m.missingNonce} inlineEvents=${m.inlineEvents}`).join(' | '));
+
+  /* 2. real browser login through the form */
+  await browser.setCookies([]);
+  await browser.navigate(`${base}/login`, 1280, null);
+  await capture('login');
+  await browser.evaluate(`(() => {
+    const form = document.querySelector('form[action="/login"]');
+    const u = document.querySelector('#username'); const p = document.querySelector('#password');
+    if (!form || !u || !p) throw new Error('login form missing');
+    u.value = ${JSON.stringify(ADMIN_USER)}; p.value = ${JSON.stringify(adminPass)};
+    form.requestSubmit(); return true;
+  })()`);
+  let loginPath = '';
+  for (let i = 0; i < 80; i++) {
+    await sleep(100);
+    try { loginPath = await browser.evaluate('location.pathname'); } catch { /* nav */ }
+    if (loginPath && loginPath !== '/login') break;
+  }
+  await capture('admin');
+  const adminIdentity = await browser.evaluate(`(() => ({ user: document.querySelector('.avatar-meta strong')?.textContent?.trim() || '', level: document.querySelector('.avatar-meta em')?.textContent?.trim() || '' }))()`);
+  add('CSP-003-ui-login', loginPath === '/admin' && adminIdentity.user === ADMIN_USER ? 'pass' : 'fail',
+    `login form submit -> ${loginPath || 'no navigation'}, identity=${adminIdentity.user}/${adminIdentity.level}`, { adminIdentity });
+
+  /* 3. theme toggle + persistence */
+  await browser.evaluate("localStorage.setItem('oa_theme','light')");
+  await browser.send('Page.reload');
+  await sleep(400);
+  await capture('theme-light');
+  const before = await browser.evaluate("document.documentElement.dataset.mode || 'light'");
+  await browser.evaluate("document.querySelector('[data-toggle-theme]')?.click()");
+  await sleep(200);
+  const darkMode = await browser.evaluate("document.documentElement.dataset.mode || 'light'");
+  const stored = await browser.evaluate("localStorage.getItem('oa_theme') || ''");
+  await browser.send('Page.reload');
+  await sleep(350);
+  const persisted = await browser.evaluate("document.documentElement.dataset.mode || 'light'");
+  await browser.evaluate("document.querySelector('[data-toggle-theme]')?.click()");
+  await sleep(150);
+  const lightMode = await browser.evaluate("document.documentElement.dataset.mode || 'light'");
+  await capture('theme-dark');
+  add('CSP-004-theme', darkMode === 'dark' && stored === 'dark' && persisted === 'dark' && lightMode === 'light' ? 'pass' : 'fail',
+    `start=${before} click->${darkMode} stored=${stored} reload=${persisted} back->${lightMode}`, { before, darkMode, stored, persisted, lightMode });
+
+  /* 4. app catalogue filters */
+  await browser.setCookies(user.cookies);
+  await browser.navigate(`${base}/user/app-catalog`, 1280, null);
+  await capture('app-catalog');
+  const catalog = await browser.evaluate(`(() => {
+    const hidden = (el) => !el || getComputedStyle(el).display === 'none' || el.getClientRects().length === 0;
+    const read = () => ({ empty: !hidden(document.querySelector('[data-app-filter-empty]')), region: !hidden(document.querySelector('[data-app-installed-region]')), tiles: [...document.querySelectorAll('[data-app-card]')].filter((el) => !hidden(el)).length });
+    document.querySelector('[data-app-filter="installed"]')?.click();
+    const installed = read();
+    document.querySelector('[data-app-filter="available"]')?.click();
+    const available = read();
+    document.querySelector('[data-app-filter="all"]')?.click();
+    const all = read();
+    return { installed, available, all };
+  })()`);
+  const catalogOk = catalog.all.tiles > 0 && catalog.installed.empty === false && catalog.available.empty === false
+    && catalog.installed.region === true && catalog.available.region === true;
+  add('CSP-005-app-catalog', catalogOk ? 'pass' : 'fail',
+    `all tiles=${catalog.all.tiles}, installed empty=${catalog.installed.empty} region=${catalog.installed.region}, available empty=${catalog.available.empty} region=${catalog.available.region}`, { catalog });
+
+  /* 5. delegated data-confirm */
+  await browser.setCookies(admin.cookies);
+  await browser.navigate(`${base}/admin/users`, 1280, null);
+  await capture('users');
+  let dialog = null;
+  const dialogHandler = (method, params) => { if (method === 'Page.javascriptDialogOpening') dialog = params; };
+  browser.on(dialogHandler);
+  const confirmForms = await browser.evaluate("document.querySelectorAll('form[data-confirm]').length");
+  // Click asynchronously: window.confirm blocks the renderer, and awaiting the
+  // evaluate call would deadlock before we can dismiss the dialog.
+  await browser.evaluate("setTimeout(() => { document.querySelector('form[data-confirm] button[type=submit]')?.click(); }, 0); true");
+  await sleep(350);
+  if (dialog) await browser.send('Page.handleJavaScriptDialog', { accept: false });
+  await sleep(200);
+  const afterDialog = await browser.evaluate('location.pathname');
+  await capture('data-confirm');
+  add('CSP-006-data-confirm', !!dialog && afterDialog === '/admin/users' ? 'pass' : 'fail',
+    `forms=${confirmForms}, dialog=${!!dialog} ${dialog?.message ? 'message="' + dialog.message.slice(0, 70) + '"' : ''}, path after dismiss=${afterDialog}`, { dialog: dialog ? { message: dialog.message, type: dialog.type } : null });
+
+  /* 6. delegated auto-submit (captured, prevented before mutation) */
+  await browser.navigate(`${base}/admin/php`, 1280, null);
+  await capture('php');
+  const auto = await browser.evaluate(`(() => {
+    window.__autoSubmitted = false;
+    document.addEventListener('submit', (event) => {
+      if (event.target.querySelector('[data-auto-submit]')) { event.preventDefault(); window.__autoSubmitted = true; }
+    }, true);
+    let select = document.querySelector('[data-auto-submit]');
+    if (!select) {
+      const form = document.createElement('form'); form.method = 'post'; form.action = '/admin/php';
+      select = document.createElement('select'); select.name = 'version'; select.setAttribute('data-auto-submit', '');
+      const option = document.createElement('option'); option.textContent = '8.3'; select.append(option);
+      form.append(select); document.body.append(form);
+    }
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return { found: !!document.querySelector('[data-auto-submit]'), forms: document.querySelectorAll('[data-auto-submit]').length };
+  })()`);
+  await sleep(250);
+  const autoSubmitted = await browser.evaluate('window.__autoSubmitted === true');
+  await capture('auto-submit');
+  add('CSP-007-auto-submit', autoSubmitted ? 'pass' : 'fail', `selects=${auto.forms}, submit event observed=${autoSubmitted}`);
+
+  /* 7. CSP violation collection */
+  const cspConsole = [...new Set(consoleAll.filter((line) => /Content Security Policy|Refused to|CSP/i.test(line)))];
+  add('CSP-008-violations', violations.length === 0 && cspConsole.length === 0 ? 'pass' : 'fail',
+    `securitypolicyviolation events=${violations.length}, console CSP errors=${cspConsole.length}`,
+    { violations: violations.slice(0, 10), console: cspConsole.slice(0, 10) });
+
+  /* 8. webmail session token is stored hashed */
+  try {
+    const wm = new Http(base);
+    const res = await wm.req('/webmail/login', { method: 'POST', form: { email: 'info@example.com', password: 'demo' } });
+    const raw = wm.cookies.get('OA_WEBMAIL') || '';
+    const row = dbGet('SELECT token FROM webmail_sessions ORDER BY created_at DESC LIMIT 1');
+    const stored = row?.rows?.[0]?.[0] || '';
+    const source = fs.readFileSync(path.join(ROOT, 'src/features/webmail.mjs'), 'utf8');
+    const usesHash = /hashSessionToken\(token\)/.test(source);
+    const ok = res.status === 302 && raw.length > 0 && /^[a-f0-9]{64}$/.test(stored) && stored !== raw && usesHash;
+    add('WEBMAIL-001-token-hash', ok ? 'pass' : 'fail',
+      `login=${res.status} cookie=${raw.length} chars, DB=${stored.length} chars hex=${/^[a-f0-9]{64}$/.test(stored)}, cookie==DB=${stored === raw}, sourceHash=${usesHash}`,
+      { dbPrefix: stored.slice(0, 12) });
+  } catch (e) {
+    add('WEBMAIL-001-token-hash', 'fail', `webmail probe failed: ${e.message}`);
+  }
+
+  // Remove the listener added for the dialog probe.
+  const idx = browser.handlers.indexOf(dialogHandler);
+  if (idx >= 0) browser.handlers.splice(idx, 1);
+}
+
 /* --------------------------------------------------- templates + theme */
 async function templatesCheck(browser, collectors, admin) {
   const page = await admin.req('/admin/templates');
@@ -1519,6 +1696,10 @@ async function main() {
     if (!SKIP_VISUAL) {
       browser = await new Browser().launch();
       const collectors = new Collectors(browser);
+      if (CSP_SMOKE) {
+        await cspSmoke(browser, collectors, adminLogin.session, userLogin.session);
+        return;
+      }
       // Explicit light theme: headless Chrome otherwise follows the host OS and
       // many route checks would silently audit dark mode. Dark mode is tested
       // separately below, so both themes have real evidence.
