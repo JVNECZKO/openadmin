@@ -240,3 +240,15 @@ Non-blocking hardening note (P3):
 | [docs/qa-final/run-report.md](qa-final/run-report.md) | generated per-check report |
 | [docs/qa-final/tests.log](qa-final/tests.log) | full `node --test` output |
 | [docs/qa-final/screenshots](qa-final/screenshots) | 20 representative evidence screenshots |
+
+---
+
+## 12. Post-audit hardening (goal round 1)
+
+After the frozen audit, the following hardening landed and was verified by the browser smoke plus the full suite:
+
+- **CSP:** every HTML response now gets a fresh script nonce; `script-src` no longer contains `unsafe-inline`; all legacy inline `onclick`/`onchange` handlers were replaced by delegated `data-confirm` / `data-auto-submit` handlers. Browser smoke: 0 CSP violations and 0 scripts without a nonce.
+- **Webmail sessions:** tokens are stored as SHA-256 hashes, not raw values; legacy rows migrate on first use; the cookie is HttpOnly/SameSite=Strict and Secure over HTTPS.
+- **Impersonation:** an explicit, audited “Włącz tryb zapisu” action escalates a read-only preview; the default remains read-only.
+- **Database onboarding:** password is optional and auto-generated with one-time credential display; the live `klient1` flow was re-tested and the temporary database removed.
+- **Test suite:** 291/291 passing, including a CSP regression test. Commits: `fca90d0`, `8e9f30d`, `5b1b5fd`.
