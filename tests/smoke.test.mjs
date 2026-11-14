@@ -265,12 +265,12 @@ test('openapi document is valid JSON with expected paths', async () => {
   assert.ok(doc.paths['/email']);
 });
 
-test('health endpoint reports version', async () => {
+test('health endpoint is liveness-only and does not expose build version', async () => {
   const res = await fetch(base + '/healthz');
   assert.equal(res.status, 200);
   const json = await res.json();
   assert.equal(json.ok, true);
-  assert.match(json.version, /^\d+\.\d+\.\d+/);
+  assert.equal(json.version, undefined);
 });
 
 /* ---------------------------------------------------------------- compat */
@@ -1412,12 +1412,17 @@ test('self-service password reset changes the password and invalidates the token
     'resetuser', db.hashPassword('before-pass-123'), 'reset@example.test', 'user', 'default', db.nowIso());
   const user = db.get("SELECT * FROM users WHERE username = 'resetuser'");
   const token = createResetToken(user.id);
-  const page = await fetch(`${base}/reset-password?token=${encodeURIComponent(token)}`);
+  const exchange = await fetch(`${base}/reset-password?token=${encodeURIComponent(token)}`, { redirect: 'manual' });
+  assert.equal(exchange.status, 302);
+  assert.equal(exchange.headers.get('location'), '/reset-password');
+  const resetCookie = exchange.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+  assert.match(resetCookie, /OA_RESET=/);
+  const page = await fetch(base + '/reset-password', { headers: { Cookie: resetCookie } });
   assert.equal(page.status, 200);
   assert.match(await page.text(), /Ustaw nowe hasło/);
   const reset = await fetch(base + '/reset-password', {
-    method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ token, password: 'after-pass-456', password2: 'after-pass-456' }).toString(),
+    method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: resetCookie },
+    body: new URLSearchParams({ password: 'after-pass-456', password2: 'after-pass-456' }).toString(),
   });
   assert.equal(reset.status, 302);
   assert.equal(db.get("SELECT * FROM password_resets WHERE user_id = ?", user.id), null);

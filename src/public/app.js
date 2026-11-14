@@ -501,6 +501,8 @@
 
   /* -------------------------------------------------------- auto refresh */
   const AUTO_KEY = 'oa_autorefresh';
+  let autoRefreshFailures = 0;
+  let autoRefreshBackoffUntil = 0;
   let autoRefreshTimer = null;
   let autoRefreshLast = 0;
   let autoRefreshInterval = 30;
@@ -565,10 +567,16 @@
       initForms();
       initFilters();
       initTableScroll();
+      autoRefreshFailures = 0;
+      autoRefreshBackoffUntil = 0;
       markRefreshed();
       document.dispatchEvent(new CustomEvent('oa:content-refreshed'));
     } catch {
-      window.location.reload();
+      autoRefreshFailures += 1;
+      const delay = Math.min(300000, Math.max(5000, autoRefreshInterval * 1000 * (2 ** Math.min(autoRefreshFailures, 5))));
+      autoRefreshBackoffUntil = Date.now() + delay;
+      updateAutoRefreshUi();
+      announce(`Połączenie nie odpowiada. Kolejna próba za ${Math.ceil(delay / 1000)} s.`);
     }
   }
 
@@ -583,7 +591,8 @@
     if (autoRefreshTimer) clearInterval(autoRefreshTimer);
     autoRefreshLast = Date.now();
     autoRefreshTimer = setInterval(() => {
-      if (document.hidden) return;
+      if (document.hidden || !navigator.onLine) return;
+      if (Date.now() < autoRefreshBackoffUntil) return;
       if (Date.now() - autoRefreshLast < autoRefreshInterval * 1000) return;
       autoRefreshLast = Date.now();
       refreshPage();
@@ -599,7 +608,7 @@
         ? `Auto-refresh is on (${autoRefreshInterval}s) — paused while this tab is hidden`
         : 'Auto-refresh this page every 30 seconds');
       const state = $('[data-ar-state]', button);
-      if (state) state.textContent = on ? 'On' : 'Off';
+      if (state) state.textContent = !navigator.onLine ? 'Offline' : autoRefreshBackoffUntil > Date.now() ? 'Retry' : on ? 'On' : 'Off';
     });
   }
 
@@ -637,6 +646,8 @@
     ]);
     const autoAllowed = autoSafePaths.has(cleanPath);
     autoRefreshAllowed = autoAllowed;
+    window.addEventListener('online', () => updateAutoRefreshUi());
+    window.addEventListener('offline', () => updateAutoRefreshUi());
     if (!autoAllowed && control) {
       control.hidden = true;
       control.setAttribute('aria-disabled', 'true');
@@ -1522,6 +1533,7 @@
         }
         confirmEl.dataset.oaConfirmed = '1';
       }
+      if (target.closest('[data-refresh-now]')) { refreshPage(); return; }
       if (target.closest('[data-sidebar-open]')) { sidebarOpen(); return; }
       if (target.closest('[data-sidebar-close]')) { sidebarClose(); return; }
       if (target.closest('[data-menu-toggle]')) {

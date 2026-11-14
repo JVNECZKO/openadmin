@@ -10,6 +10,7 @@ import { card, table, btn, badge, alert, emptyState, kvList, form, progress } fr
 import { icon } from '../ui/icons.mjs';
 import { domainSelect, listCard } from '../ui/pages/list.mjs';
 import { visibleDomains, domainFor } from '../core/access.mjs';
+import { passwordPolicyError } from '../security.mjs';
 import { homeDir, resolveUserPath, displayPath, provisionDomain } from './files.mjs';
 import { generateAll } from '../webserver.mjs';
 import { installWordPress, wordpressStatus } from '../wordpress.mjs';
@@ -251,7 +252,10 @@ export function register(router) {
     const d = domainFor(ctx.user, ctx.body.domain);
     if (!d) return ctx.redirect('/user/protected-directories?flash=Domain%20not%20found&type=error');
     const rows = getSetting(`protected:${ctx.user.username}`, []);
+    const policyError = passwordPolicyError(String(ctx.body.password || ''));
+    if (policyError) return ctx.redirect('/user/protected-directories?flash=' + encodeURIComponent(policyError) + '&type=error');
     const dirPath = '/' + String(ctx.body.path || '').replace(/^\/+/, '');
+    if (dirPath.includes('..')) return ctx.redirect('/user/protected-directories?flash=Invalid%20path&type=error');
     rows.push({ id: Date.now().toString(36), domain: d.name, path: dirPath, users: [String(ctx.body.username)], created: nowIso() });
     putSetting(`protected:${ctx.user.username}`, rows);
     const dir = path.join(homeDir(ctx.user.username), 'domains', d.name, 'public_html', dirPath);
@@ -264,6 +268,8 @@ export function register(router) {
     const rows = getSetting(`protected:${ctx.user.username}`, []);
     const row = rows.find((r) => String(r.id) === String(ctx.params.id));
     if (!row) return ctx.redirect('/user/protected-directories?flash=Not%20found&type=error');
+    const policyError = passwordPolicyError(String(ctx.body.password || ''));
+    if (policyError) return ctx.redirect(`/user/protected-directories?edit=${encodeURIComponent(row.id)}&flash=${encodeURIComponent(policyError)}&type=error`);
     const dir = path.join(homeDir(ctx.user.username), 'domains', row.domain, 'public_html', row.path);
     fs.writeFileSync(path.join(dir, '.htpasswd'), `${row.users[0]}:{SHA}${Buffer.from(String(ctx.body.password)).toString('base64')}\n`);
     return ctx.redirect('/user/protected-directories?flash=Password%20updated');

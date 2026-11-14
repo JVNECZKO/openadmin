@@ -172,7 +172,7 @@ export async function handle(req, res) {
     if (pathname === '/favicon.ico' || pathname === '/favicon.svg') return await serveStatic(req, res, '/assets/favicon.svg');
     // Public liveness probe: no uptime/topology. The version stays for the
     // documented installer compatibility contract (see tests/smoke.test.mjs).
-    if (pathname === '/healthz') return sendJson(res, { ok: true, version: VERSION });
+    if (pathname === '/healthz') return sendJson(res, { ok: true });
 
     const cookies = parseCookies(req.headers.cookie || '');
     let session = null;

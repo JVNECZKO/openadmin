@@ -14,9 +14,14 @@ const candidates = () => {
   return [...new Set(list.filter(Boolean))];
 };
 
+
+/** MariaDB credentials never travel in argv (visible in `ps`). */
+function mysqlEnv() {
+  return config.mysql.password ? { ...process.env, MYSQL_PWD: config.mysql.password } : process.env;
+}
+
 function argsFor(user, extra = {}) {
   const args = ['--batch', '--skip-column-names', '--connect-timeout=3', '-u', user];
-  if (config.mysql.password) args.push(`-p${config.mysql.password}`);
   if (config.mysql.socket) args.push('--socket', config.mysql.socket);
   else if (config.mysql.host) args.push('-h', config.mysql.host, '-P', String(config.mysql.port));
   if (extra.db) args.push(extra.db);
@@ -26,7 +31,7 @@ function argsFor(user, extra = {}) {
 function exec(user, sql, extra = {}) {
   const bin = which('mariadb') || which('mysql');
   if (!bin) return { ok: false, error: 'MariaDB client is not installed', rows: [], output: '' };
-  const r = spawnSync(bin, [...argsFor(user, extra), '-e', sql], { encoding: 'utf8', timeout: 30000 });
+  const r = spawnSync(bin, [...argsFor(user, extra), '-e', sql], { encoding: 'utf8', timeout: 30000, env: mysqlEnv() });
   const out = `${r.stdout || ''}${r.stderr || ''}`.trim();
   return { ok: r.status === 0, error: r.status === 0 ? '' : out.split('\n').slice(-3).join(' '), rows: (r.stdout || '').split('\n').filter(Boolean).map((l) => l.split('\t')), output: out };
 }
@@ -120,11 +125,10 @@ export function dumpDatabase(name) {
   const d = detect();
   if (!d.connected) return { ok: false, error: d.error, sql: '' };
   const args = ['--single-transaction', '--no-tablespaces', '-u', d.user];
-  if (config.mysql.password) args.push(`-p${config.mysql.password}`);
   if (config.mysql.socket) args.push('--socket', config.mysql.socket);
   else if (config.mysql.host) args.push('-h', config.mysql.host, '-P', String(config.mysql.port));
   args.push(name);
-  const r = spawnSync(bin, args, { encoding: 'utf8', timeout: 120000, maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync(bin, args, { encoding: 'utf8', timeout: 120000, maxBuffer: 64 * 1024 * 1024, env: mysqlEnv() });
   return { ok: r.status === 0, sql: r.stdout || '', error: r.status === 0 ? '' : (r.stderr || '').trim() };
 }
 

@@ -222,15 +222,27 @@ export function registerAuthRoutes(router) {
     </form>
   </div></div></body></html>`;
 
+  const resetCookie = (value, maxAge = 3600) => `OA_RESET=${encodeURIComponent(value)}; Path=/reset-password; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${config.https ? '; Secure' : ''}`;
+
   router.get('/reset-password', (ctx) => {
-    const token = String(ctx.query.token || '');
+    const queryToken = String(ctx.query.token || '');
+    if (queryToken) {
+      const row = verifyResetToken(queryToken);
+      if (!row) return { status: 400, html: resetPage('', 'Link wygasł lub jest nieprawidłowy. Poproś o nowy.') };
+      // Exchange the URL token for a scoped HttpOnly cookie and remove it from
+      // the address bar/history before rendering any content.
+      ctx.res.setHeader('Set-Cookie', resetCookie(queryToken));
+      ctx.res.setHeader('Referrer-Policy', 'no-referrer');
+      return ctx.redirect('/reset-password');
+    }
+    const token = String(ctx.cookies.OA_RESET || '');
     const row = verifyResetToken(token);
     if (!row) return { status: 400, html: resetPage('', 'Link wygasł lub jest nieprawidłowy. Poproś o nowy.') };
     return { status: 200, html: resetPage(token) };
   });
 
   router.post('/reset-password', (ctx) => {
-    const token = String(ctx.body.token || '');
+    const token = String(ctx.cookies.OA_RESET || ctx.body.token || '');
     const row = verifyResetToken(token);
     if (!row) return { status: 400, html: resetPage('', 'Link wygasł lub jest nieprawidłowy. Poproś o nowy.') };
     const password = String(ctx.body.password || '');
@@ -243,6 +255,7 @@ export function registerAuthRoutes(router) {
     consumeResetToken(row);
     run('DELETE FROM sessions WHERE user_id = ?', user.id);
     audit(user.username, user.level, 'password.reset.email', '', ctx.ip);
+    ctx.res.setHeader('Set-Cookie', resetCookie('', 0));
     return ctx.redirect('/login?error=' + encodeURIComponent('Hasło zostało zmienione. Zaloguj się.'));
   });
 

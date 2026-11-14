@@ -10,7 +10,7 @@ import { card, table, badge, alert, emptyState, kvList, progress } from '../ui/c
 import { icon } from '../ui/icons.mjs';
 import { listCard } from '../ui/pages/list.mjs';
 import { quota } from '../core/access.mjs';
-import { createUserBackup, restoreUserBackup } from '../backups.mjs';
+import { createUserBackup, restoreUserBackup, createUserBackupJob, enqueueUserRestore, spawnJobRunner, jobView } from '../backups.mjs';
 import { validateJob, rebuildCrontab, installCrontab, cronMeta } from '../cron.mjs';
 import { systemProvider } from '../providers/index.mjs';
 import { checkDisk } from '../quota.mjs';
@@ -688,13 +688,26 @@ export function register(router) {
 
   router.post('/user/backups/create', (ctx) => {
     const kind = ['full', 'home', 'email', 'db'].includes(String(ctx.body.kind)) ? String(ctx.body.kind) : 'full';
-    try {
-      const result = createUserBackup(ctx.user, kind);
-      audit(ctx.user.username, ctx.user.level, 'backup.create', result.filename, ctx.ip);
-      return ctx.redirect('/user/backups?flash=' + encodeURIComponent(`Backup ${result.filename} created (${result.size} MB, ${result.files} files)`));
-    } catch (e) {
-      return ctx.redirect('/user/backups?flash=' + encodeURIComponent('Backup failed: ' + e.message) + '&type=error');
+    const job = createUserBackupJob(ctx.user, kind, { actor: ctx.user.username });
+    spawnJobRunner(job.jobId);
+    audit(ctx.user.username, ctx.user.level, 'backup.create.request', `job:${job.jobId}`, ctx.ip);
+    return ctx.redirect(`/user/backups/operations/${job.jobId}`);
+  });
+
+  router.get('/user/backups/operations/:id', (ctx) => {
+    const job = jobView(Number(ctx.params.id));
+    if (!job || (job.actor !== ctx.user.username && job.target !== `user:${ctx.user.username}`)) {
+      return ctx.redirect('/user/backups?flash=Zadanie%20nie%20znalezione&type=error');
     }
+    const stages = job.stages || [];
+    const body = h`${card('Zadanie backupu', h`
+      ${alert(`Status: ${job.status} · etap: ${job.stage_label || job.stage || '—'} · ${job.progress || 0}%`, job.status === 'complete' ? 'ok' : job.status === 'failed' ? 'danger' : 'info')}
+      <div class="progress-track mb-18"><div class="progress-fill" style="width:${Math.max(0, Math.min(100, Number(job.progress) || 0))}%"></div></div>
+      <div class="stack">${stages.map((stage) => h`<div class="spread small"><span>${stage.label}</span><span>${badge(stage.status, stage.status === 'complete' ? 'ok' : stage.status === 'failed' ? 'danger' : 'muted')}</span></div>`)}</div>
+      ${job.error ? alert(job.error, 'danger') : ''}
+      <div class="row mt-18"><a class="btn btn-primary" href="/user/backups">Wróć do backupów</a>${['queued', 'running'].includes(job.status) ? h`<button class="btn btn-secondary" type="button" data-refresh-now>Odśwież status</button>` : ''}</div>
+    `)}`;
+    return page(ctx, { title: 'Backup', subtitle: `Zadanie #${job.id}`, body });
   });
 
   router.post('/user/backups/:id/delete', (ctx) => {
@@ -709,10 +722,10 @@ export function register(router) {
   router.post('/user/backups/restore', (ctx) => {
     const b = get('SELECT * FROM backups WHERE id = ? AND user_id = ?', Number(ctx.body.id), ctx.user.id);
     if (!b) return ctx.redirect('/user/backups?flash=Backup%20not%20found&type=error');
-    const result = restoreUserBackup(ctx.user, b.filename);
-    if (!result.ok) return ctx.redirect('/user/backups?flash=' + encodeURIComponent('Restore failed: ' + result.error) + '&type=error');
-    audit(ctx.user.username, ctx.user.level, 'backup.restore', b.filename, ctx.ip);
-    return ctx.redirect('/user/backups?flash=' + encodeURIComponent(`Backup ${b.filename} restored (${result.files} files)`));
+    const job = enqueueUserRestore(ctx.user, b.filename, { actor: ctx.user.username });
+    spawnJobRunner(job.jobId);
+    audit(ctx.user.username, ctx.user.level, 'backup.restore.request', `job:${job.jobId}`, ctx.ip);
+    return ctx.redirect(`/user/backups/operations/${job.jobId}`);
   });
 
   /* ----------------------------------------------------------------- cron */
