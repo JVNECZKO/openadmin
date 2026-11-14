@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 // Domains, subdomains, DNS zones, domain pointers and redirects.
-import { all, get, run, nowIso, setting, audit } from '../db.mjs';
+import { all, get, run, nowIso, setting, setSetting, audit } from '../db.mjs';
 import { limitsFor } from '../auth.mjs';
 import { html as h, isDomain, formatBytes, formatDate, e } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
@@ -8,37 +8,23 @@ import { card, table, form, btn, badge, statusBadge, pageHead, alert, emptyState
 import { icon } from '../ui/icons.mjs';
 import { domainSelect, listCard } from '../ui/pages/list.mjs';
 import { quota, visibleDomains, domainFor } from '../core/access.mjs';
-import { provisionDomain } from './files.mjs';
 import { rebuildZone, zoneMeta, zonePath } from '../dns.mjs';
 import { runHooks } from '../plugins.mjs';
 import { apply } from '../apply.mjs';
-import { generateSelfSigned } from '../ssl.mjs';
+import { SERVERS, activeServer } from '../webserver.mjs';
+import {
+  createSite, createZone, cleanupDomainFiles, applySsl, redeploySite, lastProvision,
+  saveSiteStatus, phpVersions, normalizeEngine, engineChoices, removeVhost, provisionSubdomainRoot,
+} from '../provisioning.mjs';
+import { enginePicker, sslModeSelect, provisioningSteps } from './webserver.mjs';
 
-const PHP = ['8.4', '8.3', '8.2', '8.1', '7.4'];
+export { createZone };
 
 function serverIp() { return setting('server_ip', '127.0.0.1'); }
 
-export function createZone(domainId, domain) {
-  const ip = serverIp();
-  const ns1 = setting('ns1', 'ns1.localhost');
-  const ns2 = setting('ns2', 'ns2.localhost');
-  const records = [
-    ['@', 'A', ip, null, 3600],
-    ['www', 'A', ip, null, 3600],
-    ['mail', 'A', ip, null, 3600],
-    ['ftp', 'A', ip, null, 3600],
-    ['@', 'MX', `mail.${domain}.`, 10, 3600],
-    ['@', 'TXT', `v=spf1 a mx ip4:${ip} ~all`, null, 3600],
-    ['_dmarc', 'TXT', `v=DMARC1; p=quarantine; rua=mailto:postmaster@${domain}`, null, 3600],
-    ['@', 'NS', ns1.endsWith('.') ? ns1 : ns1 + '.', null, 3600],
-    ['@', 'NS', ns2.endsWith('.') ? ns2 : ns2 + '.', null, 3600],
-    ['_imaps._tcp', 'SRV', `0 1 993 mail.${domain}.`, null, 3600],
-    ['_submission._tcp', 'SRV', `0 1 587 mail.${domain}.`, null, 3600],
-  ];
-  for (const [name, type, value, priority, ttl] of records) {
-    run('INSERT INTO dns_records(domain_id, name, type, value, priority, ttl) VALUES(?,?,?,?,?,?)', domainId, name, type, value, priority, ttl);
-  }
-  try { rebuildZone(domain); } catch { /* DNS staging is best effort */ }
+function phpOptions() {
+  const list = phpVersions();
+  return list;
 }
 
 export function userDomains(ctx) {
@@ -46,6 +32,7 @@ export function userDomains(ctx) {
   const lim = limitsFor(ctx.user);
   const rows = domains.map((d) => ({
     ...d,
+    engineLabel: (SERVERS[setting(`web_server:${d.name}`, '') || setting('web_server', 'nginx')] || SERVERS.nginx).label,
     subCount: get('SELECT COUNT(*) n FROM subdomains WHERE domain_id = ?', d.id).n,
     mailCount: get('SELECT COUNT(*) n FROM email_accounts WHERE domain_id = ?', d.id).n,
     dnsCount: get('SELECT COUNT(*) n FROM dns_records WHERE domain_id = ?', d.id).n,
@@ -56,6 +43,7 @@ export function userDomains(ctx) {
       title: 'Domains', sub: `${rows.length} domain${rows.length === 1 ? '' : 's'}${lim.domains ? ` of ${lim.domains} allowed` : ' · unlimited'}`,
       columns: [
         { label: 'Domain', render: (r) => h`<a class="cell-strong" href="/user/dns?domain=${r.name}">${r.name}</a><span class="cell-sub">${r.docroot || ''}</span>` },
+        { label: 'Engine', render: (r) => h`<span class="cell-sub">${r.engineLabel}</span>` },
         { label: 'PHP', key: 'php_version' },
         { label: 'Subdomains', render: (r) => r.subCount },
         { label: 'Mailboxes', render: (r) => r.mailCount },
@@ -79,55 +67,95 @@ export function userDomains(ctx) {
   return page(ctx, { title: 'Domains', subtitle: 'Manage the domains hosted on your account', body });
 }
 
-export function domainCreatePage(ctx, error = '') {
+export function domainCreatePage(ctx, error = '', values = {}) {
   const domains = visibleDomains(ctx.user);
   const q = quota(ctx.user, 'domains');
+  const phpList = phpOptions();
+  const selectedPhp = values.phpVersion || ctx.body?.php_version || setting('php_default', '8.3');
+  const selectedEngine = values.engine || ctx.body?.engine || '';
+  const createDns = values.createDns !== undefined
+    ? !!values.createDns
+    : ctx.body?.create_dns !== undefined
+      ? !!(ctx.body.create_dns === '1' || ctx.body.create_dns === 'on' || ctx.body.create_dns === true)
+      : true;
+  const selectedSsl = values.sslMode
+    || (ctx.body?.ssl !== undefined ? (ctx.body.ssl === '1' || ctx.body.ssl === 'on' ? 'selfsigned' : 'none') : 'selfsigned');
+  const chosen = engineChoices().find((engine) => engine.id === selectedEngine);
   const body = h`${error ? alert(error, 'danger') : ''}
     ${!q.ok ? alert(`You have reached your domain limit (${q.used}/${q.limit}). Remove a domain or ask your reseller for a larger package.`, 'warn') : ''}
     ${card('Add a domain', h`
       <form method="post" action="/user/domains/create" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <div class="form-grid">
-          <div class="field"><label class="field-label" for="dname">Domain name <span class="req">*</span></label>
-            <input id="dname" name="domain" type="text" required placeholder="example.com" value="${ctx.body.domain || ''}" ${!q.ok ? 'disabled' : ''}>
+          <div class="field field-full"><label class="field-label" for="dname">Domain name <span class="req">*</span></label>
+            <input id="dname" name="domain" type="text" required placeholder="example.com" value="${values.domain || ctx.body.domain || ''}" ${!q.ok ? 'disabled' : ''}>
             <p class="field-help">Enter the domain without http:// or a trailing slash.</p></div>
+          <div class="field field-full"><label class="field-label">Web engine</label>
+            ${enginePicker({ selected: selectedEngine, name: 'engine' })}
+            <p class="field-help">${chosen ? `Selected: ${chosen.label}. ` : ''}The choice is stored per domain as web_server:&lt;domain&gt; and used for vhost generation.</p></div>
           <div class="field"><label class="field-label" for="php">PHP version</label>
-            <select id="php" name="php_version">${PHP.map((v) => h`<option value="${v}" ${v === setting('php_default', '8.3') ? 'selected' : ''}>PHP ${v}</option>`)}</select></div>
-          <div class="field field-full"><label class="check-field"><input type="checkbox" name="create_dns" value="1" checked><span>Create a DNS zone with default A, MX, SPF, DMARC and NS records</span></label></div>
-          <div class="field field-full"><label class="check-field"><input type="checkbox" name="ssl" value="1" checked><span>Enable SSL for this domain (issue a free Let's Encrypt certificate)</span></label></div>
+            <select id="php" name="php_version">${phpList.map((v) => h`<option value="${v}" ${v === selectedPhp ? 'selected' : ''}>PHP ${v}</option>`)}</select></div>
+          <div class="field"><label class="field-label" for="domain-ssl">SSL mode</label>
+            ${sslModeSelect({ selected: selectedSsl, name: 'ssl_mode', id: 'domain-ssl' })}
+            <p class="field-help">Let's Encrypt needs public DNS; the panel falls back to self-signed and says so in the result.</p></div>
+          <div class="field field-full"><label class="check-field"><input type="checkbox" name="create_dns" value="1" ${createDns ? 'checked' : ''}><span>Create a DNS zone with default A, MX, SPF, DMARC and NS records</span></label></div>
         </div>
+        <p class="small muted">Creating the domain runs the same provisioning pipeline as the website wizard: domain row, docroot, engine override, DNS, SSL and vhost generation.</p>
         <div class="form-actions">
           <button class="btn btn-primary" type="submit" ${!q.ok ? 'disabled' : ''}>${icon('plus', { size: 16 })}<span>Create domain</span></button>
           <a class="btn btn-ghost" href="/user/domains">Cancel</a>
         </div>
       </form>`)}
     ${card('Existing domains', h`${domains.length ? kvList(domains.map((d) => [d.name, d.docroot || '—']), { cols: 1 }) : emptyState('None yet')}`)}`;
-  return page(ctx, { title: 'Add domain', subtitle: 'Create a new domain on your account', body });
+  return page(ctx, { title: 'Add domain', subtitle: 'Create a new domain on your account and choose its web engine', body, wide: true });
 }
 
 export function registerDomainsPost(router) {
   router.post('/user/domains/create', (ctx) => {
-    const name = String(ctx.body.domain || '').trim().toLowerCase();
-    if (!isDomain(name)) return domainCreatePage(ctx, 'That does not look like a valid domain name. Example: example.com');
-    if (get('SELECT id FROM domains WHERE name = ?', name)) return domainCreatePage(ctx, 'That domain already exists on the server.');
-    if (get('SELECT id FROM domains WHERE name = ?', name)) return domainCreatePage(ctx, 'Domain already exists.');
-    const q = quota(ctx.user, 'domains');
-    if (!q.ok) return domainCreatePage(ctx, `Domain limit reached (${q.used}/${q.limit}).`);
-    const php = PHP.includes(String(ctx.body.php_version)) ? String(ctx.body.php_version) : '8.3';
-    const docroot = `/home/${ctx.user.username}/domains/${name}/public_html`;
-    const r = run(`INSERT INTO domains(user_id, username, name, docroot, php_version, ssl, status, is_main, ip, created_at)
-                   VALUES(?,?,?,?,?,?,?,?,?,?)`,
-      ctx.user.id, ctx.user.username, name, docroot, php, ctx.body.ssl ? 1 : 0, 'active',
-      get('SELECT COUNT(*) n FROM domains WHERE user_id = ?', ctx.user.id).n === 0 ? 1 : 0, serverIp(), nowIso());
-    if (ctx.body.create_dns) createZone(r.lastInsertRowid, name);
-    provisionDomain(ctx.user.username, name);
-    if (ctx.body.ssl) {
-      try { generateSelfSigned(name, 365); } catch { /* the wizard reports certificate errors */ }
+    const values = {
+      domain: String(ctx.body.domain || '').trim().toLowerCase(),
+      engine: String(ctx.body.engine || '').trim().toLowerCase(),
+      phpVersion: String(ctx.body.php_version || setting('php_default', '8.3')),
+      createDns: ctx.body.create_dns === '1' || ctx.body.create_dns === 'on' || ctx.body.create_dns === true,
+      sslMode: ctx.body.ssl_mode !== undefined
+        ? String(ctx.body.ssl_mode)
+        : (ctx.body.ssl !== undefined ? (ctx.body.ssl === '1' || ctx.body.ssl === 'on' ? 'selfsigned' : 'none') : 'selfsigned'),
+    };
+    // Preserve the previous behaviour of the domain page: creating an existing
+    // domain is an error here, even though createSite() itself is idempotent.
+    if (isDomain(values.domain) && get('SELECT id FROM domains WHERE name = ?', values.domain)) {
+      return domainCreatePage(ctx, 'That domain already exists on the server.', values);
     }
-    apply({ web: true, dns: true });
-    audit(ctx.user.username, ctx.user.level, 'domain.create', name, ctx.ip);
-    try { runHooks('domain.create', { domain: name, username: ctx.user.username, php }); } catch { /* ignore */ }
-    return ctx.redirect('/user/domains?flash=' + encodeURIComponent(`Domain ${name} created`));
+    let result;
+    try {
+      result = createSite({
+        user: ctx.user,
+        domain: values.domain,
+        engine: values.engine,
+        phpVersion: values.phpVersion,
+        sslMode: values.sslMode,
+        createDns: values.createDns,
+        ip: ctx.ip,
+      });
+    } catch (e) {
+      return domainCreatePage(ctx, `Provisioning failed: ${e.message}`, values);
+    }
+    if (!result.ok && !result.created) {
+      const message = (result.errors || []).map((err) => err.message).join(' ') || 'Could not create the domain.';
+      return domainCreatePage(ctx, message, values);
+    }
+    if (result.rolledBack) {
+      const message = (result.errors || []).map((err) => err.message).join(' ') || 'Provisioning failed.';
+      return domainCreatePage(ctx, `${message} The partially created domain was rolled back.`, values);
+    }
+    try { runHooks('domain.create', { domain: values.domain, username: ctx.user.username, php: result.phpVersion, engine: result.engine }); } catch { /* ignore */ }
+    if (!result.ok) {
+      return ctx.redirect(`/user/domains/${result.domainId}/edit`, {
+        flash: `Domain ${values.domain} was created, but provisioning reported warnings. Review the deployment steps.`,
+        type: 'error',
+      });
+    }
+    return ctx.redirect('/user/domains?flash=' + encodeURIComponent(`Domain ${values.domain} created on ${result.engineLabel}`));
   });
 
   router.get('/user/domains/:id/logs', (ctx) => {
@@ -150,39 +178,111 @@ export function registerDomainsPost(router) {
   router.get('/user/domains/:id/edit', (ctx) => {
     const d = domainFor(ctx.user, ctx.params.id);
     if (!d) return ctx.redirect('/user/domains?flash=Domain%20not%20found&type=error');
-    const body = h`${card(`Edit domain · ${d.name}`, h`<form method="post" action="/user/domains/${d.id}/update" class="oa-form">
-      <input type="hidden" name="_csrf" value="${ctx.csrf}">
-      <div class="form-grid">
-        <div class="field"><label class="field-label">Domain</label><input value="${d.name}" disabled></div>
-        <div class="field"><label class="field-label">Document root</label><input value="${d.docroot || ''}" disabled></div>
-        <div class="field"><label class="field-label">PHP version</label><select name="php_version">${PHP.map((v) => h`<option ${v === d.php_version ? 'selected' : ''}>${v}</option>`)}</select></div>
-        <div class="field"><label class="check-field"><input type="checkbox" name="ssl" value="1" ${d.ssl ? 'checked' : ''}> <span>SSL enabled</span></label></div>
-      </div>
-      <div class="form-actions"><button class="btn btn-primary" type="submit">Save domain</button><a class="btn btn-ghost" href="/user/domains">Cancel</a></div>
-    </form>`)}`;
-    return page(ctx, { title: 'Edit domain', subtitle: d.name, body });
+    const currentEngine = setting(`web_server:${d.name}`, '') || activeServer().id;
+    const phpList = phpOptions();
+    if ((d.php_version || '') && !phpList.includes(d.php_version)) phpList.push(d.php_version);
+    const status = lastProvision(d.name);
+    const server = SERVERS[currentEngine] || activeServer();
+    const statusBody = status
+      ? h`
+        ${status.warnings?.length ? alert(h`${status.warnings.map((w) => h`<div>${w}</div>`)}`, 'warn', { title: 'Warnings' }) : ''}
+        ${alert(status.ok ? 'Last deployment completed.' : 'Last deployment completed with warnings or errors.', status.ok ? 'ok' : 'warn')}
+        <div class="small muted" style="margin-bottom:10px">${formatDate(status.at, { time: true })} · ${SERVERS[status.engine]?.label || status.engine || '—'} · PHP ${status.phpVersion || '—'}</div>
+        ${provisioningSteps(status.steps || [])}`
+      : '';
+    const body = h`
+      ${ctx.query.updated === '1' ? alert('Domain saved. The vhost was regenerated and the deployment result is shown below.', status?.ok === false ? 'warn' : 'ok') : ''}
+      ${card(`Edit domain · ${d.name}`, h`<form method="post" action="/user/domains/${d.id}/update" class="oa-form">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <div class="form-grid">
+          <div class="field"><label class="field-label">Domain</label><input value="${d.name}" disabled></div>
+          <div class="field"><label class="field-label">Document root</label><input value="${d.docroot || ''}" disabled></div>
+          <div class="field field-full"><label class="field-label">Web engine</label>
+            ${enginePicker({ selected: currentEngine, name: 'engine' })}
+            <p class="field-help">Current: ${server.label} (web_server:${d.name}). Saving regenerates the vhost and runs the deployment pipeline.</p></div>
+          <div class="field"><label class="field-label" for="edit-php">PHP version</label>
+            <select id="edit-php" name="php_version">${phpList.map((v) => h`<option value="${v}" ${v === d.php_version ? 'selected' : ''}>PHP ${v}</option>`)}</select></div>
+          <div class="field"><label class="field-label" for="edit-ssl">SSL</label>
+            ${sslModeSelect({ selected: 'keep', name: 'ssl_mode', includeKeep: true, id: 'edit-ssl' })}
+            <p class="field-help">Current state: ${d.ssl ? 'enabled' : 'disabled'}. “Keep” never removes an active certificate.</p></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Save and redeploy</button><a class="btn btn-ghost" href="/user/domains">Cancel</a></div>
+      </form>`, { sub: 'Changing the engine, PHP or SSL updates the domain and re-runs vhost generation automatically.' })}
+      ${status ? card('Deployment status', statusBody, { id: 'last-provision-status', sub: 'Result of the last domain create or edit' }) : ''}`;
+    return page(ctx, { title: 'Edit domain', subtitle: d.name, body, wide: true });
   });
 
   router.post('/user/domains/:id/update', (ctx) => {
     const d = domainFor(ctx.user, ctx.params.id);
     if (!d) return ctx.redirect('/user/domains?flash=Domain%20not%20found&type=error');
-    const php = PHP.includes(String(ctx.body.php_version)) ? String(ctx.body.php_version) : d.php_version;
-    run('UPDATE domains SET php_version = ?, ssl = ? WHERE id = ?', php, ctx.body.ssl ? 1 : 0, d.id);
-    apply({ web: true });
+    const engine = normalizeEngine(ctx.body.engine, setting(`web_server:${d.name}`, '') || activeServer().id);
+    const choice = engineChoices().find((entry) => entry.id === engine);
+    if (!choice || !choice.available) {
+      return ctx.redirect(`/user/domains/${d.id}/edit`, {
+        flash: `${choice?.label || engine} is not available on this host. The domain was not changed.`,
+        type: 'error',
+      });
+    }
+    const phpList = phpOptions();
+    const php = phpList.includes(String(ctx.body.php_version)) ? String(ctx.body.php_version) : d.php_version;
+    const steps = [];
+    const warnings = [];
+    let sslStep;
+    if (ctx.body.ssl_mode !== undefined) {
+      const mode = String(ctx.body.ssl_mode).trim().toLowerCase();
+      if (mode === 'keep') {
+        sslStep = { key: 'ssl', label: 'SSL certificate', ok: true, skipped: true, mode: 'keep', detail: 'SSL left unchanged' };
+      } else if (['none', 'selfsigned', 'letsencrypt'].includes(mode)) {
+        sslStep = applySsl({ domain: d.name, docroot: d.docroot, sslMode: mode, email: ctx.user.email || '' });
+      } else {
+        return ctx.redirect(`/user/domains/${d.id}/edit`, { flash: 'Unknown SSL mode. The domain was not changed.', type: 'error' });
+      }
+    } else {
+      // Backwards compatibility with the old SSL checkbox form.
+      const enabled = !!(ctx.body.ssl === '1' || ctx.body.ssl === 'on' || ctx.body.ssl === true);
+      if (!enabled) run("UPDATE ssl_certs SET status = 'disabled' WHERE domain = ? AND status = 'active'", d.name);
+      run('UPDATE domains SET ssl = ? WHERE id = ?', enabled ? 1 : 0, d.id);
+      sslStep = { key: 'ssl', label: 'SSL certificate', ok: true, mode: enabled ? 'selfsigned' : 'none', detail: enabled ? 'SSL enabled (certificate unchanged)' : 'SSL disabled' };
+    }
+    if (sslStep.warning) warnings.push(sslStep.warning);
+    if (!sslStep.ok) warnings.push(sslStep.detail || 'SSL operation failed');
+    run('UPDATE domains SET php_version = ? WHERE id = ?', php, d.id);
+    setSetting(`web_server:${d.name}`, engine);
+    const redeploy = redeploySite({ user: ctx.user, domain: d.name, engine, ip: ctx.ip });
+    if (redeploy.warnings?.length) warnings.push(...redeploy.warnings);
+    const vhost = (redeploy.steps || []).find((s) => s.key === 'vhost') || { key: 'vhost', label: 'Web server config', ok: false, detail: 'Vhost generation did not run' };
+    const allSteps = [
+      { key: 'engine', label: 'Web engine', ok: true, detail: `${choice.label} — web_server:${d.name}` },
+      { key: 'php', label: 'PHP version', ok: true, detail: `PHP ${php}` },
+      sslStep,
+      vhost,
+    ];
+    const ok = sslStep.ok !== false && !!redeploy.ok;
+    const sslMode = ctx.body.ssl_mode !== undefined ? String(ctx.body.ssl_mode) : (ctx.body.ssl ? 'selfsigned' : 'none');
+    saveSiteStatus(d.name, { ok, created: false, engine, phpVersion: php, sslMode, steps: allSteps, warnings });
     audit(ctx.user.username, ctx.user.level, 'domain.update', d.name, ctx.ip);
-    return ctx.redirect('/user/domains?flash=Domain%20updated');
+    return ctx.redirect(`/user/domains/${d.id}/edit?updated=1`, {
+      flash: ok
+        ? `Domain ${d.name} updated; ${choice.label} vhost regenerated and redeployed.`
+        : `Domain ${d.name} updated with warnings — review the deployment steps below.`,
+      type: ok ? 'ok' : 'error',
+    });
   });
 
   router.post('/user/domains/:id/delete', (ctx) => {
     const d = domainFor(ctx.user, ctx.params.id);
     if (!d) return ctx.redirect('/user/domains?flash=Domain%20not%20found&type=error');
-    run('DELETE FROM domains WHERE id = ?', d.id);
     run('DELETE FROM ssl_certs WHERE domain = ?', d.name);
+    run('DELETE FROM settings WHERE key = ?', `site_provision_last:${d.name}`);
     try { fs.rmSync(zonePath(d.name), { force: true }); } catch { /* ignore */ }
+    // Remove files before the row so subdomain vhosts can still be resolved.
+    try { cleanupDomainFiles({ user: ctx.user, domain: d.name }); } catch { /* cleanup is best effort */ }
+    run('DELETE FROM domains WHERE id = ?', d.id);
     apply({ web: true, dns: true });
     audit(ctx.user.username, ctx.user.level, 'domain.delete', d.name, ctx.ip);
     return ctx.redirect('/user/domains?flash=' + encodeURIComponent(`Domain ${d.name} deleted`));
   });
+
 
   /* ----------------------------------------------------------- subdomains */
   router.post('/user/subdomains/create', (ctx) => {
@@ -193,6 +293,9 @@ export function registerDomainsPost(router) {
     const q = quota(ctx.user, 'subdomains');
     if (!q.ok) return ctx.redirect('/user/subdomains?flash=Subdomain%20limit%20reached&type=error');
     const docroot = `/home/${ctx.user.username}/domains/${d.name}/public_html/${sub}`;
+    try { provisionSubdomainRoot(ctx.user.username, d.name, sub); } catch (e) {
+      return ctx.redirect('/user/subdomains?flash=' + encodeURIComponent(`Could not create the subdomain directory: ${e.message}`) + '&type=error');
+    }
     run(`INSERT INTO subdomains(domain_id, username, name, php_version, docroot, created_at) VALUES(?,?,?,?,?,?)`,
       d.id, ctx.user.username, sub, d.php_version, docroot, nowIso());
     run(`INSERT INTO dns_records(domain_id, name, type, value, ttl) VALUES(?,?,?,?,?)`, d.id, sub, 'A', d.ip || serverIp(), 3600);
@@ -204,7 +307,7 @@ export function registerDomainsPost(router) {
   router.post('/user/subdomains/:id/update', (ctx) => {
     const sub = get('SELECT * FROM subdomains WHERE id = ? AND username = ?', Number(ctx.params.id), ctx.user.username);
     if (!sub) return ctx.redirect('/user/subdomains?flash=Not%20found&type=error');
-    const php = PHP.includes(String(ctx.body.php_version)) ? String(ctx.body.php_version) : sub.php_version;
+    const php = phpOptions().includes(String(ctx.body.php_version)) ? String(ctx.body.php_version) : sub.php_version;
     const docroot = String(ctx.body.docroot || sub.docroot);
     if (!docroot.startsWith(`/home/${ctx.user.username}/`)) return ctx.redirect('/user/subdomains?flash=Document%20root%20must%20be%20inside%20home&type=error');
     run('UPDATE subdomains SET php_version = ?, docroot = ? WHERE id = ?', php, docroot, sub.id);
@@ -219,6 +322,7 @@ export function registerDomainsPost(router) {
     const d = get('SELECT * FROM domains WHERE id = ?', s.domain_id);
     run('DELETE FROM subdomains WHERE id = ?', s.id);
     run('DELETE FROM dns_records WHERE domain_id = ? AND name = ? AND type = ?', s.domain_id, s.name, 'A');
+    try { removeVhost(`${s.name}.${d?.name || ''}`); } catch { /* best effort */ }
     apply({ web: true, dns: true });
     audit(ctx.user.username, ctx.user.level, 'subdomain.delete', `${s.name}.${d?.name || ''}`, ctx.ip);
     return ctx.redirect('/user/subdomains?flash=' + encodeURIComponent(`Subdomain ${s.name}.${d?.name || ''} deleted`));
@@ -364,7 +468,7 @@ export function register(router) {
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <div class="form-grid">
           <div class="field"><label class="field-label">Subdomena</label><input value="${editing.name}.${d?.name}" disabled></div>
-          <div class="field"><label class="field-label">PHP</label><select name="php_version">${PHP.map((v) => h`<option ${v === (editing.php_version || d?.php_version) ? 'selected' : ''}>${v}</option>`)}</select></div>
+          <div class="field"><label class="field-label">PHP</label><select name="php_version">${phpOptions().map((v) => h`<option ${v === (editing.php_version || d?.php_version) ? 'selected' : ''}>${v}</option>`)}</select></div>
           <div class="field field-full"><label class="field-label">Document root</label><input name="docroot" value="${editing.docroot || ''}"></div>
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/subdomains?domain=${encodeURIComponent(d?.name || '')}">Anuluj</a></div>

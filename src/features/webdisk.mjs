@@ -18,7 +18,7 @@ export function register(router) {
     const rows = listWebdisks(ctx.user.id);
     const editing = ctx.query.edit ? rows.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`
-      ${alert('WebDisk to WebDAV. Podłącz go w Finderze/Eksploratorze jako https://host:2222/webdisk/ z loginem i hasłem konta WebDisk.', 'info')}
+      ${alert(`WebDisk to WebDAV. Podłącz go w Finderze/Eksploratorze jako https://${ctx.req.headers.host}/webdisk/ z loginem i hasłem konta WebDisk.`, 'info')}
       ${card('Nowe konto WebDisk', form([
         field({ name: 'domain', label: 'Domena', type: 'select', options: domains.map((d) => d.name) }),
         field({ name: 'subpath', label: 'Podkatalog (opcjonalnie)', placeholder: 'np. files' }),

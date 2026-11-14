@@ -9,10 +9,11 @@ export function register(router) {
       ${alert('Najprościej: użyj przycisków „Dodaj stronę” i „Dodaj pocztę” na pulpicie. Reszta dzieje się automatycznie.', 'info')}
       <div class="grid grid-2">
         ${card('Jak postawić stronę?', h`<ol class="small" style="line-height:1.9;padding-left:18px">
-          <li>Kliknij <strong>Dodaj stronę</strong>.</li>
-          <li>Wpisz domenę (np. <code>mojafirma.pl</code>).</li>
-          <li>Wybierz certyfikat SSL — self-signed działa od razu, Let's Encrypt wymaga publicznego DNS.</li>
-          <li>Zaznacz WordPress, jeśli chcesz gotową stronę; wpisz hasło administratora.</li>
+          <li>Kliknij <strong>Dodaj stronę</strong> i wpisz domenę (np. <code>mojafirma.pl</code>).</li>
+          <li>Wybierz silnik WWW: Nginx, Apache, OpenLiteSpeed albo LiteSpeed Enterprise. Kafelki pokazują, co jest realnie wykryte na serwerze.</li>
+          <li>Wybierz PHP i certyfikat SSL — self-signed działa od razu, Let's Encrypt wymaga publicznego DNS.</li>
+          <li>Dodaj subdomeny (np. <code>blog</code>, <code>sklep</code>) — każda dostanie własny vhost i rekord DNS.</li>
+          <li>Opcjonalnie wybierz WordPress lub Nextcloud; instalator utworzy bazę i pokaże dane tylko raz.</li>
           <li>U registrar domeny ustaw rekordy DNS pokazane po utworzeniu strony.</li>
           <li>Pliki wgrasz w <a class="link" href="/user/files">Menedżerze plików</a>.</li>
         </ol>`)}

@@ -43,19 +43,19 @@ export function formatDate(iso, { time = false } = {}) {
   if (Number.isNaN(d.getTime())) return String(iso);
   const opts = { year: 'numeric', month: 'short', day: '2-digit' };
   if (time) { opts.hour = '2-digit'; opts.minute = '2-digit'; }
-  return d.toLocaleDateString('en-GB', opts);
+  return d.toLocaleDateString('pl-PL', opts);
 }
 
 export function timeAgo(iso) {
-  if (!iso) return 'never';
+  if (!iso) return 'nigdy';
   const delta = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(delta / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
+  if (mins < 1) return 'przed chwilą';
+  if (mins < 60) return `${mins} min temu`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} h ago`;
+  if (hours < 24) return `${hours} godz. temu`;
   const days = Math.floor(hours / 24);
-  if (days < 31) return `${days} d ago`;
+  if (days < 31) return `${days} dni temu`;
   return formatDate(iso);
 }
 

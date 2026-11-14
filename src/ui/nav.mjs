@@ -118,7 +118,7 @@ export function navFor(level, caps = {}, opts = {}) {
   ];
 
   const adminGroups = [
-    { title: 'Server', items: [
+    { title: 'Serwer', items: [
       U('a-home', 'Dashboard', '/admin', 'home'),
       U('a-sysinfo', 'System Information', '/admin/system-info', 'monitor'),
       U('a-health', 'Stan serwera', '/admin/health', 'check'),
@@ -149,19 +149,19 @@ export function navFor(level, caps = {}, opts = {}) {
       U('a-dbmon', 'DB Monitor', '/admin/db-monitor', 'database'),
       U('a-multiserver', 'Multi Server', '/admin/multi-server', 'network'),
       U('a-multiserver2', 'Multi Server Registry', '/admin/multiserver', 'network'),
-      U('a-netdata', 'Netdata', '/admin/netdata', 'chart'),
-      U('a-rspamd', 'Rspamd', '/admin/rspamd', 'shield'),
+      U('a-netdata', 'Netdata', '/compat/admin/netdata', 'chart'),
+      U('a-rspamd', 'Rspamd', '/compat/admin/rspamd', 'shield'),
       U('a-logincustom', 'Login Customization', '/admin/customize-skin/login-page', 'paint'),
       U('a-reboot', 'Reboot', '/admin/reboot', 'refresh'),
     ] },
-    { title: 'Resellers', items: [
+    { title: 'Resellerzy', items: [
       U('a-resellers', 'List Resellers', '/admin/resellers', 'users'),
       U('a-reseller-create', 'Create Reseller', '/admin/resellers/create', 'plus'),
       U('a-reseller-packages', 'Manage Reseller Packages', '/admin/reseller-packages', 'archive'),
       U('a-reseller-stats', 'Reseller Statistics', '/admin/reseller-statistics', 'chart'),
       U('a-reseller-tools', 'Reseller Tools', '/admin/reseller-tools', 'users'),
     ] },
-    { title: 'Users', items: [
+    { title: 'Użytkownicy', items: [
       U('a-users', 'Show All Users', '/admin/users', 'user'),
       U('a-user-tools', 'User Tools', '/admin/user-tools', 'users'),
       U('a-user-create', 'Add New User', '/admin/users/create', 'plus'),
@@ -170,7 +170,7 @@ export function navFor(level, caps = {}, opts = {}) {
       U('a-user-stats', 'User Statistics', '/admin/user-statistics', 'chart'),
       U('a-move', 'Move Users', '/admin/users/move', 'arrowRight'),
     ] },
-    { title: 'Settings', items: [
+    { title: 'Ustawienia', items: [
       U('a-ips', 'IP Management', '/admin/ip-manager', 'network'),
       U('a-storage', 'Storage', '/admin/storage', 'database'),
       U('a-dns', 'DNS Administration', '/admin/dns', 'dns'),
@@ -183,7 +183,7 @@ export function navFor(level, caps = {}, opts = {}) {
       U('a-templates', 'Templates', '/admin/templates', 'copy'),
       U('a-custom-httpd', 'Custom HTTPD', '/admin/custom-httpd', 'code'),
     ] },
-    { title: 'Tools', items: [
+    { title: 'Narzędzia', items: [
       U('a-backups', 'Backup / Restore', '/admin/backups', 'archive'),
       U('a-backup-center', 'Backup Center', '/admin/backup-center', 'archive'),
       U('a-tickets', 'Tickets', '/admin/tickets', 'ticket'),
@@ -194,11 +194,15 @@ export function navFor(level, caps = {}, opts = {}) {
       U('a-file-editor', 'File Editor', '/admin/file-editor', 'file'),
       U('a-cron', 'System Cron', '/admin/cron', 'clock'),
       U('a-bfm', 'Brute Force Monitor', '/admin/brute-force', 'shield'),
+      U('a-automation', 'Automation', '/admin/automation', 'refresh'),
     ] },
   ];
 
   const groups = [];
-  if (level === 'admin') groups.push(...adminGroups, ...resellerGroups.map((g) => ({ ...g, title: 'Reseller · ' + g.title })), ...userGroups.map((g) => ({ ...g, title: 'User · ' + g.title })));
+  // Each level gets its own information architecture only. The top-level
+  // Admin/Reseller/User switch is the only way to reach another level's menu;
+  // never append prefixed copies of another level's groups here.
+  if (level === 'admin') groups.push(...adminGroups);
   else if (level === 'reseller') groups.push(...resellerGroups);
   else groups.push(...userGroups);
 
@@ -211,8 +215,19 @@ export function isActive(itemHref, path) {
   return path.startsWith(itemHref + '/') || path === itemHref;
 }
 
+const BREADCRUMB_LABELS = {
+  '2fa': '2FA', 'dns': 'DNS', 'ftp': 'FTP', 'php': 'PHP', 'ssl': 'SSL', 'api': 'API',
+  'mcp': 'MCP', 'cron': 'Cron', 'ssh-keys': 'SSH keys', 'login-keys': 'Login keys',
+  'webdisk': 'WebDisk', 'app-catalog': 'App catalog', 'log-center': 'Log center',
+  'mail-ops': 'Mail operations', 'mail-operations': 'Mail operations', 'os': 'OS',
+};
+
 export function breadcrumbFor(path) {
   const parts = path.split('/').filter(Boolean);
-  const label = (s) => s.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  return parts.map((p, i) => ({ label: label(decodeURIComponent(p)), href: '/' + parts.slice(0, i + 1).join('/') }));
+  const label = (s) => {
+    const clean = decodeURIComponent(s);
+    if (BREADCRUMB_LABELS[clean]) return BREADCRUMB_LABELS[clean];
+    return clean.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+  return parts.map((p, i) => ({ label: label(p), href: '/' + parts.slice(0, i + 1).join('/') }));
 }

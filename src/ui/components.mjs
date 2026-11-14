@@ -4,13 +4,16 @@ import { icon } from './icons.mjs';
 
 export const h = html;
 
-export function pageHead(title, subtitle = '', actions = []) {
+export function pageHead(title, subtitle = '', actions = [], { tools = [] } = {}) {
   return html`<div class="page-head">
     <div class="page-head-text">
       <h1>${title}</h1>
       ${subtitle ? html`<p>${subtitle}</p>` : ''}
     </div>
-    ${actions.length ? html`<div class="page-actions">${actions}</div>` : ''}
+    <div class="page-head-side">
+      ${tools.length ? html`<div class="page-head-tools">${tools}</div>` : ''}
+      ${actions.length ? html`<div class="page-actions">${actions}</div>` : ''}
+    </div>
   </div>`;
 }
 
@@ -70,9 +73,9 @@ export function progress(used, total, { label = '', tone = '', showText = true }
   </div>`;
 }
 
-export function table({ columns, rows, empty = 'Nothing here yet', rowKey = 'id', actions = [], selectable = false }) {
+export function table({ columns, rows, empty = 'Nothing here yet', rowKey = 'id', actions = [], selectable = false, label = 'Data table' }) {
   if (!rows.length) return emptyState(empty);
-  return html`<div class="table-wrap">
+  return html`<div class="table-wrap" tabindex="0" role="region" aria-label="${label}">
     <table class="data-table">
       <thead><tr>
         ${selectable ? html`<th class="col-check"><input type="checkbox" data-check-all></th>` : ''}
@@ -87,11 +90,11 @@ export function table({ columns, rows, empty = 'Nothing here yet', rowKey = 'id'
             if (a.show && !a.show(row)) return '';
             if (a.form) {
               const confirmText = typeof a.confirm === 'function' ? a.confirm(row) : a.confirm;
-              return html`<form method="post" action="${a.form(row)}" class="inline">
-                ${confirmText ? raw(`<button type="submit" class="icon-btn ${a.danger ? 'danger' : ''}" title="${e(a.label)}" onclick="return confirm('${e(confirmText)}')">${icon(a.icon || 'trash', { size: 16 }).value}</button>`) : ''}
+              return html`<form method="post" action="${a.form(row)}" class="inline" ${confirmText ? raw(`data-confirm="${e(confirmText)}"`) : ''}>
+                <button type="submit" class="icon-btn ${a.danger ? 'danger' : ''}" title="${a.label}" aria-label="${a.label}">${icon(a.icon || 'trash', { size: 16 })}</button>
               </form>`;
             }
-            return html`<a class="icon-btn${a.danger ? ' danger' : ''}" href="${typeof a.href === 'function' ? a.href(row) : a.href}" title="${a.label}">${icon(a.icon || 'edit', { size: 16 })}</a>`;
+            return html`<a class="icon-btn${a.danger ? ' danger' : ''}" href="${typeof a.href === 'function' ? a.href(row) : a.href}" title="${a.label}" aria-label="${a.label}">${icon(a.icon || 'edit', { size: 16 })}</a>`;
           })}</div></td>` : ''}
         </tr>`)}
       </tbody>
@@ -99,18 +102,37 @@ export function table({ columns, rows, empty = 'Nothing here yet', rowKey = 'id'
   </div>`;
 }
 
-export function emptyState(message, { icon: ic = 'folder', action = null } = {}) {
-  return html`<div class="empty">
+export function emptyState(message, { icon: ic = 'folder', action = null, title = '' } = {}) {
+  return html`<div class="empty" role="status">
     <div class="empty-icon">${icon(ic, { size: 26 })}</div>
+    ${title ? html`<strong class="empty-title">${title}</strong>` : ''}
     <p>${message}</p>
-    ${action || ''}
+    ${action ? html`<div class="empty-action">${action}</div>` : ''}
   </div>`;
 }
 
+/** Escape a plain alert string but restore the handful of inline tags that
+ *  feature pages deliberately write (`<code>`, `<strong>`, `<br>`, …). Only
+ *  the tag names below are restored; attributes and all other markup stay
+ *  escaped, so user-provided values cannot inject HTML. */
+function inlineAlert(value) {
+  const escaped = String(value ?? '')
+    // Keep already-written entities such as &lt;domain&gt; displayable, but
+    // escape every raw ampersand the feature author did not intend as markup.
+    .replace(/&(?!(?:lt|gt|amp|quot|nbsp|#39);)/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  return escaped.replace(/&lt;(\/?)(strong|b|em|i|code|small|span|br)\s*\/?&gt;/gi, '<$1$2>');
+}
+
 export function alert(message, tone = 'info', { title = '' } = {}) {
-  const icons = { info: 'info', ok: 'check', warn: 'alert', danger: 'alert', success: 'check' };
-  return html`<div class="alert alert-${tone}">${icon(icons[tone] || 'info', { size: 18 })}
-    <div>${title ? html`<strong>${title}</strong>` : ''}<div>${message}</div></div></div>`;
+  const icons = { info: 'info', ok: 'checkCircle', warn: 'alertCircle', danger: 'alertCircle', success: 'checkCircle' };
+  const role = tone === 'danger' || tone === 'warn' ? 'alert' : 'status';
+  const body = message && message.__raw ? message : raw(inlineAlert(message));
+  return html`<div class="alert alert-${tone}" role="${role}">${icon(icons[tone] || 'info', { size: 18 })}
+    <div>${title ? html`<strong>${title}</strong>` : ''}<div>${body}</div></div></div>`;
 }
 
 export function field(f) {
@@ -176,11 +198,11 @@ export function form(fields, { action, method = 'post', csrf = '', submit = 'Sav
 }
 
 export function tabs(items, active, { base = '' } = {}) {
-  return html`<div class="tabs">${items.map((t) => html`<a class="tab ${t.key === active ? 'active' : ''}" href="${t.href || base + '?tab=' + t.key}">${t.label}${t.count !== undefined ? html`<span class="tab-count">${t.count}</span>` : ''}</a>`)}</div>`;
+  return html`<nav class="tabs" aria-label="Sections">${items.map((t) => html`<a class="tab ${t.key === active ? 'active' : ''}" href="${t.href || base + '?tab=' + t.key}" ${t.key === active ? raw('aria-current="page"') : ''}>${t.label}${t.count !== undefined ? html`<span class="tab-count">${t.count}</span>` : ''}</a>`)}</nav>`;
 }
 
-export function toolbar(left = [], right = []) {
-  return html`<div class="toolbar"><div class="toolbar-left">${left}</div><div class="toolbar-right">${right}</div></div>`;
+export function toolbar(left = [], right = [], { sticky = false, cls = '' } = {}) {
+  return html`<div class="toolbar ${sticky ? 'toolbar-sticky' : ''} ${cls}"><div class="toolbar-left">${left}</div><div class="toolbar-right">${right}</div></div>`;
 }
 
 export function sparkline(points, { width = 640, height = 120, color = 'var(--brand)' } = {}) {
@@ -225,16 +247,94 @@ export function kvList(pairs, { cols = 2 } = {}) {
   return html`<dl class="kv" style="--kv-cols:${cols}">${pairs.map(([k, v]) => html`<div class="kv-row"><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>`;
 }
 
-export function modal(id, title, body, { footer = '', size = '' } = {}) {
+export function modal(id, title, body, { footer = '', size = '', sub = '' } = {}) {
   return html`<div class="modal-backdrop" id="${id}" hidden>
-    <div class="modal ${size}">
-      <header class="modal-head"><h3>${title}</h3><button class="icon-btn" type="button" data-close-modal>${icon('x', { size: 18 })}</button></header>
+    <div class="modal ${size}" role="dialog" aria-modal="true" aria-labelledby="${id}-title">
+      <header class="modal-head">
+        <div><h3 id="${id}-title">${title}</h3>${sub ? html`<p class="modal-sub">${sub}</p>` : ''}</div>
+        <button class="icon-btn" type="button" data-close-modal aria-label="Close dialog">${icon('x', { size: 18 })}</button>
+      </header>
       <div class="modal-body">${body}</div>
       ${footer ? html`<footer class="modal-foot">${footer}</footer>` : ''}
     </div>
   </div>`;
 }
 
+export function drawer(id, title, body, { footer = '', side = 'right', width = '' } = {}) {
+  return html`<div class="drawer-backdrop" id="${id}" hidden data-drawer-side="${side}">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="${id}-title" ${width ? raw(`style="--drawer-w:${e(width)}"`) : ''}>
+      <header class="drawer-head">
+        <h3 id="${id}-title">${title}</h3>
+        <button class="icon-btn" type="button" data-close-drawer aria-label="Close panel">${icon('x', { size: 18 })}</button>
+      </header>
+      <div class="drawer-body">${body}</div>
+      ${footer ? html`<footer class="drawer-foot">${footer}</footer>` : ''}
+    </aside>
+  </div>`;
+}
+
 export function copyValue(value, label = '') {
-  return html`<span class="copy-value"><code>${value}</code><button class="icon-btn" type="button" data-copy="${value}" title="Copy ${label}">${icon('copy', { size: 14 })}</button></span>`;
+  return html`<span class="copy-value"><code>${value}</code><button class="icon-btn" type="button" data-copy="${value}" title="Copy ${label}" aria-label="Copy ${label || 'value'}">${icon('copy', { size: 14 })}</button></span>`;
+}
+
+/* ------------------------------------------------------- guided flows */
+
+export function wizardSteps(steps, active = 0, { label = 'Setup progress' } = {}) {
+  const list = steps || [];
+  return html`<ol class="wizard-steps" aria-label="${label}">${list.map((step, i) => {
+    const s = typeof step === 'string' ? { label: step } : step;
+    const state = i < active ? 'is-done' : i === active ? 'is-active' : 'is-upcoming';
+    return html`<li class="wizard-step ${state}" ${i === active ? raw('aria-current="step"') : ''}>
+      <span class="wizard-step-marker">${i < active ? icon('check', { size: 14 }) : i + 1}</span>
+      <span class="wizard-step-copy"><strong>${s.label}</strong>${s.hint ? html`<small>${s.hint}</small>` : ''}</span>
+    </li>`;
+  })}</ol>`;
+}
+
+export function engineChoice(engines, selected, { name = 'engine', legend = 'Web server', help = '', submitLabel = 'Continue' } = {}) {
+  return html`<fieldset class="engine-fieldset">
+    <legend class="field-label">${legend}</legend>
+    ${help ? html`<p class="field-help">${help}</p>` : ''}
+    <div class="engine-grid">${(engines || []).map((engine) => {
+      const key = engine.key || engine.value;
+      return html`<label class="engine-card ${String(selected) === String(key) ? 'is-selected' : ''}" data-engine="${key}">
+        <input type="radio" name="${name}" value="${key}" ${String(selected) === String(key) ? raw('checked') : ''}>
+        <span class="engine-head">
+          <span class="engine-logo">${icon(engine.icon || 'server', { size: 20 })}</span>
+          <span class="engine-name">${engine.label}</span>
+          <span class="engine-check" aria-hidden="true">${icon('check', { size: 13 })}</span>
+        </span>
+        ${engine.desc ? html`<span class="engine-desc">${engine.desc}</span>` : ''}
+        ${engine.meta ? html`<span class="engine-meta">${engine.meta}</span>` : ''}
+      </label>`;
+    })}</div>
+  </fieldset>`;
+}
+
+export function provisionStatus({ state = 'pending', title = 'Provisioning', detail = '', steps = [], progress = null, live = false } = {}) {
+  const tone = ['pending', 'running', 'success', 'error'].includes(state) ? state : 'pending';
+  return html`<section class="provision-status is-${tone}" data-provision-status="${tone}" role="status" ${live ? raw('aria-live="polite"') : ''}>
+    <span class="provision-indicator" aria-hidden="true">${tone === 'success' ? icon('checkCircle', { size: 18 }) : tone === 'error' ? icon('alertCircle', { size: 18 }) : html`<span class="provision-spinner"></span>`}</span>
+    <div class="provision-copy">
+      <strong>${title}</strong>
+      ${detail ? html`<p>${detail}</p>` : ''}
+      ${progress !== null ? html`<div class="progress mt-10"><span style="width:${Math.max(0, Math.min(100, Number(progress) || 0))}%"></span></div>` : ''}
+      ${steps.length ? html`<ul class="provision-steps">${steps.map((step) => {
+        const s = typeof step === 'string' ? { label: step } : step;
+        return html`<li class="provision-step is-${s.state || 'pending'}"><span class="status-dot"></span><span>${s.label}</span>${s.meta ? html`<small>${s.meta}</small>` : ''}</li>`;
+      })}</ul>` : ''}
+    </div>
+  </section>`;
+}
+
+export function skeleton(lines = 3, { cls = '', width = '' } = {}) {
+  return html`<div class="skeleton-stack ${cls}" aria-hidden="true" ${width ? raw(`style="max-width:${e(width)}"`) : ''}>
+    ${Array.from({ length: Math.max(1, Number(lines) || 1) }, (_, i) => html`<span class="skeleton skeleton-line" style="width:${[92, 78, 86, 64][i % 4]}%"></span>`)}
+  </div>`;
+}
+
+export function livePill(label = 'Live', { state = '', url = '', interval = 60, meta = '' } = {}) {
+  return html`<span class="live-pill ${state ? 'is-' + state : ''}" role="status" ${url ? raw(`data-live-url="${e(url)}" data-live-interval="${Number(interval) || 60}"`) : ''}>
+    <span class="live-dot" aria-hidden="true"></span><span class="live-label">${label}</span>${meta ? html`<span class="live-meta">${meta}</span>` : ''}
+  </span>`;
 }

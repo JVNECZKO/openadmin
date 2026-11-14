@@ -8,6 +8,59 @@ import { card, table, btn, badge, alert, emptyState, kvList } from '../ui/compon
 import { icon } from '../ui/icons.mjs';
 import { listCard } from '../ui/pages/list.mjs';
 import { SERVERS, activeServer, detect, generateAll, validate, deploy, stagingDir } from '../webserver.mjs';
+import { engineChoices, phpVersions } from '../provisioning.mjs';
+
+export { engineChoices, phpVersions };
+
+/* Shared site-provisioning UI used by the wizard and the domain pages. The
+ * availability data comes from real binary/service detection in
+ * engineChoices(); nothing here assumes which stack is installed. */
+export function enginePicker({ selected = '', name = 'engine' } = {}) {
+  const choices = engineChoices();
+  const preferred = choices.find((c) => c.id === selected && c.available)
+    || choices.find((c) => c.active && c.available)
+    || choices.find((c) => c.available);
+  return h`<div class="grid grid-2" data-engine-picker>
+    ${choices.map((c) => h`<label class="service-row" data-engine-card="${c.id}" data-engine-available="${c.available ? '1' : '0'}" style="align-items:flex-start;padding:12px;border:1px solid var(--border);border-radius:10px;cursor:pointer">
+      <input type="radio" name="${name}" value="${c.id}" ${preferred?.id === c.id ? 'checked' : ''} ${c.available ? '' : 'disabled'} data-engine-radio>
+      <span class="service-dot ${c.installed ? 'on' : 'off'}" style="margin-top:5px"></span>
+      <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+        <strong style="min-width:0">${c.label}</strong>
+        <span class="small muted">${c.reason}</span>
+      </span>
+      <span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+        ${c.active ? badge('default', 'brand') : ''}
+        ${c.installed ? badge('detected', 'ok') : c.sandbox ? badge('sandbox', 'warn') : badge('unavailable', 'muted')}
+      </span>
+    </label>`)}
+  </div>
+  <p class="field-help" style="margin-top:8px">Availability is read from real binary/service detection. “Sandbox” means the configuration is staged instead of reloading a live service.</p>`;
+}
+
+export function sslModeSelect({ selected = 'selfsigned', name = 'ssl_mode', includeKeep = false, id = 'ssl_mode' } = {}) {
+  const options = [
+    ...(includeKeep ? [{ value: 'keep', label: 'Keep current certificate setting' }] : []),
+    { value: 'selfsigned', label: 'Self-signed — works immediately (browser warning)' },
+    { value: 'letsencrypt', label: "Let's Encrypt — requires public DNS (self-signed fallback)" },
+    { value: 'none', label: 'No SSL (HTTP only)' },
+  ];
+  return h`<select id="${id}" name="${name}">${options.map((o) => h`<option value="${o.value}" ${o.value === selected ? 'selected' : ''}>${o.label}</option>`)}</select>`;
+}
+
+export function provisioningSteps(steps = []) {
+  if (!steps.length) return h`<p class="small muted">No provisioning steps were recorded.</p>`;
+  return h`<ol class="doc-list">${steps.map((s) => h`<li data-step="${s.key || ''}">
+    <div class="spread">
+      <strong>${s.label || s.key || 'Step'}</strong>
+      ${s.ok
+        ? (s.skipped ? badge('skipped', 'muted') : badge('OK', 'ok'))
+        : badge('failed', 'danger')}
+    </div>
+    <div class="small muted">${s.detail || ''}</div>
+    ${Array.isArray(s.subdomains) && s.subdomains.length ? h`<ul class="doc-list" style="margin-top:6px">${s.subdomains.map((sub) => h`<li>${sub.ok ? badge('OK', 'ok') : badge('failed', 'danger')} ${sub.detail || sub.label}</li>`)}</ul>` : ''}
+  </li>`)}</ol>`;
+}
+
 
 function serverRow(ctx, id, info, active) {
   return h`<div class="service-row">

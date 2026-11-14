@@ -384,8 +384,7 @@ ${php}
 `;
 }
 
-export function renderLiteSpeed(d) {
-  const root = docroot(d.name, d.username);
+export function renderLiteSpeed(d, { root = docroot(d.name, d.username) } = {}) {
   const tls = activeCert(d.name);
   return `# OpenAdmin — OpenLiteSpeed vhost for ${d.name}
 docRoot                   ${root}
@@ -433,8 +432,16 @@ function deployLiteSpeed(server, dir) {
     fs.mkdirSync(vhdir, { recursive: true });
     fs.copyFileSync(path.join(dir, 'sites', f), path.join(vhdir, 'vhconf.conf'));
     const d = get('SELECT * FROM domains WHERE name = ?', domain);
+    let vhRoot = d ? docroot(domain, d.username) : '';
+    if (!d) {
+      // Subdomain vhost configs are generated alongside the parent domain.
+      const sub = get(`SELECT s.docroot, s.username FROM subdomains s JOIN domains p ON p.id = s.domain_id
+                       WHERE s.name || '.' || p.name = ?`, domain);
+      if (sub) vhRoot = sub.docroot || docroot(domain, sub.username);
+    }
+    if (!vhRoot) continue;
     containers.push(`virtualhost ${domain} {
-  vhRoot                  ${docroot(domain, d?.username || '')}/
+  vhRoot                  ${vhRoot}/
   configFile              $SERVER_ROOT/conf/vhosts/${domain}/vhconf.conf
   allowSymbolLink         1
   enableScript            1
@@ -497,21 +504,28 @@ export function generateAll(serverId = activeServer().id) {
     const server = SERVERS[setting(`web_server:${d.name}`, '')] || SERVERS[serverId] || activeServer();
     const dir = stagingDir(server);
     let main;
-    let extra = null;
+    const extras = [];
     if (server.kind === 'nginx') main = renderNginx(d, { phpHandler });
     else if (server.kind === 'apache') main = renderApache(d, { phpHandler });
     else {
       main = renderLiteSpeed(d);
+      // LiteSpeed needs a separate vhost config per host, unlike Nginx/Apache
+      // where subdomains are extra server/vhost blocks in the same file.
+      const subs = all('SELECT * FROM subdomains WHERE domain_id = ? ORDER BY name', d.id);
+      for (const sub of subs) {
+        const name = `${sub.name}.${d.name}`;
+        const subRoot = sub.docroot || `${docroot(d.name, d.username)}/${sub.name}`;
+        extras.push({ name, content: renderLiteSpeed({ name, username: sub.username || d.username }, { root: subRoot }) });
+      }
     }
     const file = path.join(dir, 'sites', `${d.name}${server.ext}`);
     fs.writeFileSync(file, main, 'utf8');
     written.push({ domain: d.name, server: server.id, file, bytes: Buffer.byteLength(main) });
     byServer[server.id] = (byServer[server.id] || 0) + 1;
-    if (extra) {
-      const sub = path.join(dir, 'sites', d.name, 'vhconf.conf');
-      fs.mkdirSync(path.dirname(sub), { recursive: true });
-      fs.writeFileSync(sub, extra, 'utf8');
-      written.push({ domain: d.name, server: server.id, file: sub, bytes: Buffer.byteLength(extra) });
+    for (const extra of extras) {
+      const extraFile = path.join(dir, 'sites', `${extra.name}${server.ext}`);
+      fs.writeFileSync(extraFile, extra.content, 'utf8');
+      written.push({ domain: extra.name, server: server.id, file: extraFile, bytes: Buffer.byteLength(extra.content) });
     }
   }
   for (const id of Object.keys(SERVERS)) {

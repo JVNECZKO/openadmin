@@ -46,10 +46,10 @@ export function register(router) {
           ],
           rows: vers,
         }), { padded: false }) : alert('Nie znaleziono /etc/php/*/fpm — PHP-FPM nie jest zainstalowany.', 'warn')}
-        ${card('Domyślna wersja PHP', h`<form method="post" action="${A}/default" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+        ${vers.length ? card('Domyślna wersja PHP', h`<form method="post" action="${A}/default" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
           <select name="version">${vers.map((x) => h`<option ${x === setting('php_default_version', vers[0]) ? 'selected' : ''}>${x}</option>`)}</select>
           <button class="btn btn-primary" type="submit">Ustaw domyślną</button></form>
-          <p class="small muted mt-12">Nowe domeny dziedziczą tę wersję; istniejące zmienisz w Domeny → PHP.</p>`)}
+          <p class="small muted mt-12">Nowe domeny dziedziczą tę wersję; istniejące zmienisz w Domeny → PHP.</p>`) : ''}
         ${card('Aktualny stan', kvList([
           ['PHP CLI', setting('php_default_version', vers[0] || 'brak')],
           ['FPM', vers.length ? 'php' + vers[0] + '-fpm' : 'brak'],

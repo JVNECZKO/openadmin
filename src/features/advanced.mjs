@@ -319,17 +319,29 @@ export function register(router) {
     audit(ctx.user.username, ctx.user.level, 'wordpress.install', `${d.name}${ctx.body.path || '/'}`, ctx.ip);
     if (!result.ok) return ctx.redirect('/user/app-catalog?flash=' + encodeURIComponent(result.error) + '&type=error');
     apply({ web: true });
-    const body = h`${card('WordPress zainstalowany', h`
+    const body = h`${card('WordPress gotowy', h`
+      <div class="app-tile-head mb-18" data-install-result="wordpress">
+        ${appIcon('wordpress', { size: 52 })}
+        <div>
+          <div class="app-tile-title"><h3>WordPress</h3>${badge('Aktywna', 'ok', { dot: true })}${badge(result.version ? `v${result.version}` : 'najnowsza', 'brand')}</div>
+          <p class="app-tile-sub">${result.url}</p>
+        </div>
+      </div>
       ${alert('Zapisz hasło administratora teraz — nie pokażemy go ponownie.', 'warn')}
       ${kvList([
-        ['Adres strony', h`<a class="link" href="${result.url}" target="_blank">${result.url}</a>`],
-        ['Panel WordPress', h`<a class="link" href="${result.adminUrl}" target="_blank">${result.adminUrl}</a>`],
+        ['Adres strony', h`<a class="link" href="${result.url}" target="_blank" rel="noopener">${result.url}</a>`],
+        ['Panel WordPress', h`<a class="link" href="${result.adminUrl}" target="_blank" rel="noopener">${result.adminUrl}</a>`],
         ['Login', result.adminUser],
         ['Hasło', h`<code>${result.adminPass}</code>`],
         ['Baza danych', result.db],
         ['Wersja', result.version || 'najnowsza'],
       ])}
-      <div class="row mt-18"><a class="btn btn-primary" href="/user/app-catalog">Wróć do aplikacji</a></div>`)}`;
+      <div class="row mt-18">
+        <a class="btn btn-primary" href="/user/app-catalog">Wróć do aplikacji</a>
+        <a class="btn btn-secondary" href="${result.adminUrl}" target="_blank" rel="noopener">${icon('globe', { size: 16 })} Otwórz panel WP</a>
+        <a class="btn btn-ghost" href="/user/app-catalog#twoje-aplikacje">Twoje aplikacje</a>
+      </div>
+      <p class="small muted mt-18">Następny krok: dodaj treści w panelu WordPress. Kopię zapasową znajdziesz w sekcji Kopie zapasowe.</p>`, { sub: 'Instalacja przez WP-CLI zakończona' })}`;
     return page(ctx, { title: 'Gotowe', subtitle: 'WordPress działa', body });
   });
 
@@ -358,14 +370,26 @@ export function register(router) {
     audit(ctx.user.username, ctx.user.level, 'nextcloud.install', `${d.name}${ctx.body.path || '/cloud'}`, ctx.ip);
     if (!result.ok) return ctx.redirect('/user/app-catalog?flash=' + encodeURIComponent(result.error) + '&type=error');
     apply({ web: true });
-    const body = h`${card('Nextcloud zainstalowany', h`
+    const body = h`${card('Nextcloud gotowy', h`
+      <div class="app-tile-head mb-18" data-install-result="nextcloud">
+        ${appIcon('nextcloud', { size: 52 })}
+        <div>
+          <div class="app-tile-title"><h3>Nextcloud</h3>${badge('Aktywna', 'ok', { dot: true })}${badge(result.version ? `v${result.version}` : '30', 'brand')}</div>
+          <p class="app-tile-sub">${result.url}</p>
+        </div>
+      </div>
       ${alert('Zapisz hasło administratora teraz — nie pokażemy go ponownie.', 'warn')}
       ${kvList([
-        ['Adres', h`<a class="link" href="${result.url}" target="_blank">${result.url}</a>`],
+        ['Adres', h`<a class="link" href="${result.url}" target="_blank" rel="noopener">${result.url}</a>`],
         ['Login', result.adminUser], ['Hasło', h`<code>${result.adminPass}</code>`],
         ['Baza', result.db], ['Wersja', result.version || 'najnowsza'],
       ])}
-      <div class="row mt-18"><a class="btn btn-primary" href="/user/app-catalog">Wróć do aplikacji</a></div>`)}`;
+      <div class="row mt-18">
+        <a class="btn btn-primary" href="/user/app-catalog">Wróć do aplikacji</a>
+        <a class="btn btn-secondary" href="${result.url}" target="_blank" rel="noopener">${icon('globe', { size: 16 })} Otwórz Nextcloud</a>
+        <a class="btn btn-ghost" href="/user/app-catalog#twoje-aplikacje">Twoje aplikacje</a>
+      </div>
+      <p class="small muted mt-18">Następny krok: zaproś użytkowników i skonfiguruj kopie zapasowe w panelu Nextcloud.</p>`, { sub: 'Instalacja przez occ zakończona' })}`;
     return page(ctx, { title: 'Gotowe', subtitle: 'Nextcloud działa', body });
   });
 
@@ -385,14 +409,14 @@ export function register(router) {
   router.get('/user/wordpress', (ctx) => {
     const rows = all('SELECT * FROM wordpress WHERE domain IN (SELECT name FROM domains WHERE user_id = ?) ORDER BY created_at DESC', ctx.user.id);
     const body = h`
-      ${alert('Witryny WordPress są instalowane na Twoich domenach. Aktualizacje wykonasz w panelu WordPressa.', 'info')}
+      ${alert('Witryny WordPress są instalowane z katalogu aplikacji na Twoich domenach. Aktualizacje i wtyczki wykonasz w panelu WordPressa.', 'info')}
       ${listCard({
         title: 'Witryny WordPress', sub: `${rows.length} instalacji`,
         columns: [
           { label: 'Strona', render: (r) => h`<span class="cell-strong">${r.domain}${r.path === '/' ? '' : r.path}</span><span class="cell-sub">baza: ${r.db_name}</span>` },
           { label: 'Wersja', key: 'version' },
           { label: 'Administrator', key: 'admin_user' },
-          { label: 'Status', render: (r) => badge(r.status === 'active' ? 'aktywna' : r.status, 'ok') },
+          { label: 'Status', render: (r) => badge(r.status === 'active' ? 'aktywna' : (r.status || 'nieznany'), r.status === 'active' ? 'ok' : 'warn', { dot: true }) },
         ],
         rows, empty: 'Brak witryn WordPress.',
         createHref: '/user/app-catalog', createLabel: 'Zainstaluj WordPress',
@@ -401,7 +425,7 @@ export function register(router) {
           { label: 'Usuń', form: (r) => `/user/app-installer/wordpress/${r.id}/delete`, confirm: 'Usunąć witrynę?', icon: 'trash', danger: true },
         ],
       })}`;
-    return page(ctx, { title: 'WordPress', subtitle: 'Zarządzaj witrynami WordPress', body });
+    return page(ctx, { title: 'WordPress', subtitle: 'Zarządzaj witrynami WordPress', body, actions: [btn('Katalog aplikacji', { href: '/user/app-catalog', icon: 'cart', variant: 'secondary' })] });
   });
 
   /* ------------------------------------------------------------------ git */

@@ -621,6 +621,32 @@ CREATE TABLE IF NOT EXISTS backup_runs (
   finished_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS automation_jobs (
+  key TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  interval_seconds INTEGER NOT NULL DEFAULT 86400,
+  last_run_at TEXT,
+  next_run_at TEXT,
+  last_status TEXT,
+  last_output TEXT,
+  run_count INTEGER NOT NULL DEFAULT 0,
+  fail_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS automation_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_key TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  status TEXT NOT NULL,
+  output TEXT,
+  error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_automation_jobs_due ON automation_jobs(enabled, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_automation_runs_job ON automation_runs(job_key, id);
+CREATE INDEX IF NOT EXISTS idx_automation_runs_started ON automation_runs(started_at);
+
 CREATE TABLE IF NOT EXISTS feature_sets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,

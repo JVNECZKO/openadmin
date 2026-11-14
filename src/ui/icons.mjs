@@ -61,6 +61,21 @@ const P = {
   sparkles: '<path d="m12 3 1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8Z"/><path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9Z"/>',
   gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13"/><path d="M12 8S9 8 8 7a2 2 0 0 1 4-1ZM12 8s3 0 4-1a2 2 0 0 0-4-1Z"/>',
   rocket: '<path d="M5 15c-2 2-2 6-2 6s4 0 6-2"/><path d="M9 15l-3-3c2-7 8-9 13-9 0 5-2 11-9 13Z"/><circle cx="14.5" cy="9.5" r="1.5"/>',
+  command: '<path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3Z"/>',
+  activity: '<path d="M3 12h4l2.5-6 4 12L17 12h4"/>',
+  wifi: '<path d="M3 9a15 15 0 0 1 18 0M6 12.5a10.5 10.5 0 0 1 12 0M9 16a6 6 0 0 1 6 0"/><path d="M12 20h.01"/>',
+  wifiOff: '<path d="M3 3l18 18M8.5 9.5A15 15 0 0 1 21 9M6 12.5a10.5 10.5 0 0 1 4-1.7M9 16a6 6 0 0 1 6 0M12 20h.01"/>',
+  checkCircle: '<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>',
+  alertCircle: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/>',
+  sliders: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h9M17 18h3"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="18" r="2"/>',
+  power: '<path d="M12 3v8"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/>',
+  arrowUpRight: '<path d="M7 17 17 7M8 7h9v9"/>',
+  layers: '<path d="m12 3 9 5-9 5-9-5Z"/><path d="m3 13 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
+  spark: '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/>',
+  external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+  toggle: '<path d="M8 6h8a6 6 0 0 1 0 12H8A6 6 0 0 1 8 6Z"/><circle cx="16" cy="12" r="3"/>',
+  close: '<path d="m5 5 14 14M19 5 5 19"/>',
 };
 
 export function icon(name, { size = 20, cls = '' } = {}) {

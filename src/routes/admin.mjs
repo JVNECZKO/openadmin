@@ -15,6 +15,8 @@ import { countForNav, visibleUsers, visibleDomains, usageSeries, allUsageSeries,
 import { usersPage, userForm, createUser, updateUser, userDetailPage, toggleSuspend, deleteUser, packagesPage, packageForm, savePackage, resellersPage, resellerForm } from '../features/user-admin.mjs';
 import { usageChartCard } from '../ui/pages/widgets.mjs';
 import { systemProvider, providerInfo } from '../providers/index.mjs';
+import { SERVERS } from '../webserver.mjs';
+import { automationStatus } from '../automation.mjs';
 import { register as registerWebServer } from '../features/webserver.mjs';
 import { register as registerMariaDb } from '../features/mariadb.mjs';
 import { register as registerApps } from '../features/apps.mjs';
@@ -48,6 +50,7 @@ import { register as registerPanelConfig } from '../features/panel-config.mjs';
 import { register as registerUserTools } from '../features/user-tools.mjs';
 import { register as registerPostgres } from '../features/postgres-center.mjs';
 import { register as registerMultiServer } from '../features/multiserver.mjs';
+import { register as registerAutomation } from '../features/automation.mjs';
 
 const A = '/admin';
 
@@ -61,52 +64,77 @@ function adminDashboard(ctx) {
   const tickets = all("SELECT * FROM tickets WHERE status != 'closed' ORDER BY created_at DESC LIMIT 5");
   const memTotal = os.totalmem() / 1024 / 1024;
   const memFree = os.freemem() / 1024 / 1024;
+  const memPct = Math.round(((memTotal - memFree) / memTotal) * 100);
   const bw = series.reduce((a, r) => a + (r.bandwidth_mb || 0), 0);
   const running = services.filter((s) => s.status === 'running').length;
-  const body = h`
+  const activeEngine = setting('web_server', 'nginx');
+  const engineRows = Object.values(SERVERS).map((server) => ({
+    ...server,
+    count: domains.filter((d) => (setting(`web_server:${d.name}`, '') || activeEngine) === server.id).length,
+    active: server.id === activeEngine,
+  }));
+  let automation = { enabled: false, due: 0, totals: { jobs: 0, enabled: 0, failures: 0 }, jobs: [] };
+  try { automation = automationStatus(); } catch { /* migrations may still be running on first boot */ }
+  const failedJobs = automation.jobs.filter((j) => Number(j.fail_count || 0) > 0 || j.last_status === 'error');
+  const dueJobs = automation.jobs.filter((j) => j.due);
+  const body = h`<div data-auto-refresh="45" data-auto-refresh-label="Odświeżanie pulpitu">
     <div class="hero">
       <div>
-        <h2>Server overview</h2>
-        <p><strong>${users.length}</strong> ${users.length === 1 ? 'user' : 'users'} · <strong>${resellers.length}</strong> ${resellers.length === 1 ? 'reseller' : 'resellers'} · <strong>${domains.length}</strong> ${domains.length === 1 ? 'domain' : 'domains'} · ${running}/${services.length} services running.</p>
-        <div class="row mt-18">${badge('OpenAdmin ' + VERSION, 'brand')}${badge('License: unlimited', 'ok')}${badge('Free & open source', 'ok')}</div>
+        <h2>Pulpit administratora</h2>
+        <p><strong>${users.length}</strong> użytkowników · <strong>${resellers.length}</strong> resellerów · <strong>${domains.length}</strong> domen · ${running}/${services.length} usług działa.</p>
+        <div class="row mt-18">${badge('OpenAdmin ' + VERSION, 'brand')}${badge('Licencja unlimited', 'ok')}${badge('Darmowy i open source', 'ok')}</div>
       </div>
       <div class="hero-actions">
-        ${btn('Create user', { href: '/admin/users/create', icon: 'plus' })}
-        ${btn('Create reseller', { href: '/admin/resellers/create', variant: 'secondary', icon: 'users' })}
-        ${btn('Server settings', { href: '/admin/settings', variant: 'secondary', icon: 'settings' })}
+        ${btn('Dodaj użytkownika', { href: '/admin/users/create', icon: 'plus' })}
+        ${btn('Dodaj resellera', { href: '/admin/resellers/create', variant: 'secondary', icon: 'users' })}
+        ${btn('Ustawienia serwera', { href: '/admin/settings', variant: 'secondary', icon: 'settings' })}
       </div>
     </div>
-    ${setting('setup_complete', '0') !== '1' ? alert(h`<strong>Dokończ konfigurację panelu.</strong> Ustaw adres IP, serwery nazw i wdróż strony, DNS i pocztę. <a class="link" href="/admin/setup">Otwórz kreator →</a>`, 'warn') : ''}
+    ${setting('setup_complete', '0') !== '1' ? alert(h`<strong>Dokończ konfigurację panelu.</strong> Ustaw IP, serwery nazw i wdróż strony, DNS oraz pocztę. <a class="link" href="/admin/setup">Otwórz kreator →</a>`, 'warn') : ''}
+    ${automation.totals.failures ? alert(h`<strong>${automation.totals.failures} nieudanych zadań automatyzacji.</strong> Sprawdź logi i uruchom ponownie. <a class="link" href="/admin/automation">Automatyzacja →</a>`, 'warn') : ''}
     <div class="stat-grid">
-      ${statCard({ label: 'Users', value: String(users.length), sub: `${resellers.length} resellers`, icon: 'users', href: '/admin/users' })}
-      ${statCard({ label: 'Domains', value: String(domains.length), sub: `${domains.filter((d) => d.ssl).length} with SSL`, icon: 'globe', href: '/admin/dns' })}
-      ${statCard({ label: 'Bandwidth (30d)', value: formatBytes(bw), sub: 'all accounts', icon: 'chart', tone: 'ok', href: '/admin/user-statistics' })}
-      ${statCard({ label: 'Memory', value: `${Math.round(((memTotal - memFree) / memTotal) * 100)}%`, sub: `${formatBytes((memTotal - memFree) / 1024)} of ${formatBytes(memTotal / 1024)}`, icon: 'cpu', tone: 'warn', href: '/admin/system-info' })}
+      ${statCard({ label: 'Użytkownicy', value: String(users.length), sub: `${resellers.length} resellerów`, icon: 'users', href: '/admin/users' })}
+      ${statCard({ label: 'Domeny', value: String(domains.length), sub: `${domains.filter((d) => d.ssl).length} z SSL`, icon: 'globe', href: '/admin/dns' })}
+      ${statCard({ label: 'Transfer (30 dni)', value: formatBytes(bw), sub: 'wszystkie konta', icon: 'chart', tone: 'ok', href: '/admin/user-statistics' })}
+      ${statCard({ label: 'Pamięć RAM', value: `${memPct}%`, sub: `${formatBytes((memTotal - memFree) / 1024)} z ${formatBytes(memTotal / 1024)}`, icon: 'cpu', tone: memPct > 85 ? 'danger' : memPct > 70 ? 'warn' : 'ok', href: '/admin/system-info' })}
     </div>
     <div class="grid grid-2-1">
-      ${usageChartCard(series.map((r) => ({ ...r, bandwidth_mb: r.bandwidth_mb })), { title: 'Server bandwidth', sub: 'Aggregate, last 30 days' })}
-      ${card('Services', h`${services.slice(0, 7).map((s) => h`<div class="service-row">
+      ${usageChartCard(series.map((r) => ({ ...r, bandwidth_mb: r.bandwidth_mb })), { title: 'Transfer serwera', sub: 'Wszystkie konta, ostatnie 30 dni' })}
+      ${card('Usługi', h`${services.slice(0, 7).map((s) => h`<div class="service-row">
         <span class="service-dot ${s.effective === 'running' ? 'on' : 'off'}"></span><strong>${s.name}</strong>
         <span style="margin-left:auto">${badge(s.effective, s.effective === 'running' ? 'ok' : 'danger', { dot: true })}</span>
-      </div>`)}`, { actions: [h`<a class="link small" href="/admin/services">Manage</a>`] })}
+      </div>`)}`, { sub: `${running}/${services.length} aktywnych`, actions: [h`<a class="link small" href="/admin/services">Zarządzaj</a>`] })}
     </div>
     <div class="grid grid-2">
-      ${card('Recent activity', h`<div class="timeline">${auditRows.map((a) => h`<div class="timeline-item">
+      ${card('Automatyzacja', h`
+        <div class="spread mb-12"><div class="row">${badge(automation.enabled ? 'WŁĄCZONA' : 'WSTRZYMANA', automation.enabled ? 'ok' : 'warn', { dot: true })}${dueJobs.length ? badge(`${dueJobs.length} do uruchomienia`, 'warn') : badge('wszystko na czasie', 'ok')}</div><span class="small muted">${automation.totals.enabled}/${automation.totals.jobs} zadań</span></div>
+        ${failedJobs.length ? h`<div class="stack" style="gap:8px">${failedJobs.slice(0, 3).map((j) => h`<div class="spread small"><span>${j.label}</span><span>${badge(j.last_status || 'error', 'danger')}</span></div>`)}</div>` : h`<p class="small muted">Backupy, SSL, health check, kolejka poczty i czyszczenie działają według harmonogramu.</p>`}
+        <div class="row mt-18"><a class="btn btn-secondary btn-sm" href="/admin/automation">Otwórz automatyzację</a></div>
+      `, { actions: [h`<a class="link small" href="/admin/automation">Logi</a>`] })}
+      ${card('Silniki stron', h`<div class="stack" style="gap:8px">
+        ${engineRows.map((e) => h`<div class="spread"><span>${e.label}${e.active ? h` ${badge('aktywny', 'ok')}` : ''}</span><strong>${e.count}</strong></div>`)}
+      </div>`, { sub: 'Nginx / Apache / OpenLiteSpeed / LiteSpeed', actions: [h`<a class="link small" href="/admin/web-server">Zarządzaj serwerem WWW</a>`] })}
+    </div>
+    <div class="grid grid-2">
+      ${card('Ostatnia aktywność', h`${auditRows.length ? h`<div class="timeline">${auditRows.map((a) => h`<div class="timeline-item">
         <div class="timeline-dot">${icon('check', { size: 15 })}</div>
         <div class="timeline-body"><div class="spread"><span><strong>${a.actor}</strong> ${a.action.replace('.', ' ')} ${a.target || ''}</span><span class="small muted">${timeAgo(a.created_at)}</span></div>
-        <small>${a.level} · ${a.ip || 'local'}</small></div></div>`)}</div>`, { actions: [h`<a class="link small" href="/admin/audit-log">Audit log</a>`] })}
-      ${card('Open tickets', h`${tickets.length ? h`<div class="timeline">${tickets.map((t) => h`<div class="timeline-item"><div class="timeline-dot">${icon('ticket', { size: 15 })}</div>
-        <div class="timeline-body"><div class="spread"><a class="link" href="/admin/tickets/${t.id}">${t.subject}</a><span class="small muted">${timeAgo(t.created_at)}</span></div><small>${t.username} · ${t.priority}</small></div></div>`)}</div>` : emptyState('No open tickets')}`, { actions: [h`<a class="link small" href="/admin/tickets">All tickets</a>`] })}
+        <small>${a.level} · ${a.ip || 'local'}</small></div></div>`)}</div>` : emptyState('Brak wpisów.')}`, { actions: [h`<a class="link small" href="/admin/audit-log">Audit log</a>`] })}
+      ${card('Otwarte zgłoszenia', h`${tickets.length ? h`<div class="timeline">${tickets.map((t) => h`<div class="timeline-item"><div class="timeline-dot">${icon('ticket', { size: 15 })}</div>
+        <div class="timeline-body"><div class="spread"><a class="link" href="/admin/tickets/${t.id}">${t.subject}</a><span class="small muted">${timeAgo(t.created_at)}</span></div><small>${t.username} · ${t.priority}</small></div></div>`)}</div>` : emptyState('Brak otwartych zgłoszeń')}`, { actions: [h`<a class="link small" href="/admin/tickets">Wszystkie zgłoszenia</a>`] })}
     </div>
     <div class="grid grid-4">
-      ${quick('/admin/license', 'gift', 'Licensing', 'Free, unlimited')}
-      ${quick('/admin/plugins', 'plug', 'Plugins', 'Extend the panel')}
-      ${quick('/admin/backups', 'archive', 'Backups', 'Server snapshots')}
       ${quick('/admin/health', 'check', 'Stan serwera', 'Co działa, co naprawić')}
-      ${quick('/admin/setup', 'settings', 'Kreator', 'Pierwsza konfiguracja')}
-      ${quick('/admin/audit-log', 'list', 'Audit log', 'Every action')}
-    </div>`;
-  return page(ctx, { title: 'Admin Dashboard', subtitle: 'Server and hosting overview', body, counts: countForNav(ctx.user, 'admin') });
+      ${quick('/admin/automation', 'refresh', 'Automatyzacja', 'Joby, harmonogram, logi')}
+      ${quick('/admin/web-server', 'globe', 'Silniki WWW', 'Nginx, Apache, OLS, LiteSpeed')}
+      ${quick('/admin/backups', 'archive', 'Kopie zapasowe', 'Snapshoty serwera')}
+      ${quick('/admin/security', 'shield', 'Bezpieczeństwo', 'Firewall, SSH, WAF')}
+      ${quick('/admin/panel-config', 'settings', 'Konfiguracja panelu', 'Branding, ACL, porty')}
+      ${quick('/admin/plugins', 'plug', 'Pluginy', 'Rozszerzenia panelu')}
+      ${quick('/admin/audit-log', 'list', 'Audit log', 'Każda akcja')}
+    </div>
+  </div>`;
+  return page(ctx, { title: 'Pulpit administratora', subtitle: 'Serwer, klienci i automatyzacja w jednym miejscu', body, counts: countForNav(ctx.user, 'admin') });
 }
 
 function quick(href, ic, title, sub) {
@@ -139,6 +167,7 @@ export function registerAdminRoutes(router) {
   registerUserTools(router);
   registerPostgres(router);
   registerMultiServer(router);
+  registerAutomation(router);
   router.get('/admin', (ctx) => adminDashboard(ctx));
 
   /* ------------------------------------------------------------ system info */
@@ -222,11 +251,22 @@ export function registerAdminRoutes(router) {
   /* ------------------------------------------------------------- processes */
   router.get('/admin/processes', (ctx) => {
     const result = systemProvider().processes();
-    const rows = result.rows || [];
+    const allRows = result.rows || [];
+    const q = String(ctx.query.q || '').trim().toLowerCase();
+    const pageNo = Math.max(1, Number(ctx.query.page) || 1);
+    const perPage = 100;
+    const filtered = q ? allRows.filter((p) => `${p.pid} ${p.user} ${p.command}`.toLowerCase().includes(q)) : allRows;
+    const rows = filtered.slice((pageNo - 1) * perPage, pageNo * perPage);
+    const pages = Math.max(1, Math.ceil(filtered.length / perPage));
     const logs = all('SELECT * FROM process_log ORDER BY id DESC LIMIT 50');
     const body = h`${card('Process list', h`
       ${result.ok ? '' : alert(result.error, 'error')}
       ${result.simulated ? alert('Showing the host process list from the sandbox provider; kill/action is simulated.', 'info') : ''}
+      <form method="get" action="/admin/processes" class="row mb-12">
+        <input name="q" value="${q}" placeholder="Filtruj PID, użytkownika lub komendę" style="flex:1;min-width:220px">
+        <button class="btn btn-secondary" type="submit">Filtruj</button>
+        ${q ? h`<a class="btn btn-ghost" href="/admin/processes">Wyczyść</a>` : ''}
+      </form>
       <div class="table-wrap"><table class="data-table">
         <thead><tr><th>PID</th><th>User</th><th>CPU %</th><th>MEM %</th><th>Command</th><th></th></tr></thead>
         <tbody>${rows.map((p) => h`<tr><td class="cell-mono">${p.pid}</td><td>${p.user}</td><td>${p.cpu.toFixed(1)}</td><td>${p.mem.toFixed(1)}</td><td class="cell-mono truncate" style="max-width:520px;display:block">${p.command}</td>
@@ -234,7 +274,8 @@ export function registerAdminRoutes(router) {
             <form method="post" action="/admin/processes/${p.pid}/kill" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="icon-btn danger" type="submit" title="Kill" onclick="return confirm('Wysłać SIGTERM do PID ${p.pid}?')">${icon('close', { size: 16 })}</button></form>
             <form method="post" action="/admin/processes/${p.pid}/trace" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="icon-btn" type="submit" title="Trace">${icon('eye', { size: 16 })}</button></form>
           </div></td></tr>`)}</tbody>
-      </table></div>`, { sub: `${rows.length} process(es) · load ${os.loadavg()[0].toFixed(2)} · ${os.cpus().length} cores`, padded: false })}
+      </table></div>
+      ${pages > 1 ? h`<div class="row mt-12"><a class="btn btn-ghost btn-sm ${pageNo <= 1 ? 'disabled' : ''}" href="/admin/processes?page=${pageNo - 1}${q ? '&q=' + encodeURIComponent(q) : ''}">← Poprzednia</a><span class="small muted">Strona ${pageNo} z ${pages}</span><a class="btn btn-ghost btn-sm ${pageNo >= pages ? 'disabled' : ''}" href="/admin/processes?page=${pageNo + 1}${q ? '&q=' + encodeURIComponent(q) : ''}">Następna →</a></div>` : ''}`, { sub: `${filtered.length} procesów${q ? ` (filtr: ${q})` : ''} · load ${os.loadavg()[0].toFixed(2)} · ${os.cpus().length} rdzeni`, padded: false })}
       ${card('Kill all by user', h`<form method="post" action="/admin/processes/user" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
         <select name="user">${[...new Set(rows.map((r) => r.user))].map((u) => h`<option>${u}</option>`)}</select>
         <button class="btn btn-danger" type="submit" onclick="return confirm('Wysłać SIGTERM do wszystkich procesów tego użytkownika?')">Kill all</button></form>`)}

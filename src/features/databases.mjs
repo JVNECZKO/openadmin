@@ -24,20 +24,23 @@ export function register(router) {
       rows.push({ id: null, db_name: db, db_user: '—', live: true, size: sizes[db] || 0, created_at: null });
     }
     const total = rows.reduce((a, r) => a + (Number(r.size) || 0), 0);
+    const q = String(ctx.query.q || '').trim().toLowerCase();
+    const filtered = q ? rows.filter((r) => `${r.db_name} ${r.db_user}`.toLowerCase().includes(q)) : rows;
+    const shown = filtered.slice(0, 100);
     const body = h`
       ${mst.connected
-        ? alert(`Connected to <strong>MariaDB ${mst.version}</strong> as <code>${mst.currentUser}</code>. Databases are created on the server immediately.`, 'ok')
-        : alert('MariaDB is not reachable from the panel, so new databases are recorded but not created on a server. Install it on the host (the installer supports <code>--with-mariadb</code>) or set <code>OA_MYSQL_ADMIN_USER</code> / <code>OA_MYSQL_ADMIN_PASSWORD</code>.', 'warn')}
+        ? alert(h`Connected to <strong>MariaDB ${mst.version}</strong> as <code>${mst.currentUser}</code>. Databases are created on the server immediately.`, 'ok')
+        : alert(h`MariaDB is not reachable from the panel, so new databases are recorded but not created on a server. Install it on the host (the installer supports <code>--with-mariadb</code>) or set <code>OA_MYSQL_ADMIN_USER</code> / <code>OA_MYSQL_ADMIN_PASSWORD</code>.`, 'warn')}
       ${listCard({
-        title: 'Databases', sub: `${rows.length} of ${lim.databases || '∞'} · ${formatBytes(total)} used · ${mst.connected ? 'live server' : 'metadata only'}`,
+        title: 'Databases', sub: `${filtered.length} z ${lim.databases || '∞'} · ${formatBytes(total)} · ${mst.connected ? 'serwer live' : 'tylko metadane'}`, footer: h`<form method="get" action="/user/databases" class="row"><input name="q" value="${q}" placeholder="Szukaj bazy lub użytkownika" style="flex:1;max-width:320px"><button class="btn btn-secondary btn-sm" type="submit">Filtruj</button></form>`,
         columns: [
           { label: 'Database', render: (r) => h`<span class="cell-strong">${r.db_name}</span><span class="cell-sub">user: ${r.db_user}</span>` },
           { label: 'State', render: (r) => (mst.connected ? (r.live ? badge('on server', 'ok') : badge('missing', 'danger')) : badge('recorded', 'muted')) },
           { label: 'Size', render: (r) => formatBytes(r.size), align: 'right' },
           { label: 'Created', render: (r) => (r.created_at ? formatDate(r.created_at) : '—') },
         ],
-        rows,
-        empty: 'No databases yet.',
+        rows: shown,
+        empty: q ? 'Brak baz pasujących do filtra.' : 'No databases yet.',
         createHref: '/user/databases/create', createLabel: 'Create database',
         actions: [
           { label: 'phpMyAdmin', href: (r) => (r.password_enc && appStatus('phpmyadmin').installed && phpMyAdminSsoEnabled()

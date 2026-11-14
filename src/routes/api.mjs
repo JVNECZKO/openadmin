@@ -27,6 +27,11 @@ import { panelSecret } from '../config.mjs';
 import { generateSelfSigned, installPem, issueLetsEncrypt, certPaths } from '../ssl.mjs';
 import { detect as mariadbDetect, createDatabase as mariaCreate, createAccount as mariaAccount, dropDatabase as mariaDrop, dropAccount as mariaDropAccount } from '../mariadb.mjs';
 import { providerExtras as providerExtrasSync } from '../providers/index.mjs';
+import {
+  notificationFeed, notificationView, unreadCount as notificationUnreadCount,
+  markRead as markNotificationRead, markAllRead as markAllNotificationsRead,
+  deleteNotification as deleteNotificationRecord, subscribeNotifications,
+} from '../notifications.mjs';
 
 /* ------------------------------------------------------------- utilities */
 function legacyEncode(obj) {
@@ -88,6 +93,56 @@ function userDomainsFor(user) {
 }
 
 function jsonOk(res, data = {}) { return res.json ? res.json({ ok: true, ...data }) : null; }
+
+/* ------------------------------------------------- live notification stream */
+const notificationStreams = new Set();
+const NOTIFICATION_STREAM_LIMIT = 25;
+const NOTIFICATION_STREAM_PER_USER = 3;
+const NOTIFICATION_HEARTBEAT_MS = 20000;
+const NOTIFICATION_STREAM_DEFAULT_MS = 5 * 60 * 1000;
+const NOTIFICATION_STREAM_MAX_MS = 10 * 60 * 1000;
+
+function apiNotificationLimit(raw, fallback = 20) {
+  const n = Number.parseInt(String(raw ?? ''), 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(1, Math.min(100, n));
+}
+
+function apiNotificationCursor(raw) {
+  if (raw === undefined || raw === null || raw === '') return null;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+function apiNotificationStatus(raw) {
+  if (raw === 'unread' || raw === 'read') return raw;
+  if (raw === '1') return 'unread';
+  if (raw === '0') return 'read';
+  return 'all';
+}
+
+function notificationStreamMs(raw) {
+  const n = Number.parseInt(String(raw ?? ''), 10);
+  if (!Number.isFinite(n)) return NOTIFICATION_STREAM_DEFAULT_MS;
+  return Math.max(5000, Math.min(NOTIFICATION_STREAM_MAX_MS, n));
+}
+
+function notificationStreamSince(ctx) {
+  const header = Number.parseInt(String(ctx.req.headers['last-event-id'] || ''), 10);
+  if (Number.isSafeInteger(header) && header > 0) return header;
+  const query = Number.parseInt(String(ctx.query.since || ''), 10);
+  return Number.isSafeInteger(query) && query > 0 ? query : null;
+}
+
+/** Defensive JSON guard; the server-level support check also blocks non-GET. */
+function notificationMutationDenied(ctx, user) {
+  if (ctx.session?.support) return { status: 403, json: { ok: false, error: 'Support access is read-only' } };
+  if (Array.isArray(user?.api_scopes) && user.api_scopes.length
+    && !user.api_scopes.includes('write') && !user.api_scopes.includes('admin')) {
+    return { status: 403, json: { ok: false, error: 'This API key is read-only' } };
+  }
+  return null;
+}
 
 /* ------------------------------------------------------------------ REST */
 export function registerApiRoutes(router) {
@@ -319,6 +374,177 @@ export function registerApiRoutes(router) {
       },
     };
   });
+
+  /* ------------------------------------------------------ notifications API */
+  api('GET', '/api/v1/notifications', (ctx) => {
+    const user = authenticate(ctx); if (!user) return unauthorized(ctx);
+    const feed = notificationFeed(user.id, {
+      limit: apiNotificationLimit(ctx.query.limit),
+      cursor: apiNotificationCursor(ctx.query.cursor || ctx.query.before),
+      status: apiNotificationStatus(ctx.query.status || ctx.query.filter || (ctx.query.unread === '1' ? 'unread' : 'all')),
+      level: String(ctx.query.level || ctx.query.severity || ''),
+    });
+    return {
+      json: {
+        ok: true,
+        unread: feed.unread,
+        unread_count: feed.unread,
+        items: feed.items,
+        notifications: feed.items,
+        latest: feed.items,
+        count: feed.items.length,
+        has_more: feed.has_more,
+        cursor: feed.next_cursor,
+        next_cursor: feed.next_cursor,
+        limit: feed.limit,
+        server_time: feed.server_time,
+        poll_after_ms: 15000,
+        stream: '/api/v1/notifications/stream',
+      },
+    };
+  });
+
+  api('GET', '/api/v1/notifications/stream', (ctx) => {
+    const user = authenticate(ctx); if (!user) return unauthorized(ctx);
+    const res = ctx.res;
+    let userStreams = 0;
+    for (const c of notificationStreams) if (c.userId === user.id) userStreams++;
+    if (notificationStreams.size >= NOTIFICATION_STREAM_LIMIT) {
+      res.setHeader('Retry-After', '30');
+      return { status: 503, json: { ok: false, error: 'Too many notification streams', retry_after: 30 } };
+    }
+    if (userStreams >= NOTIFICATION_STREAM_PER_USER) {
+      res.setHeader('Retry-After', '30');
+      return { status: 429, json: { ok: false, error: 'Too many notification streams for this account', retry_after: 30 } };
+    }
+    const limit = apiNotificationLimit(ctx.query.limit);
+    const maxMs = notificationStreamMs(ctx.query.max_ms);
+    const since = notificationStreamSince(ctx);
+    const client = {
+      userId: user.id, res, closed: false, ready: false, pending: [],
+      unsubscribe: null, heartbeat: null, lifetime: null,
+    };
+    const close = () => {
+      if (client.closed) return;
+      client.closed = true;
+      try { client.unsubscribe?.(); } catch { /* ignore */ }
+      if (client.heartbeat) clearInterval(client.heartbeat);
+      if (client.lifetime) clearTimeout(client.lifetime);
+      notificationStreams.delete(client);
+      try { if (!res.writableEnded) res.end(); } catch { /* ignore */ }
+    };
+    const send = (event, data, id) => {
+      if (client.closed || res.writableEnded || res.destroyed) return false;
+      let frame = '';
+      if (event) frame += `event: ${event}\n`;
+      if (id !== undefined && id !== null) frame += `id: ${id}\n`;
+      // JSON.stringify escapes newlines, so every data frame stays single-line.
+      frame += `data: ${JSON.stringify(data)}\n\n`;
+      try { res.write(frame); return true; } catch { close(); return false; }
+    };
+    const deliver = (event) => {
+      if (client.closed) return;
+      const row = event.notification || null;
+      if (row && !(row.user_id === null || row.user_id === undefined || row.user_id === user.id)) return;
+      const unread = notificationUnreadCount(user.id);
+      const at = nowIso();
+      if (event.type === 'created') {
+        send('notification', { ok: true, notification: notificationView(row), unread, unread_count: unread, server_time: at }, row?.id);
+      } else if (event.type === 'read' || event.type === 'deleted') {
+        send('change', { ok: true, type: event.type, id: row?.id ?? null, unread, unread_count: unread, server_time: at });
+      } else if (event.type === 'read-all') {
+        send('change', { ok: true, type: 'read-all', id: null, unread, unread_count: unread, server_time: at });
+      }
+    };
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.flushHeaders?.();
+    notificationStreams.add(client);
+
+    // Subscribe before the initial snapshot so a notification created while the
+    // connection is being set up is buffered rather than lost.
+    client.unsubscribe = subscribeNotifications((event) => {
+      if (client.closed) return;
+      if (!client.ready) { if (client.pending.length < 200) client.pending.push(event); return; }
+      deliver(event);
+    });
+    res.on('close', close);
+    res.on('error', close);
+    const feed = notificationFeed(user.id, { limit });
+    send('ready', {
+      ok: true,
+      unread: feed.unread,
+      unread_count: feed.unread,
+      items: feed.items,
+      count: feed.items.length,
+      has_more: feed.has_more,
+      cursor: feed.next_cursor,
+      next_cursor: feed.next_cursor,
+      server_time: feed.server_time,
+      heartbeat_ms: NOTIFICATION_HEARTBEAT_MS,
+      max_ms: maxMs,
+      stream: true,
+    });
+    if (since) {
+      const missed = all('SELECT * FROM notifications WHERE (user_id = ? OR user_id IS NULL) AND id > ? ORDER BY id ASC LIMIT 50', user.id, since);
+      for (const row of missed) {
+        send('notification', { ok: true, notification: notificationView(row), unread: notificationUnreadCount(user.id), server_time: nowIso() }, row.id);
+      }
+      if (missed.length === 50) {
+        send('change', { ok: true, type: 'catchup-truncated', unread: notificationUnreadCount(user.id), server_time: nowIso() });
+      }
+    }
+    client.ready = true;
+    for (const event of client.pending.splice(0)) deliver(event);
+    client.heartbeat = setInterval(() => {
+      send('heartbeat', { ok: true, server_time: nowIso(), unread: notificationUnreadCount(user.id) });
+    }, NOTIFICATION_HEARTBEAT_MS);
+    client.heartbeat.unref?.();
+    client.lifetime = setTimeout(() => {
+      send('close', { ok: true, reason: 'max-duration', server_time: nowIso() });
+      close();
+    }, maxMs);
+    client.lifetime.unref?.();
+    return { handled: true };
+  });
+
+  const readNotification = (ctx) => {
+    const user = authenticate(ctx); if (!user) return unauthorized(ctx);
+    const denied = notificationMutationDenied(ctx, user); if (denied) return denied;
+    const id = apiNotificationCursor(ctx.params.id);
+    if (!id) return badRequest(ctx, 'Invalid notification id');
+    const r = markNotificationRead(id, user.id);
+    if (!r.ok) return notFound(ctx, 'Notification not found');
+    const unread = notificationUnreadCount(user.id);
+    return { json: { ok: true, id: r.id, read_at: r.read_at, changed: r.changed, unread, unread_count: unread, server_time: nowIso() } };
+  };
+  api('POST', '/api/v1/notifications/:id/read', readNotification);
+
+  api('POST', '/api/v1/notifications/read-all', (ctx) => {
+    const user = authenticate(ctx); if (!user) return unauthorized(ctx);
+    const denied = notificationMutationDenied(ctx, user); if (denied) return denied;
+    const r = markAllNotificationsRead(user.id);
+    const unread = notificationUnreadCount(user.id);
+    return { json: { ok: true, marked: r.marked, read: r.marked, unread, unread_count: unread, server_time: nowIso() } };
+  });
+
+  const removeNotification = (ctx) => {
+    const user = authenticate(ctx); if (!user) return unauthorized(ctx);
+    const denied = notificationMutationDenied(ctx, user); if (denied) return denied;
+    const id = apiNotificationCursor(ctx.params.id);
+    if (!id) return badRequest(ctx, 'Invalid notification id');
+    const r = deleteNotificationRecord(id, user.id);
+    if (!r.ok) return notFound(ctx, 'Notification not found');
+    const unread = notificationUnreadCount(user.id);
+    return { json: { ok: true, id: r.id, deleted: true, unread, unread_count: unread, server_time: nowIso() } };
+  };
+  api('DELETE', '/api/v1/notifications/:id', removeNotification);
+  api('POST', '/api/v1/notifications/:id/delete', removeNotification);
 
   /* ------------------------------------------------------------ file API */
   api('GET', '/api/v1/files', (ctx) => {
@@ -916,6 +1142,11 @@ function openapiDoc() {
       '/packages': { get: { summary: 'List packages', responses: { 200: { description: 'Packages' } } } },
       '/stats': { get: { summary: 'Usage statistics', responses: { 200: { description: 'Daily usage' } } } },
       '/system': { get: { summary: 'System information', responses: { 200: { description: 'System' } } } },
+      '/notifications': { get: { summary: 'Unread count and latest notifications', parameters: [{ name: 'limit', in: 'query', schema: { type: 'integer', maximum: 100 } }, { name: 'cursor', in: 'query', schema: { type: 'integer' } }, { name: 'status', in: 'query', schema: { type: 'string', enum: ['all', 'unread', 'read'] } }, { name: 'level', in: 'query', schema: { type: 'string', enum: ['info', 'ok', 'warn', 'danger'] } }], responses: { 200: { description: 'Notification feed' } } } },
+      '/notifications/stream': { get: { summary: 'Server-sent event stream (ready, notification, change, heartbeat)', responses: { 200: { description: 'text/event-stream' } } } },
+      '/notifications/{id}/read': { post: { summary: 'Mark one notification as read (write scope)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Read' }, 404: { description: 'Not found' } } } },
+      '/notifications/read-all': { post: { summary: 'Mark all visible notifications as read (write scope)', responses: { 200: { description: 'Read all' } } } },
+      '/notifications/{id}': { delete: { summary: 'Delete one notification (write scope)', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }], responses: { 200: { description: 'Deleted' }, 404: { description: 'Not found' } } } },
       '/files': { get: { summary: 'List a directory', responses: { 200: { description: 'Entries' } } } },
       '/webserver': { get: { summary: 'Web server stack and generated vhosts', responses: { 200: { description: 'Detection and config counts' } } } },
     },

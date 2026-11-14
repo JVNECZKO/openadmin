@@ -93,7 +93,7 @@ export function register(router) {
           { label: 'Usuń', form: (r) => `${A}/queue/${r.id}/delete`, icon: 'trash', danger: true, confirm: (r) => `Usunąć wiadomość ${r.id}?` },
         ],
       }), { sub: q.simulated ? 'sandbox — wpisy panelu' : 'exim -bp' }) : emptyState('Kolejka jest pusta.', { icon: 'mail' })}
-      <div class="row mt-18"><form method="post" action="${A}/queue/retry-all" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary btn-sm" type="submit">Ponów wszystkie</button></form></div>`;
+      ${q.rows.length ? h`<div class="row mt-18"><form method="post" action="${A}/queue/retry-all" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary btn-sm" type="submit">Ponów wszystkie</button></form></div>` : ''}`;
     }
 
     if (t === 'events') {

@@ -1,10 +1,13 @@
-// Background housekeeping: scheduled backups, retention and admin alerts.
+// Background housekeeping: scheduled backups, retention, automation and alerts.
 import fs from 'node:fs';
 import { all, get, run, nowIso, setting, setSetting } from './db.mjs';
 import { createServerBackup, backupPath } from './backups.mjs';
 import { runDueJobs } from './backupcenter.mjs';
 import { sendMail, mtaStatus } from './mta.mjs';
-import { dispatch, channels, addNotification } from './notifications.mjs';
+import { dispatch, channels, addNotification, notifyAutomationFailure } from './notifications.mjs';
+import { automationTick, seedAutomationJobs, recoverInterruptedRuns } from './automation.mjs';
+
+export { automationStatus } from './automation.mjs';
 
 export function notifyAdmin(subject, body) {
   const admin = get("SELECT * FROM users WHERE level = 'admin' ORDER BY id LIMIT 1");
@@ -76,15 +79,48 @@ export function checkCertificateExpiry() {
 }
 
 let timer = null;
+let legacyTimer = null;
+
+const AUTOMATION_TICK_MS = Math.max(5000, Number(process.env.OA_AUTOMATION_TICK_MS) || 20 * 1000);
+
 export function startScheduler() {
   if (timer) return timer;
+  try {
+    seedAutomationJobs();
+    recoverInterruptedRuns();
+  } catch (e) {
+    console.warn('[openadmin] automation init:', e.message);
+  }
+
+  // Fast tick: durable automation jobs due by next_run_at. Every error is
+  // contained here so a failing job can never take the HTTP server down.
   const tick = () => {
-    try { runBackupJob(); } catch (e) { console.warn('[openadmin] backup:', e.message); }
-    try { runDueJobs(); } catch (e) { console.warn('[openadmin] backup jobs:', e.message); }
+    automationTick().catch((e) => console.warn('[openadmin] automation:', e.message));
+  };
+  setTimeout(tick, Math.min(3000, AUTOMATION_TICK_MS)).unref?.();
+  timer = setInterval(tick, AUTOMATION_TICK_MS);
+  timer.unref?.();
+
+  // Legacy hourly housekeeping is kept for the Backup Center scheduler jobs
+  // and the daily certificate-expiry notification. Automatic server backups
+  // themselves now run through the durable backup.daily automation job.
+  const legacyTick = () => {
+    try {
+      for (const result of runDueJobs()) {
+        if (result && result.ok === false) {
+          void notifyAutomationFailure({
+            source: 'backup-center',
+            title: 'Backup Center job failed',
+            body: result.error || 'Backup job failed',
+            link: '/admin/backup-center',
+          }).catch(() => {});
+        }
+      }
+    } catch (e) { console.warn('[openadmin] backup jobs:', e.message); }
     try { checkCertificateExpiry(); } catch (e) { console.warn('[openadmin] certs:', e.message); }
   };
-  setTimeout(tick, 60 * 1000).unref?.();
-  timer = setInterval(tick, 60 * 60 * 1000);
-  timer.unref?.();
+  setTimeout(legacyTick, 60 * 1000).unref?.();
+  legacyTimer = setInterval(legacyTick, 60 * 60 * 1000);
+  legacyTimer.unref?.();
   return timer;
 }
