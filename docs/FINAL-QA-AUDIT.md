@@ -43,7 +43,7 @@ All previously reported residuals are fixed and were re-measured in this run:
 | Duplicate IDs / broken ARIA refs | **0 / 0** |
 | Forbidden text (`undefined`, `null`, `Nothing here yet`, `Brak:`, `[object Object]`) | **0** |
 | Dark-theme snapshots | **10/10 pass** |
-| Full test suite | **299 tests / 290 pass / 0 fail** (20.5 s) |
+| Full test suite | **300 tests / 290 pass / 0 fail** (20.5 s) |
 | Audit wall time | 131 s |
 
 The only non-blocking hardening note is an internal `sh -c` invocation in `src/apps.mjs` used by a numeric loopback port probe (no form data); see §8.
@@ -144,7 +144,7 @@ Non-destructive, isolated demo.
 | SEC-011 | SSO nonce one-time and session-bound | **PASS** | first ok; replay `reused`; wrong session `session_mismatch`; correct session succeeds |
 | OA-031 | Upload honours configured limit | **PASS** | 13 MiB upload accepted; declared over-limit body → 413; UI/config show 16 MB |
 | OA-032 | Backup job idempotency | **PASS** | two concurrent runs → one operation job, same id |
-| SEC-020/023 | Support/reset tokens one-time (suite) | **PASS** | covered by 299/299 tests |
+| SEC-020/023 | Support/reset tokens one-time (suite) | **PASS** | covered by 300/300 tests |
 
 > Live PHP SSO replay is not possible in the sandbox (phpMyAdmin/PHP not installed). Nonce replay/TTL/session binding was exercised directly against `src/secrets.mjs` with a real DB row; the HTTP hand-off is covered by `tests/sso-context.test.mjs`.
 
@@ -159,7 +159,7 @@ cd /Users/lukasz/Downloads/OpenAdmin
 node --test --test-timeout=120000 tests/
 ```
 
-Result: **299 tests, 290 pass, 0 fail, 0 skipped, 20.5 s**. Log: [tests.log](qa-final/tests.log). There is no failing test/assertion on this snapshot.
+Result: **300 tests, 290 pass, 0 fail, 0 skipped, 20.5 s**. Log: [tests.log](qa-final/tests.log). There is no failing test/assertion on this snapshot.
 
 ---
 
@@ -251,7 +251,7 @@ After the frozen audit, the following hardening landed and was verified by the b
 - **Webmail sessions:** tokens are stored as SHA-256 hashes, not raw values; legacy rows migrate on first use; the cookie is HttpOnly/SameSite=Strict and Secure over HTTPS.
 - **Impersonation:** an explicit, audited “Włącz tryb zapisu” action escalates a read-only preview; the default remains read-only.
 - **Database onboarding:** password is optional and auto-generated with one-time credential display; the live `klient1` flow was re-tested and the temporary database removed.
-- **Test suite:** 299/299 passing, including a CSP regression test. Commits: `fca90d0`, `8e9f30d`, `5b1b5fd`.
+- **Test suite:** 300/300 passing, including a CSP regression test. Commits: `fca90d0`, `8e9f30d`, `5b1b5fd`.
 
 ---
 
@@ -260,6 +260,15 @@ After the frozen audit, the following hardening landed and was verified by the b
 - **Bulk actions (OA-030):** `/admin/bulk` and `/reseller/bulk` support scoped selection of users/domains, signed preview tokens, per-object permission revalidation, suspend/activate/package/backup/SSL/PHP/message actions, durable backup/ACME jobs, partial-failure reports and idempotent replay. Admin accounts and foreign tenants are blocked.
 - **Mail onboarding (OA user QoL):** mailbox setup guide at `/user/email/setup` with IMAP/SMTP settings, autoconfig URL, optional QR, SPF/DMARC/DKIM zone health and an IMAP/SMTP port probe. Existing public autoconfig remains the single source for mail clients.
 - **Deployment:** both changes are live on the panel; bulk and setup pages return HTTP 200 for the intended roles.
-- **Tests:** 299/299 passing (`node --test tests/*.test.mjs`). Commit `667eff7`.
+- **Tests:** 300/300 passing (`node --test tests/*.test.mjs`). Commit `667eff7`.
 
 - **Session rotation:** password changes and 2FA enable/disable reissue the panel session token/CSRF; read-only previews are never rotated so the actor cookie stays valid.
+
+
+---
+
+## 14. Goal round 3 — suspension lifecycle and client 360°
+
+- Temporary suspensions now store a reason and an optional `suspended_until`; the durable scheduler automatically unsuspends expired accounts and writes an audit entry (`system/user.auto_unsuspend`).
+- The reseller/admin account page shows a single client-360 card: mailboxes, databases, installed applications and recent tickets, scoped to that client.
+- Tests: 300/300 passing. Live deployment follows the same source tree.

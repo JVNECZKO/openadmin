@@ -4,7 +4,7 @@
 // second instance never duplicates a scheduled run.
 import fs from 'node:fs';
 import os from 'node:os';
-import { all, get, run, nowIso, setting, setSetting } from './db.mjs';
+import { all, get, run, nowIso, setting, setSetting, audit } from './db.mjs';
 import { createServerBackup, backupPath, ensureJobSchema, processQueuedJobs, recoverInterruptedJobs } from './backups.mjs';
 import { enqueueDueJobs, ensureBackupScheduleSchema, recoverStaleBackupLeases, schedulerTimezone } from './backupcenter.mjs';
 import { sendMail, mtaStatus } from './mta.mjs';
@@ -161,9 +161,22 @@ let lastTick = null;
  * transition is a database compare-and-set (leases / next_run_at), the timer is
  * only a wake-up source.
  */
+
+/** End temporary suspensions whose deadline has passed. */
+export function autoUnsuspendExpired({ now = Date.now() } = {}) {
+  const at = new Date(now).toISOString();
+  const rows = all("SELECT id, username FROM users WHERE suspended = 1 AND suspended_until IS NOT NULL AND suspended_until <= ?", at);
+  for (const user of rows) {
+    run('UPDATE users SET suspended = 0, suspended_reason = NULL, suspended_until = NULL WHERE id = ?', user.id);
+    audit('system', 'system', 'user.auto_unsuspend', user.username, '');
+  }
+  return rows.length;
+}
+
 export async function schedulerTick({ now = Date.now(), limit = 2 } = {}) {
   ensureSchedulerSchema();
   const started = Date.now();
+  const autoUnsuspended = autoUnsuspendExpired({ now });
   const recoveredJobs = recoverInterruptedJobs({ now });
   const recoveredAutomation = recoverInterruptedRuns();
   const staleLeases = recoverStaleBackupLeases({ now });
@@ -187,6 +200,7 @@ export async function schedulerTick({ now = Date.now(), limit = 2 } = {}) {
   lastTick = { at: nowIso(), duration_ms: Date.now() - started, due: due.queued.length, spawned: queue.spawned.length, recovered: recoveredJobs.length };
   return {
     now: new Date(now).toISOString(),
+    auto_unsuspended: autoUnsuspended,
     timezone: schedulerTimezone(),
     recovered: { jobs: recoveredJobs, automation: recoveredAutomation, backup_leases: staleLeases },
     enqueued: due.queued,

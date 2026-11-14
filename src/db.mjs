@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS users (
   ip TEXT,
   suspended INTEGER NOT NULL DEFAULT 0,
   suspended_reason TEXT,
+  suspended_until TEXT,
   notes TEXT,
   language TEXT NOT NULL DEFAULT 'pl',
   skin TEXT NOT NULL DEFAULT 'evolution',
@@ -825,6 +826,7 @@ export function getDb() {
     const cols = db.prepare('PRAGMA table_info(email_accounts)').all();
     if (!cols.some((c) => c.name === 'mail_hash')) db.exec('ALTER TABLE email_accounts ADD COLUMN mail_hash TEXT');
     const userCols = db.prepare('PRAGMA table_info(users)').all();
+    if (!userCols.some((c) => c.name === 'suspended_until')) db.exec('ALTER TABLE users ADD COLUMN suspended_until TEXT');
     if (!userCols.some((c) => c.name === 'twofa_secret')) db.exec('ALTER TABLE users ADD COLUMN twofa_secret TEXT');
     if (!userCols.some((c) => c.name === 'twofa_enabled')) db.exec('ALTER TABLE users ADD COLUMN twofa_enabled INTEGER NOT NULL DEFAULT 0');
     const queueCols = db.prepare('PRAGMA table_info(mail_queue)').all();

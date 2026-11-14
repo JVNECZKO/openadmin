@@ -2173,3 +2173,17 @@ test('terminal commands return JSON without a page refresh and wizard has steppe
   assert.match(wizard, /data-wizard-indicator/);
   assert.match(wizard, /data-wizard-next/);
 });
+
+test('temporary suspension auto-unsuspends after its deadline', async () => {
+  const username = `susp_${Date.now().toString(36)}`;
+  const past = new Date(Date.now() - 60_000).toISOString();
+  db.run(`INSERT INTO users(username, password, email, level, package, created_at, suspended, suspended_reason, suspended_until)
+          VALUES(?,?,?,?,?,?,?,?,?)`, username, db.hashPassword('StrongPass123!'), `${username}@example.com`, 'user', 'default', db.nowIso(), 1, 'test', past);
+  const scheduler = await import('../src/scheduler.mjs');
+  const result = scheduler.schedulerTick({ now: Date.now(), limit: 0 });
+  assert.ok((await result).auto_unsuspended >= 1);
+  const row = db.get('SELECT * FROM users WHERE username = ?', username);
+  assert.equal(row.suspended, 0);
+  assert.equal(row.suspended_until, null);
+  db.run('DELETE FROM users WHERE id = ?', row.id);
+});

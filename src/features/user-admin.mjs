@@ -384,9 +384,13 @@ export function updateUser(ctx, { path, target }) {
     run('UPDATE users SET shell_enabled = ? WHERE id = ?', shell ? 1 : 0, target.id);
   }
   if (password) { const policyError = passwordPolicyError(password); if (policyError) return ctx.redirect(`${path}/${target.id}?flash=${encodeURIComponent(policyError)}&type=error`); }
-  run(`UPDATE users SET email = ?, package = ?, domain = ?, ip = ?, notes = ?, suspended = ?, must_change_password = ? WHERE id = ?`,
+  const suspended = ctx.body.suspend ? 1 : 0;
+  const suspendReason = suspended ? String(ctx.body.suspend_reason || target.suspended_reason || '').slice(0, 500) : null;
+  const suspendUntilRaw = suspended ? String(ctx.body.suspend_until || '').trim() : '';
+  const suspendUntil = suspendUntilRaw && Number.isFinite(Date.parse(suspendUntilRaw)) ? new Date(suspendUntilRaw).toISOString() : null;
+  run(`UPDATE users SET email = ?, package = ?, domain = ?, ip = ?, notes = ?, suspended = ?, suspended_reason = ?, suspended_until = ?, must_change_password = ? WHERE id = ?`,
     email || target.email, pkg.name, domain || target.domain || '',
-    String(ctx.body.ip || target.ip), String(ctx.body.notes || ''), ctx.body.suspend ? 1 : 0,
+    String(ctx.body.ip || target.ip), String(ctx.body.notes || ''), suspended, suspendReason, suspendUntil,
     password ? 1 : target.must_change_password, target.id);
   if (password) run('UPDATE users SET password = ? WHERE id = ?', hashPassword(password), target.id);
   audit(ctx.user.username, ctx.user.level, 'user.update', target.username, ctx.ip);
@@ -401,6 +405,12 @@ export function userDetailPage(ctx, { path, target }) {
   const bw = usage.reduce((a, r) => a + (r.bandwidth_mb || 0), 0);
   const activation = pendingActivation(target.id);
   const provision = lastAccountProvision(target.id);
+  const mailboxes = all(`SELECT e.* FROM email_accounts e JOIN domains d ON d.id = e.domain_id WHERE d.user_id = ? ORDER BY e.domain, e.local_part LIMIT 10`, target.id);
+  const databases = all('SELECT * FROM databases WHERE user_id = ? ORDER BY db_name LIMIT 10', target.id);
+  const apps = all('SELECT * FROM app_installs WHERE user_id = ? ORDER BY created_at DESC LIMIT 10', target.id);
+  const tickets = all('SELECT id, subject, status, created_at FROM tickets WHERE username = ? ORDER BY id DESC LIMIT 5', target.username);
+  const resellerView = String(path).startsWith('/reseller');
+  const ticketBase = resellerView ? '/reseller/tickets' : '/admin/tickets';
   const body = h`
     ${ctx.query.created === '1' ? alert('Konto zostało utworzone. Poniżej znajduje się rzeczywisty wynik provisioningu.', provision?.ok === false ? 'warn' : 'ok') : ''}
     ${activation ? card('Aktywacja konta', h`
@@ -430,6 +440,8 @@ export function userDetailPage(ctx, { path, target }) {
           <div class="field"><label class="field-label">Notes</label><input name="notes" value="${target.notes || ''}"></div>
           <div class="field field-full"><label class="check-field"><input type="checkbox" name="shell_enabled" value="1" ${target.shell_enabled ? 'checked' : ''}> <span>Shell access (SSH/terminal)</span></label></div>
           <div class="field field-full"><label class="check-field"><input type="checkbox" name="suspend" value="1" ${target.suspended ? 'checked' : ''}> <span>Suspend account</span></label></div>
+          <div class="field"><label class="field-label" for="oa-suspend-reason">Powód zawieszenia</label><input id="oa-suspend-reason" name="suspend_reason" value="${target.suspended_reason || ''}" placeholder="np. zaległa płatność"></div>
+          <div class="field"><label class="field-label" for="oa-suspend-until">Automatycznie odwieś</label><input id="oa-suspend-until" name="suspend_until" type="datetime-local" value="${target.suspended_until ? String(target.suspended_until).slice(0,16) : ''}"><p class="field-help">Puste = bez terminu.</p></div>
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Save account</button>
           <a class="btn btn-ghost" href="${path}">Back to list</a></div>
@@ -443,8 +455,16 @@ export function userDetailPage(ctx, { path, target }) {
         ['Created', formatDate(target.created_at)],
         ['Last login', target.last_login ? formatDate(target.last_login, { time: true }) : 'never'],
         ['Status', target.suspended ? badge('Suspended', 'danger') : badge('Active', 'ok')],
+        ['Powód zawieszenia', target.suspended_reason || '—'],
+        ['Odwieszenie', target.suspended_until ? formatDate(target.suspended_until, { time: true }) : '—'],
       ])}`)}
     </div>
+    ${card('Klient 360°', h`<div class="grid grid-2">
+      <div class="stack"><strong>Poczta · ${mailboxes.length}</strong>${mailboxes.length ? mailboxes.map((m) => h`<div class="spread small"><span>${m.local_part}@${m.domain}</span><span>${formatBytes(m.used_mb)}</span></div>`) : h`<span class="small muted">Brak skrzynek.</span>`}</div>
+      <div class="stack"><strong>Bazy · ${databases.length}</strong>${databases.length ? databases.map((d) => h`<div class="spread small"><span class="cell-mono">${d.db_name}</span><span>${formatBytes(d.size_mb)}</span></div>`) : h`<span class="small muted">Brak baz.</span>`}</div>
+      <div class="stack"><strong>Aplikacje · ${apps.length}</strong>${apps.length ? apps.map((a) => h`<div class="spread small"><span>${a.type} · ${a.domain}</span>${badge(a.status || 'active', a.status === 'active' ? 'ok' : 'warn')}</div>`) : h`<span class="small muted">Brak instalacji.</span>`}</div>
+      <div class="stack"><strong>Zgłoszenia · ${tickets.filter((t) => t.status !== 'closed').length} otwarte</strong>${tickets.length ? tickets.map((t) => h`<div class="spread small">${resellerView ? h`<a class="link" href="${ticketBase}/${t.id}">${t.subject}</a>` : h`<span>${t.subject}</span>`}<span>${t.status}</span></div>`) : h`<span class="small muted">Brak zgłoszeń.</span>`}</div>
+    </div>`, { sub: 'Jedna karta: domena, poczta, bazy, aplikacje i zgłoszenia — wszystko w scope tego klienta' })}
     ${card('Domains', h`${domains.length ? table({
       columns: [
         { label: 'Domain', render: (d) => h`<span class="cell-strong">${d.name}</span>` },
@@ -465,9 +485,22 @@ export function userDetailPage(ctx, { path, target }) {
 }
 
 export function toggleSuspend(ctx, { path, target }) {
-  run('UPDATE users SET suspended = ? WHERE id = ?', target.suspended ? 0 : 1, target.id);
-  audit(ctx.user.username, ctx.user.level, target.suspended ? 'user.unsuspend' : 'user.suspend', target.username, ctx.ip);
-  return ctx.redirect(`${path}?flash=` + encodeURIComponent(`${target.username} ${target.suspended ? 'unsuspended' : 'suspended'}`));
+  const reason = String(ctx.body?.reason || '').trim().slice(0, 500);
+  const untilRaw = String(ctx.body?.until || '').trim();
+  let until = null;
+  if (untilRaw) {
+    const parsed = new Date(untilRaw);
+    if (!Number.isFinite(parsed.getTime())) return ctx.redirect(`${path}/${target.id}?flash=${encodeURIComponent('Nieprawidłowa data końca zawieszenia')}&type=error`);
+    until = parsed.toISOString();
+  }
+  if (target.suspended) {
+    run('UPDATE users SET suspended = 0, suspended_reason = NULL, suspended_until = NULL WHERE id = ?', target.id);
+    audit(ctx.user.username, ctx.user.level, 'user.unsuspend', target.username, ctx.ip);
+  } else {
+    run('UPDATE users SET suspended = 1, suspended_reason = ?, suspended_until = ? WHERE id = ?', reason || null, until, target.id);
+    audit(ctx.user.username, ctx.user.level, 'user.suspend', `${target.username}${until ? ` until ${until}` : ''}${reason ? `: ${reason}` : ''}`, ctx.ip);
+  }
+  return ctx.redirect(`${path}/${target.id}?flash=` + encodeURIComponent(`${target.username} ${target.suspended ? 'unsuspended' : 'suspended'}`));
 }
 
 export function deleteUser(ctx, { path, target }) {
