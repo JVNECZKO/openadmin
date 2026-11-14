@@ -179,7 +179,6 @@ export function usersPage(ctx, { path = '/reseller/users', level = 'user', suspe
       { label: 'Last login', render: (u) => (u.last_login ? formatDate(u.last_login) : 'never') },
     ],
     rows: withStats,
-    createHref: `${path}/create`, createLabel: 'Create user',
     empty: 'No accounts yet.',
     toolbarLeft: level === 'user' ? [h`<a class="chip ${suspended === null ? 'active' : ''}" href="${path}">All</a><a class="chip ${suspended === 0 ? 'active' : ''}" href="${path}/suspended">Active</a>`] : [],
     actions: [

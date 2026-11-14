@@ -2573,3 +2573,17 @@ select option {
   background-color: rgba(5, 33, 53, .38);
   border-color: rgba(255, 255, 255, .22);
 }
+
+/* Keep row actions reachable whenever a table is wider than its card. */
+.data-table .col-actions {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--surface);
+  box-shadow: -14px 0 18px -18px color-mix(in srgb, var(--text) 55%, transparent);
+}
+.data-table thead th.col-actions {
+  z-index: 3;
+  background: var(--surface-2);
+}
+.data-table tbody tr:hover .col-actions { background: var(--surface-2); }
