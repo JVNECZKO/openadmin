@@ -2209,3 +2209,19 @@ test('user statistics exposes disk breakdown and CSV/JSON export', async () => {
   assert.equal(csv.status, 200);
   assert.match(await csv.text(), /^day,bandwidth_mb,disk_mb,emails,requests/);
 });
+
+test('streaming upload endpoint accepts raw bytes and reports progress metadata', async () => {
+  const cookie = await loginAs('demouser');
+  const page = await fetch(base + '/user/files', { headers: { Cookie: cookie } });
+  const html = await page.text();
+  const csrf = /meta name="csrf-token" content="([^"]+)"/.exec(html)?.[1];
+  assert.ok(csrf, 'CSRF meta is present');
+  const body = Buffer.from('raw streaming upload test');
+  const res = await fetch(base + '/user/files/upload-stream?path=%2Fhome%2Fdemouser&name=stream-test.txt', {
+    method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/octet-stream', 'X-CSRF-Token': csrf }, body,
+  });
+  assert.equal(res.status, 200);
+  const json = await res.json();
+  assert.equal(json.ok, true);
+  assert.equal(json.size, body.length);
+});

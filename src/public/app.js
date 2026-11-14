@@ -1314,6 +1314,37 @@
     dropzone.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); input.click(); }
     });
+    function uploadStream(file, offset = 0, attempt = 0) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const query = new URLSearchParams({ path, name: file.name });
+        xhr.open('POST', `/user/files/upload-stream?${query}`);
+        xhr.responseType = 'json';
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.setRequestHeader('X-CSRF-Token', window.OA_CSRF || document.querySelector('meta[name="csrf-token"]')?.content || '');
+        xhr.setRequestHeader('X-Upload-Offset', String(offset));
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const pct = Math.min(100, Math.round(((offset + event.loaded) / Math.max(1, file.size)) * 100));
+          const bar = dropzone.querySelector('[data-upload-progress]');
+          if (bar) bar.style.width = `${pct}%`;
+        };
+        xhr.onload = () => {
+          const json = xhr.response || {};
+          if (xhr.status === 200 && json.ok) return resolve(json);
+          if (xhr.status === 409 && Number.isFinite(Number(json.offset)) && attempt < 2) {
+            return resolve(uploadStream(file, Number(json.offset), attempt + 1));
+          }
+          reject(new Error(json.error || `HTTP ${xhr.status}`));
+        };
+        xhr.onerror = () => {
+          if (attempt < 2) return resolve(uploadStream(file, offset, attempt + 1));
+          reject(new Error('Połączenie przerwane — spróbuj ponownie.'));
+        };
+        xhr.send(file.slice(offset));
+      });
+    }
+
     async function uploadFiles(files) {
       if (!files.length) return;
       dropzone.classList.add('is-uploading');
@@ -1322,15 +1353,14 @@
       try {
         for (const file of files) {
           try {
-            const b64 = await fileToBase64(file);
-            const res = await fetch('/api/v1/files/upload', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.OA_CSRF || '' },
-              body: JSON.stringify({ path, name: file.name, data: b64 }),
-            });
-            const json = await res.json().catch(() => ({}));
-            if (res.ok && json.ok) { ok += 1; toast(`Uploaded ${file.name}`, { variant: 'success' }); }
-            else toast(json.error || `Upload failed: ${file.name}`, { variant: 'error' });
+            const maxBytes = Number(dropzone.dataset.maxUploadBytes || 0);
+            if (maxBytes > 0 && file.size > maxBytes) {
+              toast(`${file.name}: ${(file.size / 1048576).toFixed(1)} MB przekracza limit ${(maxBytes / 1048576).toFixed(0)} MB.`, { variant: 'error' });
+              continue;
+            }
+            await uploadStream(file, 0);
+            ok += 1;
+            toast(`Uploaded ${file.name}`, { variant: 'success' });
           } catch (error) {
             toast(error?.message || `Upload failed: ${file.name}`, { variant: 'error' });
           }

@@ -1,6 +1,7 @@
 // File manager (jailed to each account's home directory), FTP, backups, cron.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { all, get, run, nowIso, hashPassword, audit, setting } from '../db.mjs';
 import { config } from '../config.mjs';
 import { limitsFor } from '../auth.mjs';
@@ -445,7 +446,8 @@ export function register(router) {
               ${icon('upload', { size: 26 })}
               <p><strong>Drop files here</strong> or click to browse</p>
               <input type="file" id="fileInput" multiple hidden>
-              <span class="small muted">Maximum ${config.limits.maxUploadMb} MB per file</span>
+              <span class="small muted">Maximum ${config.limits.maxUploadMb} MB per file · strumieniowo z możliwością wznowienia</span>
+              <div class="progress-track" style="max-width:360px;margin:8px auto 0" aria-hidden="true"><div class="progress-fill" data-upload-progress style="width:0%"></div></div>
             </div>
           </div>
         </div>
@@ -510,6 +512,67 @@ export function register(router) {
       renameTenantPath(ctx.user.username, display, ctx.body.old, ctx.body.new);
       return ctx.redirect('/user/files?path=' + encodeURIComponent(display) + '&flash=Renamed');
     } catch (error) { return filesRedirect(ctx, error, fallback); }
+  });
+
+
+  /* ------------------------------------------------- streaming upload */
+  router.post('/user/files/upload-stream', async (ctx) => {
+    const requestedPath = String(ctx.query.path || `/home/${ctx.user.username}`);
+    const name = String(ctx.query.name || '').trim();
+    if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\\')) {
+      return { status: 400, json: { ok: false, code: 'invalid_name', error: 'Nieprawidłowa nazwa pliku.' } };
+    }
+    let dir;
+    try { dir = resolveUserPath(ctx.user.username, requestedPath, { operation: 'upload' }); }
+    catch (error) { return { status: 403, json: { ok: false, code: error.code || 'path_denied', error: error.message } }; }
+    fs.mkdirSync(dir, { recursive: true });
+    const full = path.join(dir, name);
+    const maxBytes = config.limits.maxUploadMb * 1024 * 1024;
+    const offsetHeader = Number(ctx.req.headers['x-upload-offset'] || 0);
+    const offset = Number.isFinite(offsetHeader) && offsetHeader > 0 ? Math.trunc(offsetHeader) : 0;
+    if (offset > maxBytes) return { status: 413, json: { ok: false, code: 'too_large', error: `Limit ${config.limits.maxUploadMb} MB.` } };
+    const tempDir = path.join(config.dataDir, 'uploads');
+    fs.mkdirSync(tempDir, { recursive: true, mode: 0o700 });
+    const key = crypto.createHash('sha256').update(`${ctx.user.username}:${full}`).digest('hex').slice(0, 40);
+    const temp = path.join(tempDir, `${key}.part`);
+    if (offset > 0) {
+      const size = fs.existsSync(temp) ? fs.statSync(temp).size : 0;
+      if (size !== offset) return { status: 409, json: { ok: false, code: 'offset_mismatch', offset: size, error: `Wznów od bajtu ${size}.` } };
+    } else {
+      try { fs.rmSync(temp, { force: true }); } catch { /* ignore */ }
+    }
+    const disk = checkDisk(ctx.user, offset / 1024 / 1024);
+    if (!disk.ok) return { status: 413, json: { ok: false, code: 'quota', error: `Brak miejsca: ${disk.used.toFixed(1)} / ${disk.limit} MB.` } };
+    let written = offset;
+    try {
+      await new Promise((resolve, reject) => {
+        const ws = fs.createWriteStream(temp, { flags: offset > 0 ? 'a' : 'w', mode: 0o600 });
+        let failed = false;
+        const fail = (error) => { if (failed) return; failed = true; ws.destroy(); reject(error); };
+        ctx.req.on('data', (chunk) => {
+          written += chunk.length;
+          if (written > maxBytes) { ctx.req.destroy(); fail(Object.assign(new Error(`Limit ${config.limits.maxUploadMb} MB.`), { status: 413, code: 'too_large' })); }
+        });
+        ctx.req.on('aborted', () => fail(Object.assign(new Error('Upload przerwany'), { status: 499, code: 'aborted' })));
+        ctx.req.on('error', fail);
+        ws.on('error', fail);
+        ws.on('finish', resolve);
+        ctx.req.pipe(ws);
+      });
+    } catch (error) {
+      return { status: error.status || 500, json: { ok: false, code: error.code || 'upload_failed', error: error.message, offset: fs.existsSync(temp) ? fs.statSync(temp).size : 0 } };
+    }
+    if (written === 0) return { status: 400, json: { ok: false, code: 'empty', error: 'Pusty plik.' } };
+    try {
+      const check = resolveUserPath(ctx.user.username, `${requestedPath.replace(/\/+$/, '')}/${name}`, { operation: 'upload' });
+      if (check !== full) throw new Error('Ścieżka docelowa zmieniła się podczas uploadu.');
+      fs.renameSync(temp, full);
+      fs.chmodSync(full, 0o644);
+    } catch (error) {
+      return { status: 403, json: { ok: false, code: 'write_failed', error: error.message } };
+    }
+    audit(ctx.user.username, ctx.user.level, 'file.upload', name, ctx.ip);
+    return { json: { ok: true, name, path: displayPath(ctx.user.username, full), size: written } };
   });
 
   /* ------------------------------------------------------------------ FTP */

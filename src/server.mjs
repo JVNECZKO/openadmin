@@ -200,7 +200,9 @@ export async function handle(req, res) {
 
     let body = {};
     let rawBody = null;
-    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE') {
+    const isRawUpload = pathname === '/user/files/upload-stream' && req.method === 'POST'
+      && String(req.headers['content-type'] || '').startsWith('application/octet-stream');
+    if (!isRawUpload && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE')) {
       rawBody = await readBody(req);
       const ct = String(req.headers['content-type'] || '');
       if (ct.includes('application/json')) {

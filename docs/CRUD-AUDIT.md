@@ -86,6 +86,6 @@ Legend: C create · R read/list/detail · U update · D delete/revoke.
 
 ## Verification
 
-`node --test tests/*.test.mjs` — **301/301 passing** (local and Debian). The suite includes
+`node --test tests/*.test.mjs` — **302/302 passing** (local and Debian). The suite includes
 form-leak scans, DNS edit/update, primary CRUD update paths and read-only support
 sessions.
