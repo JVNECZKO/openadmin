@@ -38,6 +38,19 @@ export function register(router) {
   });
 
   /* ----------------------------------------------------------- statistics */
+  router.get('/user/statistics/export', (ctx) => {
+    const series = usageSeries(ctx.user.username, 90);
+    const rows = series.map((r) => ({ day: r.day, bandwidth_mb: r.bandwidth_mb, disk_mb: r.disk_mb, emails: r.emails, requests: r.requests }));
+    if (String(ctx.query.format || 'json') === 'csv') {
+      const header = 'day,bandwidth_mb,disk_mb,emails,requests';
+      const csv = [header, ...rows.map((r) => [r.day, r.bandwidth_mb, r.disk_mb, r.emails, r.requests].join(','))].join('\n') + '\n';
+      ctx.res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="openadmin-${ctx.user.username}-usage.csv"`, 'Content-Length': Buffer.byteLength(csv), 'Cache-Control': 'no-store' });
+      ctx.res.end(csv);
+      return { handled: true };
+    }
+    return { json: { ok: true, username: ctx.user.username, generated_at: nowIso(), source: 'panel usage_daily', rows } };
+  });
+
   router.get('/user/statistics', (ctx) => {
     const series = usageSeries(ctx.user.username, 30);
     const domains = visibleDomains(ctx.user);
@@ -45,7 +58,17 @@ export function register(router) {
     const storage = storageFor(ctx.user, 'user');
     const bw = series.reduce((a, r) => a + (r.bandwidth_mb || 0), 0);
     const emails = series.reduce((a, r) => a + (r.emails || 0), 0);
+    const mailUsed = Number(get(`SELECT COALESCE(SUM(e.used_mb),0) n FROM email_accounts e JOIN domains d ON d.id = e.domain_id WHERE d.user_id = ?`, ctx.user.id).n) || 0;
+    const dbUsed = Number(get('SELECT COALESCE(SUM(size_mb),0) n FROM databases WHERE user_id = ?', ctx.user.id).n) || 0;
+    const backupUsed = Number(get('SELECT COALESCE(SUM(size_mb),0) n FROM backups WHERE user_id = ?', ctx.user.id).n) || 0;
+    const fileUsed = Math.max(0, Number(storage.used) - mailUsed - dbUsed - backupUsed);
+    const measuredAt = nowIso();
+    const forecast = series.slice(-7).reduce((a, r) => a + (r.bandwidth_mb || 0), 0) / Math.max(1, Math.min(7, series.length)) * 30;
+    const diskPct = lim.disk_mb ? Math.round((storage.used / lim.disk_mb) * 100) : 0;
+    const bwPct = lim.bandwidth_mb ? Math.round((bw / lim.bandwidth_mb) * 100) : 0;
     const body = h`
+      ${diskPct >= 80 ? alert(`Dysk zajęty w ${diskPct}% limitu. ${diskPct >= 100 ? 'Nowe pliki mogą zostać odrzucone.' : 'Zaplanuj czyszczenie lub zwiększ pakiet.'}`, diskPct >= 100 ? 'danger' : 'warn') : ''}
+      ${bwPct >= 80 ? alert(`Transfer zajęty w ${bwPct}% limitu.`, bwPct >= 100 ? 'danger' : 'warn') : ''}
       <div class="stat-grid">
         <div class="stat-card"><div class="stat-icon">${icon('chart', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Bandwidth (30d)</span><strong class="stat-value">${formatBytes(bw)}</strong><span class="stat-sub">${lim.bandwidth_mb ? 'of ' + formatBytes(lim.bandwidth_mb) : 'unlimited'}</span></div></div>
         <div class="stat-card"><div class="stat-icon tone-ok">${icon('database', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Disk used</span><strong class="stat-value">${formatBytes(storage.used)}</strong><span class="stat-sub">${storage.files} inodes</span></div></div>
@@ -72,6 +95,20 @@ export function register(router) {
           rows: series.slice(-12).reverse(),
         })}`, { sub: 'Most recent 12 days' })}
       </div>
+      ${card('Zużycie dysku według typu', h`${table({
+        columns: [
+          { label: 'Typ', key: 'type' },
+          { label: 'Rozmiar', render: (r) => formatBytes(r.size), align: 'right' },
+          { label: 'Udział', render: (r) => h`<div style="min-width:120px">${progress(r.size, Math.max(storage.used, 1), { showText: false })}</div>` },
+        ],
+        rows: [
+          { type: 'Pliki i strony', size: fileUsed },
+          { type: 'Poczta', size: mailUsed },
+          { type: 'Bazy danych', size: dbUsed },
+          { type: 'Kopie zapasowe', size: backupUsed },
+        ],
+      })}<p class="small muted mt-12">Pomiar: ${formatDate(measuredAt, { time: true })} · źródło: metadane panelu + ${storage.files} inode. Prognoza transferu na 30 dni: <strong>${formatBytes(forecast)}</strong>.</p>
+      <div class="row mt-12"><a class="btn btn-secondary btn-sm" href="/user/statistics/export?format=csv">Eksport CSV</a><a class="btn btn-secondary btn-sm" href="/user/statistics/export?format=json">Eksport JSON</a></div>`)}
       ${card('Package limits', h`${kvList([
         ['Package', ctx.user.package || 'default'],
         ['Domains', `${domains.length} / ${lim.domains || '∞'}`],

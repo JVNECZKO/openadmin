@@ -2187,3 +2187,20 @@ test('temporary suspension auto-unsuspends after its deadline', async () => {
   assert.equal(row.suspended_until, null);
   db.run('DELETE FROM users WHERE id = ?', row.id);
 });
+
+test('user statistics exposes disk breakdown and CSV/JSON export', async () => {
+  const cookie = await loginAs('demouser');
+  const page = await fetch(base + '/user/statistics', { headers: { Cookie: cookie } });
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /Zużycie dysku według typu/);
+  assert.match(html, /Prognoza transferu/);
+  const json = await fetch(base + '/user/statistics/export?format=json', { headers: { Cookie: cookie } });
+  assert.equal(json.status, 200);
+  const data = await json.json();
+  assert.equal(data.username, 'demouser');
+  assert.ok(Array.isArray(data.rows));
+  const csv = await fetch(base + '/user/statistics/export?format=csv', { headers: { Cookie: cookie } });
+  assert.equal(csv.status, 200);
+  assert.match(await csv.text(), /^day,bandwidth_mb,disk_mb,emails,requests/);
+});
