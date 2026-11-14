@@ -21,7 +21,7 @@ jobs:
       - name: Show runtime
         run: node --version
       - name: Run test suite
-        run: node --test tests/
+        run: node --test
 
   node-24:
     name: Node.js 24
@@ -35,4 +35,4 @@ jobs:
       - name: Show runtime
         run: node --version
       - name: Run test suite
-        run: node --test tests/
+        run: node --test
