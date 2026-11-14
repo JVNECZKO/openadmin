@@ -96,6 +96,14 @@ create system users and reload daemons). `OA_PROVIDER=linux` is written to
 | Mobile | 390×844 dashboard screenshot checked, compact table + actions visible |
 | Migration | imported a synthetic cPanel `cpmove` archive: files, DNS A record and MySQL table landed correctly |
 | Nextcloud | 30.0.17 installed on `cloud.openadmin.local` (PHP 8.2 pinned), login and dashboard work |
+| Security Center | all tabs load; nft/SSH/password/ModSecurity status read on Debian |
+| Mail Ops | diagnosis `info@demo.openadmin.local` = 100%; queue/events pages load |
+| Backup Center | local destination, user job, archive upload + dry-run restore verified |
+| PHP-FPM limits | per-user `openadmin-php-*` service in `openadmin-user-*.slice` with CPU 50%, Memory 256 MB, Tasks 40 |
+| MCP | live API key, `initialize`, `tools/list`, `tools/call` verified |
+| WebDisk | live PUT/GET/PROPFIND/DELETE over Basic auth |
+| App catalogue | Joomla and PrestaShop web installers reached over HTTPS |
+| Support access | live link read-only: GET 200, POST 403 |
 | Quotas | 2 MB over 1 MB package → upload blocked, account suspended |
 | 2FA | enrollment, challenge, recovery page |
 
