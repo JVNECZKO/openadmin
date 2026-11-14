@@ -2042,3 +2042,35 @@ test('country email filter stores policy and reports GeoIP support', async () =>
   assert.equal(del.status, 302);
   assert.equal(db.get("SELECT * FROM country_email_policy WHERE country='ru'"), null);
 });
+
+test('no rendered form leaks escaped field markup', async () => {
+  const admin = await loginAs('demoadmin');
+  const user = await loginAs('demouser');
+  const adminRoutes = ['/admin/security?tab=firewall', '/admin/security?tab=ssh', '/admin/security?tab=keys', '/admin/security?tab=policy', '/admin/security?tab=groups', '/admin/security?tab=waf', '/admin/mail?tab=filters', '/admin/mail?tab=routing', '/admin/mail?tab=smtp', '/admin/mail?tab=settings', '/admin/backup-center?tab=servers', '/admin/backup-center?tab=jobs', '/admin/php?tab=ini', '/admin/php?tab=fpm', '/admin/plans?tab=sets', '/admin/dns-ops?tab=mx', '/admin/dns-ops?tab=templates', '/admin/import-live', '/admin/api-keys', '/admin/notifications?tab=channels', '/admin/reseller-tools?tab=plans', '/admin/support-access', '/admin/ssl-center', '/admin/log-center?tab=rotation', '/admin/storage', '/admin/panel-config?tab=branding', '/admin/panel-config?tab=access', '/admin/user-tools?tab=skeleton', '/admin/postgres', '/admin/multiserver'];
+  for (const route of adminRoutes) {
+    const html = await (await fetch(base + route, { headers: { Cookie: admin } })).text();
+    assert.doesNotMatch(html, /value="&lt;div class="field|&lt;label class="field-label"/, `escaped form markup in ${route}`);
+  }
+  for (const route of ['/user/app-catalog', '/user/webdisk', '/user/interface', '/user/php', '/user/domains/create', '/user/email/new']) {
+    const html = await (await fetch(base + route, { headers: { Cookie: user } })).text();
+    assert.doesNotMatch(html, /value="&lt;div class="field|&lt;label class="field-label"/, `escaped form markup in ${route}`);
+  }
+});
+
+test('admin DNS record has working edit and update', async () => {
+  const cookie = await loginAs('demoadmin');
+  const rec = db.get("SELECT r.* FROM dns_records r JOIN domains d ON d.id=r.domain_id WHERE d.name='example.com' AND r.type='A' AND r.name='@'");
+  assert.ok(rec);
+  const page = await (await fetch(base + `/admin/dns?domain=example.com&edit=${rec.id}`, { headers: { Cookie: cookie } })).text();
+  assert.match(page, /Edit record/);
+  assert.doesNotMatch(page, /value="&lt;div class="field/);
+  const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
+  const r = await fetch(base + `/admin/dns/${rec.id}/update`, {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, name: '@', type: 'A', value: '192.0.2.55', ttl: '600' }).toString(),
+  });
+  assert.equal(r.status, 302);
+  const updated = db.get('SELECT * FROM dns_records WHERE id = ?', rec.id);
+  assert.equal(updated.value, '192.0.2.55');
+  assert.equal(updated.ttl, 600);
+});

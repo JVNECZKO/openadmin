@@ -11,6 +11,7 @@ export function register(router) {
   router.get(A, (ctx) => {
     const tab = ['zones', 'mx', 'templates', 'cleanup'].includes(String(ctx.query.tab)) ? String(ctx.query.tab) : 'zones';
     const ov = dnsOverview();
+    const editing = ctx.query.edit && tab === 'templates' ? templates().find((t) => String(t.id) === String(ctx.query.edit)) : null;
     const body = h`
       ${tabs([
         { key: 'zones', label: 'Strefy', count: ov.zones.length },
@@ -26,6 +27,7 @@ export function register(router) {
             { label: 'TTL strefy', render: (r) => h`<form method="post" action="${A}/zones/${encodeURIComponent(r.name)}/ttl" class="row" style="gap:6px"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input name="ttl" type="number" value="${r.dns_ttl}" min="60" max="604800" style="width:110px"><button class="btn btn-ghost btn-sm" type="submit">Zapisz</button></form>` },
           ],
           rows: ov.zones,
+          actions: [{ label: 'Edytuj rekordy', href: (r) => `/admin/dns?domain=${encodeURIComponent(r.name)}`, icon: 'edit' }],
           empty: 'Brak stref DNS.',
         }), { padded: false })}
       ` : ''}
@@ -46,10 +48,17 @@ export function register(router) {
           field({ name: 'name', label: 'Nazwa', required: true }),
           field({ name: 'records', label: 'Rekordy (JSON)', type: 'textarea', rows: 8, full: true, value: '[\n  {"name":"@","type":"A","value":"192.0.2.10","ttl":3600},\n  {"name":"@","type":"MX","value":"mail.example.com","priority":10}\n]' }),
         ], { action: `${A}/templates`, csrf: ctx.csrf, submit: 'Zapisz szablon' }))}
+        ${editing ? card(`Edytuj szablon · ${editing.name}`, form([
+          field({ name: 'name', label: 'Nazwa', value: editing.name, required: true }),
+          field({ name: 'records', label: 'Rekordy (JSON)', type: 'textarea', rows: 10, full: true, value: JSON.stringify(JSON.parse(editing.records || '[]'), null, 2) }),
+        ], { action: `${A}/templates/${editing.id}/update`, csrf: ctx.csrf, submit: 'Zapisz szablon' })) : ''}
         ${card('Szablony', table({
           columns: [{ label: 'Nazwa', key: 'name' }, { label: 'Rekordy', render: (r) => String(JSON.parse(r.records || '[]').length) }],
           rows: templates(),
-          actions: [{ label: 'Usuń', form: (r) => `${A}/templates/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć szablon?' }],
+          actions: [
+            { label: 'Edytuj', href: (r) => `${A}?tab=templates&edit=${r.id}`, icon: 'edit' },
+            { label: 'Usuń', form: (r) => `${A}/templates/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć szablon?' },
+          ],
           empty: 'Brak szablonów.',
         }), { padded: false })}
         ${templates().length ? card('Zastosuj szablon', form([
@@ -78,6 +87,10 @@ export function register(router) {
   router.post(`${A}/templates`, (ctx) => {
     const r = saveTemplate(ctx.body, ctx.user.username);
     return ctx.redirect(`${A}?tab=templates&flash=${encodeURIComponent(r.ok ? `Szablon zapisany (${r.count} rekordów)` : r.error)}${r.ok ? '' : '&type=error'}`);
+  });
+  router.post(`${A}/templates/:id/update`, (ctx) => {
+    const r = saveTemplate({ ...ctx.body, id: ctx.params.id }, ctx.user.username);
+    return ctx.redirect(`${A}?tab=templates&flash=${encodeURIComponent(r.ok ? 'Szablon zapisany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
   router.post(`${A}/templates/:id/delete`, (ctx) => { deleteTemplate(ctx.params.id); return ctx.redirect(`${A}?tab=templates&flash=Usuni%C4%99to`); });
   router.post(`${A}/templates/apply`, (ctx) => {

@@ -12,6 +12,8 @@ export function register(router) {
     const tab = ['overview', 'features', 'sets'].includes(String(ctx.query.tab)) ? String(ctx.query.tab) : 'overview';
     const ov = planOverview();
     const disabled = disabledFeatures();
+    const editing = ctx.query.edit ? ov.featureSets.find((f) => String(f.id) === String(ctx.query.edit)) : null;
+    const editFeatures = editing ? JSON.parse(editing.features || '{}') : {};
     const body = h`
       ${tabs([
         { key: 'overview', label: 'Plany i zasoby' },
@@ -45,10 +47,14 @@ export function register(router) {
       ` : ''}
       ${tab === 'sets' ? h`
         ${card('Nowy feature set', form(FEATURES.map(([key, label]) => field({ name: `f_${key}`, label, type: 'checkbox' })).concat([field({ name: 'name', label: 'Nazwa', required: true })]), { action: `${A}/sets`, csrf: ctx.csrf, submit: 'Utwórz feature set' }))}
+        ${editing ? card(`Edytuj feature set · ${editing.name}`, form(FEATURES.map(([key, label]) => field({ name: `f_${key}`, label, type: 'checkbox', value: !!editFeatures[key] })).concat([field({ name: 'name', label: 'Nazwa', value: editing.name, required: true })]), { action: `${A}/sets/${editing.id}/update`, csrf: ctx.csrf, submit: 'Zapisz feature set' })) : ''}
         ${card('Feature sets', table({
           columns: [{ label: 'Nazwa', key: 'name' }, { label: 'Funkcje', render: (r) => Object.entries(JSON.parse(r.features || '{}')).filter(([, v]) => v).map(([k]) => k).join(', ') || '—' }],
           rows: featureSets(),
-          actions: [{ label: 'Usuń', form: (r) => `${A}/sets/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć feature set?' }],
+          actions: [
+            { label: 'Edytuj', href: (r) => `${A}?tab=sets&edit=${r.id}`, icon: 'edit' },
+            { label: 'Usuń', form: (r) => `${A}/sets/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć feature set?' },
+          ],
           empty: 'Brak feature setów.',
         }), { padded: false })}
       ` : ''}`;
@@ -57,6 +63,10 @@ export function register(router) {
 
   router.post(`${A}/sets`, (ctx) => {
     const r = saveFeatureSet(ctx.body, ctx.user.username);
+    return ctx.redirect(`${A}?tab=sets&flash=${encodeURIComponent(r.ok ? 'Feature set zapisany' : r.error)}${r.ok ? '' : '&type=error'}`);
+  });
+  router.post(`${A}/sets/:id/update`, (ctx) => {
+    const r = saveFeatureSet({ ...ctx.body, id: ctx.params.id }, ctx.user.username);
     return ctx.redirect(`${A}?tab=sets&flash=${encodeURIComponent(r.ok ? 'Feature set zapisany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
   router.post(`${A}/sets/:id/delete`, (ctx) => { deleteFeatureSet(ctx.params.id); return ctx.redirect(`${A}?tab=sets&flash=Usuni%C4%99to`); });

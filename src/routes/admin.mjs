@@ -23,7 +23,8 @@ import { collectUsage, usageMeta } from '../usage.mjs';
 import { enforceAll, quotaMeta } from '../quota.mjs';
 import { pluginInventory, hookScript } from '../plugins.mjs';
 import { editorTargets, readTarget, saveTarget } from '../fileeditor.mjs';
-import { rebuildAll, deployZones, zoneMeta } from '../dns.mjs';
+import { rebuildAll, rebuildZone, deployZones, zoneMeta } from '../dns.mjs';
+import { apply } from '../apply.mjs';
 import { mailStatus, deployMail, syncMail } from '../mail.mjs';
 import { register as registerSetup } from '../features/setup.mjs';
 import { register as registerHealth } from '../features/health.mjs';
@@ -582,7 +583,18 @@ export function registerAdminRoutes(router) {
   /* ------------------------------------------------------------------- IPs */
   router.get('/admin/ip-manager', (ctx) => {
     const ips = all('SELECT * FROM ips ORDER BY ip');
-    const body = h`${listCard({
+    const editing = ctx.query.edit ? ips.find((i) => String(i.id) === String(ctx.query.edit)) : null;
+    const body = h`${editing ? card(`Edit IP · ${editing.ip}`, h`<form method="post" action="${A}/ip-manager/${editing.id}/update" class="oa-form">
+      <input type="hidden" name="_csrf" value="${ctx.csrf}">
+      <div class="form-grid">
+        <div class="field"><label class="field-label">IP</label><input value="${editing.ip}" disabled></div>
+        <div class="field"><label class="field-label">Netmask</label><input name="netmask" value="${editing.netmask}"></div>
+        <div class="field"><label class="field-label">Status</label><select name="status">${['free','shared','server'].map((x) => h`<option ${x === editing.status ? 'selected' : ''}>${x}</option>`)}</select></div>
+        <div class="field"><label class="field-label">Owner (reseller)</label><input name="owner" value="${editing.owner || ''}"></div>
+        <div class="field field-full"><label class="field-label">Note</label><input name="note" value="${editing.note || ''}"></div>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Save IP</button><a class="btn btn-ghost" href="${A}/ip-manager">Cancel</a></div>
+    </form>`) : ''}${listCard({
       title: 'IP addresses', sub: `${ips.length} address(es)`,
       columns: [
         { label: 'IP', render: (i) => h`<span class="cell-mono">${i.ip}</span>` },
@@ -592,7 +604,10 @@ export function registerAdminRoutes(router) {
         { label: 'Note', render: (i) => i.note || '—' },
       ],
       rows: ips,
-      actions: [{ label: 'Delete', form: (i) => `${A}/ip-manager/${i.id}/delete`, confirm: 'Remove this IP?', icon: 'trash', danger: true, show: (i) => i.status === 'free' }],
+      actions: [
+        { label: 'Edit', href: (i) => `${A}/ip-manager?edit=${i.id}`, icon: 'edit' },
+        { label: 'Delete', form: (i) => `${A}/ip-manager/${i.id}/delete`, confirm: 'Remove this IP?', icon: 'trash', danger: true, show: (i) => i.status === 'free' },
+      ],
       footer: h`<form method="post" action="${A}/ip-manager/add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <input name="ip" placeholder="203.0.113.10" style="max-width:180px" required>
@@ -610,6 +625,13 @@ export function registerAdminRoutes(router) {
       String(ctx.body.ip), String(ctx.body.netmask || '255.255.255.0'), String(ctx.body.status || 'free'), String(ctx.body.owner || '') || null, nowIso());
     return ctx.redirect(`${A}/ip-manager?flash=IP%20added`);
   });
+  router.post('/admin/ip-manager/:id/update', (ctx) => {
+    const row = get('SELECT * FROM ips WHERE id = ?', Number(ctx.params.id));
+    if (!row) return ctx.redirect(`${A}/ip-manager?flash=Not%20found&type=error`);
+    run('UPDATE ips SET netmask=?, status=?, owner=?, note=? WHERE id=?', String(ctx.body.netmask || row.netmask), String(ctx.body.status || row.status), String(ctx.body.owner || '') || null, String(ctx.body.note || ''), row.id);
+    audit(ctx.user.username, 'admin', 'ip.update', row.ip, ctx.ip);
+    return ctx.redirect(`${A}/ip-manager?flash=IP%20updated`);
+  });
   router.post('/admin/ip-manager/:id/delete', (ctx) => {
     run("DELETE FROM ips WHERE id = ? AND status = 'free'", Number(ctx.params.id));
     return ctx.redirect(`${A}/ip-manager?flash=IP%20removed`);
@@ -621,6 +643,7 @@ export function registerAdminRoutes(router) {
     const selected = ctx.query.domain || domains[0]?.name;
     const d = domains.find((x) => x.name === selected);
     const records = d ? all('SELECT * FROM dns_records WHERE domain_id = ? ORDER BY type, name', d.id) : [];
+    const editing = ctx.query.edit ? records.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`
       ${domains.length ? domainSelect(domains, d?.name, { action: `${A}/dns`, label: 'Zone' }) : alert('No domains yet.', 'warn')}
       ${card('Zone files', h`<div class="row">
@@ -634,15 +657,31 @@ export function registerAdminRoutes(router) {
         <thead><tr><th>Name</th><th>Type</th><th>Value</th><th>Priority</th><th>TTL</th><th></th></tr></thead>
         <tbody>${records.map((r) => h`<tr><td class="cell-mono">${r.name}</td><td>${badge(r.type, 'brand')}</td><td class="cell-mono">${r.value}</td>
           <td>${r.priority ?? '—'}</td><td>${r.ttl}</td>
-          <td class="col-actions"><form method="post" action="${A}/dns/${r.id}/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-            <button class="icon-btn danger" type="submit" onclick="return confirm('Delete record?')">${icon('trash', { size: 16 })}</button></form></td></tr>`)}</tbody>
+          <td class="col-actions"><div class="row-actions">
+            <a class="icon-btn" href="${A}/dns?domain=${encodeURIComponent(d.name)}&edit=${r.id}" title="Edit">${icon('edit', { size: 16 })}</a>
+            <form method="post" action="${A}/dns/${r.id}/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+            <button class="icon-btn danger" type="submit" onclick="return confirm('Delete record?')">${icon('trash', { size: 16 })}</button></form></div></td></tr>`)}</tbody>
       </table></div>`, { padded: false }) : ''}
+      ${d && editing ? card(`Edit record · ${editing.type} ${editing.name}`, h`<form method="post" action="${A}/dns/${editing.id}/update" class="oa-form">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <div class="form-grid">
+          <div class="field"><label class="field-label">Name</label><input name="name" value="${editing.name}" required></div>
+          <div class="field"><label class="field-label">Type</label><select name="type">
+            ${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((t) => h`<option ${t === editing.type ? 'selected' : ''}>${t}</option>`)}
+          </select></div>
+          <div class="field field-full"><label class="field-label">Value</label><input name="value" value="${editing.value}" required></div>
+          <div class="field"><label class="field-label">Priority</label><input name="priority" type="number" value="${editing.priority ?? ''}"></div>
+          <div class="field"><label class="field-label">TTL</label><input name="ttl" type="number" value="${editing.ttl}" min="60"></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Save record</button><a class="btn btn-ghost" href="${A}/dns?domain=${encodeURIComponent(d.name)}">Cancel</a></div>
+      </form>`) : ''}
       ${d ? card('Add record', h`<form method="post" action="${A}/dns/add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
         <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}">
         <div class="field"><label class="field-label">Name</label><input name="name" value="@" style="width:130px"></div>
         <div class="field"><label class="field-label">Type</label><select name="type" style="width:100px">${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((t) => h`<option>${t}</option>`)}</select></div>
         <div class="field" style="flex:1;min-width:240px"><label class="field-label">Value</label><input name="value" required></div>
         <div class="field"><label class="field-label">Priority</label><input name="priority" type="number" style="width:90px"></div>
+        <div class="field"><label class="field-label">TTL</label><input name="ttl" type="number" value="3600" style="width:100px"></div>
         <button class="btn btn-primary" type="submit">Add</button>
       </form>`) : ''}`;
     return page(ctx, { title: 'DNS Administration', subtitle: 'All zones on the server', body });
@@ -662,12 +701,33 @@ export function registerAdminRoutes(router) {
     if (!d) return ctx.redirect(`${A}/dns?flash=Domain%20not%20found&type=error`);
     run('INSERT INTO dns_records(domain_id, name, type, value, priority, ttl) VALUES(?,?,?,?,?,?)',
       d.id, String(ctx.body.name || '@') || '@', String(ctx.body.type || 'A').toUpperCase(), String(ctx.body.value || ''),
-      ctx.body.priority ? Number(ctx.body.priority) : null, 3600);
+      ctx.body.priority ? Number(ctx.body.priority) : null, Number(ctx.body.ttl) || 3600);
+    rebuildZone(d.name);
+    apply({ dns: true });
+    audit(ctx.user.username, 'admin', 'dns.create', `${d.name} ${ctx.body.type || 'A'} ${ctx.body.name || '@'}`, ctx.ip);
     return ctx.redirect(`${A}/dns?domain=${encodeURIComponent(d.name)}&flash=Record%20added`);
+  });
+  router.post('/admin/dns/:id/update', (ctx) => {
+    const r = get('SELECT * FROM dns_records WHERE id = ?', Number(ctx.params.id));
+    if (!r) return ctx.redirect(`${A}/dns?flash=Record%20not%20found&type=error`);
+    const d = get('SELECT * FROM domains WHERE id = ?', r.domain_id);
+    if (!d) return ctx.redirect(`${A}/dns?flash=Domain%20not%20found&type=error`);
+    run('UPDATE dns_records SET name=?, type=?, value=?, priority=?, ttl=? WHERE id=?',
+      String(ctx.body.name || '@'), String(ctx.body.type || r.type).toUpperCase(), String(ctx.body.value || ''),
+      ctx.body.priority ? Number(ctx.body.priority) : null, Number(ctx.body.ttl) || r.ttl, r.id);
+    rebuildZone(d.name);
+    apply({ dns: true });
+    audit(ctx.user.username, 'admin', 'dns.update', `${d.name} #${r.id}`, ctx.ip);
+    return ctx.redirect(`${A}/dns?domain=${encodeURIComponent(d.name)}&flash=Record%20updated`);
   });
   router.post('/admin/dns/:id/delete', (ctx) => {
     const r = get('SELECT * FROM dns_records WHERE id = ?', Number(ctx.params.id));
-    if (r) run('DELETE FROM dns_records WHERE id = ?', r.id);
+    if (r) {
+      run('DELETE FROM dns_records WHERE id = ?', r.id);
+      const d = get('SELECT * FROM domains WHERE id = ?', r.domain_id);
+      if (d) { rebuildZone(d.name); apply({ dns: true }); }
+      audit(ctx.user.username, 'admin', 'dns.delete', `#${r.id}`, ctx.ip);
+    }
     return ctx.redirect(`${A}/dns?flash=Record%20deleted`);
   });
 

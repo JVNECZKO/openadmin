@@ -22,6 +22,16 @@ export function createKey(userId, { name, scopes = ['read'], allowedIps = [] } =
   return { ok: true, id: r.lastInsertRowid, secret, prefix };
 }
 
+export function updateKey(id, { name, scopes = [], allowedIps = [] }, actor = 'admin') {
+  const row = get('SELECT * FROM api_keys WHERE id = ?', Number(id));
+  if (!row) return { ok: false, error: 'Not found' };
+  const cleanScopes = scopes.filter((s) => ['read', 'write', 'admin'].includes(s));
+  const ips = Array.isArray(allowedIps) ? allowedIps : String(allowedIps || '').split(/[\s,]+/).filter(Boolean);
+  run('UPDATE api_keys SET name = ?, scopes = ?, allowed_ips = ? WHERE id = ?', String(name || row.name).slice(0, 80), JSON.stringify(cleanScopes.length ? cleanScopes : ['read']), JSON.stringify(ips), row.id);
+  run('INSERT INTO audit_log(actor, level, action, target, ip, created_at) VALUES(?,?,?,?,?,?)', actor, 'admin', 'api.key.update', `${row.prefix}`, '', nowIso());
+  return { ok: true };
+}
+
 export function revokeKey(id, actor = 'admin') {
   run('UPDATE api_keys SET revoked_at = ? WHERE id = ?', nowIso(), Number(id));
   run('INSERT INTO audit_log(actor, level, action, target, ip, created_at) VALUES(?,?,?,?,?,?)', actor, 'admin', 'api.key.revoke', String(id), '', nowIso());

@@ -2,7 +2,7 @@
 import { html as h, formatDate } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, table, badge, alert, tabs, form, field, emptyState } from '../ui/components.mjs';
-import { listNotifications, unreadCount, markRead, markAllRead, channels, saveChannel, deleteChannel, testChannel, testAll } from '../notifications.mjs';
+import { listNotifications, unreadCount, markRead, markAllRead, channels, saveChannel, deleteChannel, testChannel, testAll, channelFor } from '../notifications.mjs';
 
 const AP = '/admin/notifications';
 const UP = '/user/notifications';
@@ -11,6 +11,7 @@ export function register(router) {
   router.get(AP, (ctx) => {
     const tab = String(ctx.query.tab || 'inbox') === 'channels' ? 'channels' : 'inbox';
     const rows = listNotifications(ctx.user.id);
+    const editing = ctx.query.edit ? channelFor(ctx.query.edit) : null;
     const body = h`
       ${tabs([{ key: 'inbox', label: 'Powiadomienia', count: unreadCount(ctx.user.id) }, { key: 'channels', label: 'Kanały', count: channels().length }], tab, { base: AP })}
       ${tab === 'inbox' ? h`
@@ -41,10 +42,19 @@ export function register(router) {
           field({ name: 'chat_id', label: 'Telegram chat ID' }),
           field({ name: 'to', label: 'Adres e-mail' }),
         ], { action: `${AP}/channels`, csrf: ctx.csrf, submit: 'Zapisz kanał' }))}
+        ${editing ? card(`Edytuj kanał · ${editing.name}`, form([
+          field({ name: 'name', label: 'Nazwa', value: editing.name, required: true }),
+          field({ name: 'type', label: 'Typ', type: 'select', value: editing.type, options: ['webhook', 'slack', 'discord', 'telegram', 'email'] }),
+          field({ name: 'url', label: 'URL', value: editing.config.url || '', full: true }),
+          field({ name: 'token', label: 'Token Telegram', value: editing.config.token || '' }),
+          field({ name: 'chat_id', label: 'Chat ID', value: editing.config.chat_id || '' }),
+          field({ name: 'to', label: 'E-mail', value: editing.config.to || '' }),
+        ], { action: `${AP}/channels/${editing.id}/update`, csrf: ctx.csrf, submit: 'Zapisz kanał' })) : ''}
         ${card('Kanały', table({
           columns: [{ label: 'Nazwa', key: 'name' }, { label: 'Typ', key: 'type' }, { label: 'Aktywny', render: (r) => badge(r.enabled ? 'tak' : 'nie', r.enabled ? 'ok' : 'muted') }],
           rows: channels(),
           actions: [
+            { label: 'Edytuj', href: (r) => `${AP}?tab=channels&edit=${r.id}`, icon: 'edit' },
             { label: 'Test', form: (r) => `${AP}/channels/${r.id}/test`, icon: 'send' },
             { label: 'Usuń', form: (r) => `${AP}/channels/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć kanał?' },
           ],
@@ -62,6 +72,10 @@ export function register(router) {
     const r = saveChannel(ctx.body, ctx.user.username);
     return ctx.redirect(`${AP}?tab=channels&flash=${encodeURIComponent(r.ok ? 'Kanał zapisany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
+  router.post(`${AP}/channels/:id/update`, (ctx) => {
+    const r = saveChannel({ ...ctx.body, id: ctx.params.id }, ctx.user.username);
+    return ctx.redirect(`${AP}?tab=channels&flash=${encodeURIComponent(r.ok ? 'Kanał zaktualizowany' : r.error)}${r.ok ? '' : '&type=error'}`);
+  });
   router.post(`${AP}/channels/:id/delete`, (ctx) => { deleteChannel(ctx.params.id); return ctx.redirect(`${AP}?tab=channels&flash=Usuni%C4%99to`); });
   router.post(`${AP}/channels/:id/test`, async (ctx) => {
     const r = await testChannel(ctx.params.id);
@@ -74,6 +88,7 @@ export function register(router) {
 
   router.get(UP, (ctx) => {
     const rows = listNotifications(ctx.user.id);
+    const editing = ctx.query.edit ? channelFor(ctx.query.edit) : null;
     const body = h`${card('Powiadomienia', h`${rows.length ? h`<div class="timeline">${rows.map((n) => h`<div class="timeline-item"><div class="timeline-dot">${badge(n.level, 'brand')}</div><div class="timeline-body"><div class="spread"><strong>${n.title}</strong><span class="small muted">${formatDate(n.created_at, { time: true })}</span></div><div class="small">${n.body || ''}</div>${n.link ? h`<a class="link small" href="${n.link}">Otwórz</a>` : ''}</div></div>`)}</div>` : emptyState('Brak powiadomień.')}
       <form method="post" action="${UP}/read-all" class="mt-12"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary btn-sm" type="submit">Oznacz wszystkie jako przeczytane</button></form>`, { padded: false })}`;
     return page(ctx, { title: 'Powiadomienia', subtitle: 'Zdarzenia Twojego konta', body });

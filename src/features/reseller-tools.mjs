@@ -11,6 +11,9 @@ export function register(router) {
   router.get(A, (ctx) => {
     const tab = ['plans', 'ips', 'ownership', 'mass'].includes(String(ctx.query.tab)) ? String(ctx.query.tab) : 'plans';
     const ov = resellerOverview();
+    const editing = ctx.query.edit ? ov.plans.find((p) => String(p.id) === String(ctx.query.edit)) : null;
+    const editPriv = editing ? JSON.parse(editing.privileges || '{}') : {};
+    const editLim = editing ? JSON.parse(editing.limits || '{}') : {};
     const users = all("SELECT username, owner, package, suspended FROM users WHERE level = 'user' ORDER BY username");
     const ips = all('SELECT * FROM ips ORDER BY ip');
     const body = h`
@@ -31,10 +34,23 @@ export function register(router) {
           field({ name: 'bandwidth_mb', label: 'Transfer MB', type: 'number', value: 0 }),
           ...['create_users', 'create_domains', 'email', 'dns', 'ssl', 'backups', 'ip_delegation', 'packages'].map((k) => field({ name: k, label: k, type: 'checkbox', value: true })),
         ], { action: `${A}/plans`, csrf: ctx.csrf, submit: 'Utwórz plan' }))}
+        ${editing ? card(`Edytuj plan · ${editing.name}`, form([
+          field({ name: 'name', label: 'Nazwa', value: editing.name, required: true }),
+          field({ name: 'users', label: 'Max użytkowników', type: 'number', value: editLim.users || 0 }),
+          field({ name: 'domains', label: 'Max domen', type: 'number', value: editLim.domains || 0 }),
+          field({ name: 'emails', label: 'Max skrzynek', type: 'number', value: editLim.emails || 0 }),
+          field({ name: 'databases', label: 'Max baz', type: 'number', value: editLim.databases || 0 }),
+          field({ name: 'disk_mb', label: 'Dysk MB', type: 'number', value: editLim.disk_mb || 0 }),
+          field({ name: 'bandwidth_mb', label: 'Transfer MB', type: 'number', value: editLim.bandwidth_mb || 0 }),
+          ...['create_users','create_domains','email','dns','ssl','backups','ip_delegation','packages'].map((k) => field({ name: k, label: k, type: 'checkbox', value: !!editPriv[k] })),
+        ], { action: `${A}/plans/${editing.id}/update`, csrf: ctx.csrf, submit: 'Zapisz plan' })) : ''}
         ${card('Plany', table({
           columns: [{ label: 'Nazwa', key: 'name' }, { label: 'Limity', render: (r) => Object.entries(JSON.parse(r.limits || '{}')).map(([k, v]) => `${k}=${v}`).join(' ') }],
           rows: ov.plans,
-          actions: [{ label: 'Usuń', form: (r) => `${A}/plans/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć plan?' }],
+          actions: [
+            { label: 'Edytuj', href: (r) => `${A}?tab=plans&edit=${r.id}`, icon: 'edit' },
+            { label: 'Usuń', form: (r) => `${A}/plans/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć plan?' },
+          ],
           empty: 'Brak planów.',
         }), { padded: false })}
         ${card('Przypisz plan', h`<form method="post" action="${A}/plans/assign" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -71,6 +87,10 @@ export function register(router) {
 
   router.post(`${A}/plans`, (ctx) => {
     const r = savePlan(ctx.body, ctx.user.username);
+    return ctx.redirect(`${A}?tab=plans&flash=${encodeURIComponent(r.ok ? 'Plan zapisany' : r.error)}${r.ok ? '' : '&type=error'}`);
+  });
+  router.post(`${A}/plans/:id/update`, (ctx) => {
+    const r = savePlan({ ...ctx.body, id: ctx.params.id }, ctx.user.username);
     return ctx.redirect(`${A}?tab=plans&flash=${encodeURIComponent(r.ok ? 'Plan zapisany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
   router.post(`${A}/plans/:id/delete`, (ctx) => { deletePlan(ctx.params.id); return ctx.redirect(`${A}?tab=plans&flash=Usuni%C4%99to`); });

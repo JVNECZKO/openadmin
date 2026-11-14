@@ -167,7 +167,7 @@ export function field(f) {
 export function form(fields, { action, method = 'post', csrf = '', submit = 'Save changes', cancel = '', enctype = '', cls = '' } = {}) {
   return html`<form class="oa-form ${cls}" method="${method}" action="${action}" ${enctype ? raw(`enctype="${e(enctype)}"`) : ''}>
     ${csrf ? html`<input type="hidden" name="_csrf" value="${csrf}">` : ''}
-    <div class="form-grid">${fields.map(field)}</div>
+    <div class="form-grid">${fields.map((f) => (f && f.__raw ? f : field(f)))}</div>
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">${icon('save', { size: 16 })}<span>${submit}</span></button>
       ${cancel ? html`<a class="btn btn-ghost" href="${cancel}">Cancel</a>` : ''}

@@ -233,6 +233,7 @@ export function register(router) {
   /* ------------------------------------------------------------------ FTP */
   router.get('/user/ftp', (ctx) => {
     const rows = all('SELECT * FROM ftp_accounts WHERE user_id = ? ORDER BY username', ctx.user.id);
+    const editing = ctx.query.edit ? rows.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const lim = limitsFor(ctx.user);
     const body = h`
       ${alert('FTP accounts can be restricted to any directory inside your home. Anonymous FTP can be enabled per domain under FTP Settings.', 'info')}
@@ -247,10 +248,21 @@ export function register(router) {
         rows, empty: 'No FTP accounts yet.',
         createHref: '/user/ftp/create', createLabel: 'Create FTP account',
         actions: [
+          { label: 'Edytuj', href: (r) => `/user/ftp?edit=${r.id}`, icon: 'edit' },
           { label: 'Toggle', form: (r) => `/user/ftp/${r.id}/toggle`, icon: 'lock' },
           { label: 'Delete', form: (r) => `/user/ftp/${r.id}/delete`, confirm: 'Delete FTP account?', icon: 'trash', danger: true },
         ],
-      })}`;
+      })}
+      ${editing ? card(`Edytuj FTP · ${editing.username}`, h`<form method="post" action="/user/ftp/${editing.id}/update" class="oa-form">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <div class="form-grid">
+          <div class="field"><label class="field-label">Użytkownik</label><input value="${editing.username}" disabled></div>
+          <div class="field"><label class="field-label">Nowe hasło (puste = bez zmian)</label><input name="password" type="password" minlength="8"></div>
+          <div class="field"><label class="field-label">Katalog</label><input name="path" value="${editing.path}" required></div>
+          <div class="field"><label class="field-label">Quota MB</label><input name="quota_mb" type="number" min="0" value="${editing.quota_mb}"></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/ftp">Anuluj</a></div>
+      </form>`) : ''}`;
     return page(ctx, { title: 'FTP Accounts', subtitle: 'Manage file transfer users', body });
   });
 
@@ -281,6 +293,23 @@ export function register(router) {
       ctx.user.id, user, reqPath, Number(ctx.body.quota_mb) || 0, hashPassword(String(ctx.body.password)), nowIso());
     audit(ctx.user.username, ctx.user.level, 'ftp.create', user, ctx.ip);
     return ctx.redirect('/user/ftp?flash=' + encodeURIComponent(`FTP account ${user} created`));
+  });
+
+  router.post('/user/ftp/:id/update', (ctx) => {
+    const a = get('SELECT * FROM ftp_accounts WHERE id = ? AND user_id = ?', Number(ctx.params.id), ctx.user.id);
+    if (!a) return ctx.redirect('/user/ftp?flash=Not%20found&type=error');
+    const password = String(ctx.body.password || '');
+    const path2 = String(ctx.body.path || a.path);
+    if (!path2.startsWith(`/home/${ctx.user.username}/`)) return ctx.redirect('/user/ftp?flash=Path%20must%20be%20inside%20home&type=error');
+    if (password && password.length < 8) return ctx.redirect('/user/ftp?flash=Password%20must%20be%208%2B%20characters&type=error');
+    if (password) {
+      const r = systemProvider().createFtpUser(a.username, path2, password);
+      if (!r.ok) return ctx.redirect('/user/ftp?flash=' + encodeURIComponent(r.output || 'FTP update failed') + '&type=error');
+    }
+    run('UPDATE ftp_accounts SET path = ?, quota_mb = ?' + (password ? ', password = ?' : '') + ' WHERE id = ?',
+      ...(password ? [path2, Number(ctx.body.quota_mb) || 0, hashPassword(password), a.id] : [path2, Number(ctx.body.quota_mb) || 0, a.id]));
+    audit(ctx.user.username, ctx.user.level, 'ftp.update', a.username, ctx.ip);
+    return ctx.redirect('/user/ftp?flash=FTP%20account%20updated');
   });
 
   router.post('/user/ftp/:id/delete', (ctx) => {
@@ -398,6 +427,7 @@ export function register(router) {
   /* ----------------------------------------------------------------- cron */
   router.get('/user/cron', (ctx) => {
     const rows = all('SELECT * FROM cron_jobs WHERE user_id = ? ORDER BY id', ctx.user.id);
+    const editing = ctx.query.edit ? rows.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const lim = limitsFor(ctx.user);
     const body = h`
       ${alert('Cron uses standard 5-field syntax. Commands run as your account with your home directory as the working directory.', 'info')}
@@ -409,7 +439,10 @@ export function register(router) {
           { label: 'Created', render: (r) => formatDate(r.created_at) },
         ],
         rows, empty: 'No cron jobs yet.',
-        actions: [{ label: 'Delete', form: (r) => `/user/cron/${r.id}/delete`, confirm: 'Delete cron job?', icon: 'trash', danger: true }],
+        actions: [
+          { label: 'Edytuj', href: (r) => `/user/cron?edit=${r.id}`, icon: 'edit' },
+          { label: 'Delete', form: (r) => `/user/cron/${r.id}/delete`, confirm: 'Delete cron job?', icon: 'trash', danger: true },
+        ],
         footer: h`<form method="post" action="/user/cron/create" class="cron-form">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <div class="cron-fields">
@@ -423,6 +456,14 @@ export function register(router) {
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add cron job</button>
         </form>`,
       })}
+      ${editing ? card('Edytuj zadanie cron', h`<form method="post" action="/user/cron/${editing.id}/update" class="oa-form">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <div class="cron-fields">
+          ${['minute','hour','day','month','weekday'].map((k) => h`<input name="${k}" value="${editing[k]}" aria-label="${k}">`)}
+        </div>
+        <div class="field field-full mt-12"><label class="field-label">Command</label><input name="command" value="${editing.command}" required></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/cron">Anuluj</a></div>
+      </form>`) : ''}
       ${card('Generated crontab', h`
         ${alert(`Crontab file: <code>${cronMeta(ctx.user.username)?.file || 'not generated'}</code> · installed by the provider on Linux (cron reload).`, 'info')}
         <pre class="code-block">${rows.map((r) => `${[r.minute, r.hour, r.day, r.month, r.weekday].join(' ')} ${r.command}`).join('\n') || '# no jobs'}</pre>
@@ -453,9 +494,22 @@ export function register(router) {
     return ctx.redirect('/user/cron?flash=' + encodeURIComponent(result.output) + (result.ok ? '' : '&type=error'));
   });
 
+  router.post('/user/cron/:id/update', (ctx) => {
+    const job = get('SELECT * FROM cron_jobs WHERE id = ? AND user_id = ?', Number(ctx.params.id), ctx.user.id);
+    if (!job) return ctx.redirect('/user/cron?flash=Not%20found&type=error');
+    const next = { minute: String(ctx.body.minute ?? job.minute), hour: String(ctx.body.hour ?? job.hour), day: String(ctx.body.day ?? job.day), month: String(ctx.body.month ?? job.month), weekday: String(ctx.body.weekday ?? job.weekday), command: String(ctx.body.command || '').trim() };
+    const problem = validateJob(next);
+    if (problem) return ctx.redirect('/user/cron?flash=' + encodeURIComponent(problem) + '&type=error');
+    run('UPDATE cron_jobs SET minute=?, hour=?, day=?, month=?, weekday=?, command=? WHERE id=?', next.minute, next.hour, next.day, next.month, next.weekday, next.command, job.id);
+    rebuildCrontab(ctx.user.username);
+    audit(ctx.user.username, ctx.user.level, 'cron.update', next.command, ctx.ip);
+    return ctx.redirect('/user/cron?flash=Cron%20job%20updated');
+  });
+
   router.post('/user/cron/:id/delete', (ctx) => {
     run('DELETE FROM cron_jobs WHERE id = ? AND user_id = ?', Number(ctx.params.id), ctx.user.id);
     rebuildCrontab(ctx.user.username);
+    audit(ctx.user.username, ctx.user.level, 'cron.delete', String(ctx.params.id), ctx.ip);
     return ctx.redirect('/user/cron?flash=Cron%20job%20deleted');
   });
 }

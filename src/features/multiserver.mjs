@@ -9,6 +9,7 @@ const A = '/admin/multiserver';
 export function register(router) {
   router.get(A, (ctx) => {
     const list = nodes();
+    const editing = ctx.query.edit ? list.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`
       ${card('Dodaj node', form([
         field({ name: 'name', label: 'Nazwa', required: true }),
@@ -16,6 +17,12 @@ export function register(router) {
         field({ name: 'role', label: 'Rola', type: 'select', options: ['web', 'db', 'dns', 'mail', 'backup'] }),
         field({ name: 'token', label: 'API key (opcjonalnie)', type: 'password' }),
       ], { action: `${A}/add`, csrf: ctx.csrf, submit: 'Dodaj node' }))}
+      ${editing ? card(`Edytuj node · ${editing.name}`, form([
+        field({ name: 'name', label: 'Nazwa', value: editing.name, required: true }),
+        field({ name: 'url', label: 'URL', value: editing.url, required: true }),
+        field({ name: 'role', label: 'Rola', type: 'select', value: editing.role, options: ['web', 'db', 'dns', 'mail', 'backup'] }),
+        field({ name: 'token', label: 'Nowy API key (puste = bez zmian)', type: 'password' }),
+      ], { action: `${A}/${editing.id}/update`, csrf: ctx.csrf, submit: 'Zapisz node' })) : ''}
       ${card('Nodes', table({
         columns: [
           { label: 'Nazwa', key: 'name' }, { label: 'URL', render: (r) => h`<span class="cell-mono small">${r.url}</span>` }, { label: 'Rola', key: 'role' },
@@ -24,6 +31,7 @@ export function register(router) {
         ],
         rows: list,
         actions: [
+          { label: 'Edytuj', href: (r) => `${A}?edit=${r.id}`, icon: 'edit' },
           { label: 'Test', form: (r) => `${A}/${r.id}/test`, icon: 'refresh' },
           { label: 'Usuń', form: (r) => `${A}/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć node?' },
         ],
@@ -36,6 +44,10 @@ export function register(router) {
   router.post(`${A}/add`, (ctx) => {
     const r = saveNode(ctx.body, ctx.user.username);
     return ctx.redirect(`${A}?flash=${encodeURIComponent(r.ok ? 'Node dodany' : r.error)}${r.ok ? '' : '&type=error'}`);
+  });
+  router.post(`${A}/:id/update`, (ctx) => {
+    const r = saveNode({ ...ctx.body, id: ctx.params.id }, ctx.user.username);
+    return ctx.redirect(`${A}?flash=${encodeURIComponent(r.ok ? 'Node zapisany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
   router.post(`${A}/:id/test`, async (ctx) => {
     const r = await testNode(ctx.params.id);

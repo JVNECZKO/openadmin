@@ -9,6 +9,8 @@ import { listCard, domainSelect } from '../ui/pages/list.mjs';
 import { countForNav, visibleUsers, visibleDomains, usageSeries, canManageUser, domainFor } from '../core/access.mjs';
 import { usersPage, userForm, createUser, updateUser, userDetailPage, toggleSuspend, deleteUser, packagesPage, packageForm, savePackage, resellerForm } from '../features/user-admin.mjs';
 import { usageChartCard } from '../ui/pages/widgets.mjs';
+import { rebuildZone } from '../dns.mjs';
+import { apply } from '../apply.mjs';
 
 const R = '/reseller';
 
@@ -86,15 +88,28 @@ function resellerDns(ctx) {
   const selected = ctx.query.domain || domains[0]?.name;
   const d = domains.find((x) => x.name === selected) || domains[0];
   const records = d ? all('SELECT * FROM dns_records WHERE domain_id = ? ORDER BY type, name', d.id) : [];
+  const editing = ctx.query.edit ? records.find((r) => String(r.id) === String(ctx.query.edit)) : null;
   const body = h`
     ${domains.length ? domainSelect(domains, d?.name, { action: '/reseller/dns' }) : alert('No domains under your resellers yet.', 'warn')}
     ${d ? card(`DNS zone · ${d.name}`, h`<div class="table-wrap"><table class="data-table">
       <thead><tr><th>Name</th><th>Type</th><th>Value</th><th>Priority</th><th>TTL</th><th></th></tr></thead>
       <tbody>${records.map((r) => h`<tr><td class="cell-mono">${r.name}</td><td>${badge(r.type, 'brand')}</td>
         <td class="cell-mono">${r.value}</td><td>${r.priority ?? '—'}</td><td>${r.ttl}</td>
-        <td class="col-actions"><form method="post" action="/reseller/dns/${r.id}/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <button class="icon-btn danger" type="submit" title="Delete" onclick="return confirm('Delete record?')">${icon('trash', { size: 16 })}</button></form></td></tr>`)}</tbody>
+        <td class="col-actions"><div class="row-actions">
+          <a class="icon-btn" href="/reseller/dns?domain=${encodeURIComponent(d.name)}&edit=${r.id}" title="Edit">${icon('edit', { size: 16 })}</a>
+          <form method="post" action="/reseller/dns/${r.id}/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+          <button class="icon-btn danger" type="submit" title="Delete" onclick="return confirm('Delete record?')">${icon('trash', { size: 16 })}</button></form></div></td></tr>`)}</tbody>
     </table></div>`, { padded: false } ) : ''}
+    ${d && editing ? card(`Edit record · ${editing.type} ${editing.name}`, h`<form method="post" action="/reseller/dns/${editing.id}/update" class="oa-form">
+      <input type="hidden" name="_csrf" value="${ctx.csrf}">
+      <div class="form-grid">
+        <div class="field"><label class="field-label">Name</label><input name="name" value="${editing.name}" required></div>
+        <div class="field"><label class="field-label">Type</label><select name="type">${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((t) => h`<option ${t === editing.type ? 'selected' : ''}>${t}</option>`)}</select></div>
+        <div class="field field-full"><label class="field-label">Value</label><input name="value" value="${editing.value}" required></div>
+        <div class="field"><label class="field-label">Priority</label><input name="priority" type="number" value="${editing.priority ?? ''}"></div>
+        <div class="field"><label class="field-label">TTL</label><input name="ttl" type="number" value="${editing.ttl}" min="60"></div>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Save record</button><a class="btn btn-ghost" href="/reseller/dns?domain=${encodeURIComponent(d.name)}">Cancel</a></div></form>`) : ''}
     ${d ? card('Add record', h`<form method="post" action="/reseller/dns/add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
       <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}">
       <div class="field"><label class="field-label">Name</label><input name="name" value="@" style="width:140px"></div>
@@ -240,13 +255,27 @@ export function registerResellerRoutes(router) {
     if (!d) return ctx.redirect(`${R}/dns?flash=Domain%20not%20found&type=error`);
     run('INSERT INTO dns_records(domain_id, name, type, value, priority, ttl) VALUES(?,?,?,?,?,?)',
       d.id, String(ctx.body.name || '@') || '@', String(ctx.body.type || 'A').toUpperCase(), String(ctx.body.value || ''),
-      ctx.body.priority ? Number(ctx.body.priority) : null, 3600);
+      ctx.body.priority ? Number(ctx.body.priority) : null, Number(ctx.body.ttl) || 3600);
+    rebuildZone(d.name); apply({ dns: true });
+    audit(ctx.user.username, 'reseller', 'dns.create', d.name, ctx.ip);
     return ctx.redirect(`${R}/dns?domain=${encodeURIComponent(d.name)}&flash=Record%20added`);
+  });
+  router.post('/reseller/dns/:id/update', (ctx) => {
+    const r = get('SELECT * FROM dns_records WHERE id = ?', Number(ctx.params.id));
+    const d = r ? domainFor(ctx.user, r.domain_id) : null;
+    if (!d) return ctx.redirect(`${R}/dns?flash=Record%20not%20found&type=error`);
+    run('UPDATE dns_records SET name=?, type=?, value=?, priority=?, ttl=? WHERE id=?',
+      String(ctx.body.name || '@'), String(ctx.body.type || r.type).toUpperCase(), String(ctx.body.value || ''),
+      ctx.body.priority ? Number(ctx.body.priority) : null, Number(ctx.body.ttl) || r.ttl, r.id);
+    rebuildZone(d.name); apply({ dns: true });
+    audit(ctx.user.username, 'reseller', 'dns.update', `${d.name} #${r.id}`, ctx.ip);
+    return ctx.redirect(`${R}/dns?domain=${encodeURIComponent(d.name)}&flash=Record%20updated`);
   });
   router.post('/reseller/dns/:id/delete', (ctx) => {
     const r = get('SELECT * FROM dns_records WHERE id = ?', Number(ctx.params.id));
     const d = r ? domainFor(ctx.user, r.domain_id) : null;
-    if (d) run('DELETE FROM dns_records WHERE id = ?', r.id);
+    if (d) { run('DELETE FROM dns_records WHERE id = ?', r.id); rebuildZone(d.name); apply({ dns: true }); }
+    audit(ctx.user.username, 'reseller', 'dns.delete', d?.name || String(ctx.params.id), ctx.ip);
     return ctx.redirect(`${R}/dns?domain=${encodeURIComponent(d?.name || '')}&flash=Record%20deleted`);
   });
 

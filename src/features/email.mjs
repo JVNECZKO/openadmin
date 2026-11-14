@@ -36,6 +36,8 @@ export function register(router) {
     const selected = ctx.query.domain || domains[0]?.name;
     const d = domains.find((x) => x.name === selected) || domains[0];
     const rows = d ? all('SELECT * FROM email_accounts WHERE domain_id = ? ORDER BY local_part', d.id) : [];
+    const editing = ctx.query.edit ? get('SELECT * FROM email_accounts WHERE id = ?', Number(ctx.query.edit)) : null;
+    const canEdit = editing && domainFor(ctx.user, editing.domain_id) ? editing : null;
     const lim = limitsFor(ctx.user);
     const totalUsed = get('SELECT COALESCE(SUM(used_mb),0) u FROM email_accounts WHERE domain IN (SELECT name FROM domains WHERE user_id = ?)', ctx.user.id).u;
     const body = h`
@@ -53,12 +55,22 @@ export function register(router) {
         createLabel: 'Create mailbox',
         empty: 'No mailboxes on this domain yet.',
         actions: [
+          { label: 'Edit', href: (r) => `/user/email?domain=${encodeURIComponent(r.domain)}&edit=${r.id}`, icon: 'edit' },
           { label: 'Webmail', href: (r) => `/webmail?email=${encodeURIComponent(r.local_part + '@' + r.domain)}`, icon: 'mail' },
           { label: 'Suspend / enable', form: (r) => `/user/email/${r.id}/toggle`, icon: 'lock' },
           { label: 'Delete', form: (r) => `/user/email/${r.id}/delete`, confirm: 'Delete this mailbox and all its messages?', icon: 'trash', danger: true },
         ],
         footer: h`<div class="row"><span class="small muted">${icon('info', { size: 14 })} Mailboxes use the same password rules as panel accounts. Webmail: <a class="link" href="/webmail">/webmail</a></span></div>`,
-      })}`;
+      })}
+      ${canEdit ? card(`Edit mailbox · ${canEdit.local_part}@${canEdit.domain}`, h`<form method="post" action="/user/email/${canEdit.id}/update" class="oa-form">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <div class="form-grid">
+          <div class="field"><label class="field-label">Mailbox</label><input value="${canEdit.local_part}@${canEdit.domain}" disabled></div>
+          <div class="field"><label class="field-label">New password (leave blank to keep)</label><input name="password" type="password" minlength="8"></div>
+          <div class="field"><label class="field-label">Quota (MB)</label><input name="quota_mb" type="number" min="0" value="${canEdit.quota_mb}"><p class="field-help">0 = unlimited.</p></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Save mailbox</button><a class="btn btn-ghost" href="/user/email?domain=${encodeURIComponent(canEdit.domain)}">Cancel</a></div>
+      </form>`) : ''}`;
     return page(ctx, { title: 'Email Accounts', subtitle: 'Create and manage POP3/IMAP mailboxes', body });
   });
 
@@ -107,6 +119,22 @@ export function register(router) {
     return ctx.redirect('/user/email?domain=' + encodeURIComponent(d.name) + '&flash=' + encodeURIComponent(`Mailbox ${local}@${d.name} created`));
   });
 
+  router.post('/user/email/:id/update', (ctx) => {
+    const m = get('SELECT * FROM email_accounts WHERE id = ?', Number(ctx.params.id));
+    if (!m || !domainFor(ctx.user, m.domain_id)) return ctx.redirect('/user/email?flash=Not%20found&type=error');
+    const password = String(ctx.body.password || '');
+    if (password && password.length < 8) return ctx.redirect('/user/email?domain=' + encodeURIComponent(m.domain) + '&flash=Password%20must%20be%208%2B%20characters&type=error');
+    run('UPDATE email_accounts SET quota_mb = ? WHERE id = ?', Number(ctx.body.quota_mb) || 0, m.id);
+    if (password) {
+      let mailHash = null;
+      try { mailHash = dovecotHash(password); } catch { /* ignore */ }
+      run('UPDATE email_accounts SET password = ?, mail_hash = ? WHERE id = ?', hashPassword(password), mailHash, m.id);
+    }
+    syncMail(); apply({ mail: true });
+    audit(ctx.user.username, ctx.user.level, 'email.update', `${m.local_part}@${m.domain}`, ctx.ip);
+    return ctx.redirect('/user/email?domain=' + encodeURIComponent(m.domain) + '&flash=Mailbox%20updated');
+  });
+
   router.post('/user/email/:id/delete', (ctx) => {
     const m = get('SELECT * FROM email_accounts WHERE id = ?', Number(ctx.params.id));
     if (!m) return ctx.redirect('/user/email?flash=Mailbox%20not%20found&type=error');
@@ -129,6 +157,7 @@ export function register(router) {
   router.get('/user/email/forwarders', (ctx) => {
     const domains = visibleDomains(ctx.user);
     const rows = all(`SELECT f.* FROM email_forwarders f JOIN domains d ON d.id = f.domain_id WHERE d.user_id = ? ORDER BY f.source`, ctx.user.id);
+    const editing = ctx.query.edit ? rows.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`
       ${mailNav(ctx, 'forwarders')}
       ${listCard({
@@ -140,7 +169,10 @@ export function register(router) {
           { label: 'Created', render: (r) => formatDate(r.created_at) },
         ],
         rows, empty: 'No forwarders configured.',
-        actions: [{ label: 'Delete', form: (r) => `/user/email/forwarders/${r.id}/delete`, confirm: 'Delete forwarder?', icon: 'trash', danger: true }],
+        actions: [
+          { label: 'Edit', href: (r) => `/user/email/forwarders?edit=${r.id}`, icon: 'edit' },
+          { label: 'Delete', form: (r) => `/user/email/forwarders/${r.id}/delete`, confirm: 'Delete forwarder?', icon: 'trash', danger: true },
+        ],
         footer: h`<form method="post" action="/user/email/forwarders/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <select name="domain">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
@@ -150,7 +182,16 @@ export function register(router) {
           <label class="check-field small"><input type="checkbox" name="keep_copy" value="1" checked> Keep copy</label>
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add forwarder</button>
         </form>`,
-      })}`;
+      })}
+      ${editing ? card(`Edit forwarder · ${editing.source}@${editing.domain}`, h`<form method="post" action="/user/email/forwarders/${editing.id}/update" class="oa-form">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <div class="form-grid">
+          <div class="field"><label class="field-label">Source</label><input value="${editing.source}@${editing.domain}" disabled></div>
+          <div class="field"><label class="field-label">Destination</label><input name="dest" type="email" value="${editing.dest}" required></div>
+          <div class="field"><label class="check-field"><input type="checkbox" name="keep_copy" value="1" ${editing.keep_copy ? 'checked' : ''}> <span>Keep copy</span></label></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Save forwarder</button><a class="btn btn-ghost" href="/user/email/forwarders">Cancel</a></div>
+      </form>`) : ''}`;
     return page(ctx, { title: 'Email Forwarders', subtitle: 'Forward mail to another address', body });
   });
 
@@ -164,6 +205,17 @@ export function register(router) {
     syncMail();
     apply({ mail: true });
     return ctx.redirect('/user/email/forwarders?flash=Forwarder%20created');
+  });
+
+  router.post('/user/email/forwarders/:id/update', (ctx) => {
+    const f = get('SELECT * FROM email_forwarders WHERE id = ?', Number(ctx.params.id));
+    if (!f || !domainFor(ctx.user, f.domain_id)) return ctx.redirect('/user/email/forwarders?flash=Not%20found&type=error');
+    const dest = String(ctx.body.dest || '').trim();
+    if (!isEmail(dest)) return ctx.redirect('/user/email/forwarders?flash=Invalid%20destination&type=error');
+    run('UPDATE email_forwarders SET dest = ?, keep_copy = ? WHERE id = ?', dest, ctx.body.keep_copy ? 1 : 0, f.id);
+    syncMail(); apply({ mail: true });
+    audit(ctx.user.username, ctx.user.level, 'email.forwarder.update', `${f.source}@${f.domain}`, ctx.ip);
+    return ctx.redirect('/user/email/forwarders?flash=Forwarder%20updated');
   });
 
   router.post('/user/email/forwarders/:id/delete', (ctx) => {
@@ -251,6 +303,7 @@ export function register(router) {
     const selected = ctx.query.domain || domains[0]?.name;
     const d = domains.find((x) => x.name === selected);
     const rows = d ? all('SELECT * FROM vacation WHERE domain = ? ORDER BY email', d.name) : [];
+    const editing = ctx.query.edit ? rows.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`${mailNav(ctx, 'vacation')}
       ${domains.length ? domainSelect(domains, d?.name, { action: '/user/email/vacation' }) : ''}
       ${listCard({
@@ -263,6 +316,7 @@ export function register(router) {
         ],
         rows, empty: 'No vacation messages.',
         actions: [
+          { label: 'Edytuj', href: (r) => `/user/email/vacation?domain=${encodeURIComponent(d?.name || '')}&edit=${r.id}`, icon: 'edit' },
           { label: 'Toggle', form: (r) => `/user/email/vacation/${r.id}/toggle`, icon: 'refresh' },
           { label: 'Delete', form: (r) => `/user/email/vacation/${r.id}/delete`, confirm: 'Delete vacation message?', icon: 'trash', danger: true },
         ],
@@ -277,7 +331,18 @@ export function register(router) {
           </div>
           <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add vacation message</button></div>
         </form>` : '',
-      })}`;
+      })}
+      ${editing ? card(`Edytuj autoresponder · ${editing.email}`, h`<form method="post" action="/user/email/vacation/${editing.id}/update" class="oa-form">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <div class="form-grid">
+          <div class="field"><label class="field-label">Mailbox</label><input value="${editing.email}" disabled></div>
+          <div class="field"><label class="field-label">Subject</label><input name="subject" value="${editing.subject}" required></div>
+          <div class="field field-full"><label class="field-label">Message</label><textarea name="body" rows="5">${editing.body}</textarea></div>
+          <div class="field"><label class="field-label">Start</label><input name="start_date" type="date" value="${editing.start_date || ''}"></div>
+          <div class="field"><label class="field-label">End</label><input name="end_date" type="date" value="${editing.end_date || ''}"></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/email/vacation?domain=${encodeURIComponent(editing.domain)}">Anuluj</a></div>
+      </form>`) : ''}`;
     return page(ctx, { title: 'Vacation Messages', subtitle: 'Schedule automatic out-of-office replies', body });
   });
 
@@ -289,6 +354,14 @@ export function register(router) {
          ON CONFLICT(email) DO UPDATE SET subject = excluded.subject, body = excluded.body, start_date = excluded.start_date, end_date = excluded.end_date, enabled = 1`,
       d.name, email, String(ctx.body.subject || 'Out of office'), String(ctx.body.body || ''), ctx.body.start_date || null, ctx.body.end_date || null, 1, nowIso());
     return ctx.redirect('/user/email/vacation?domain=' + encodeURIComponent(d.name) + '&flash=Vacation%20message%20saved');
+  });
+
+  router.post('/user/email/vacation/:id/update', (ctx) => {
+    const v = get('SELECT * FROM vacation WHERE id = ?', Number(ctx.params.id));
+    if (!v || !domainFor(ctx.user, v.domain)) return ctx.redirect('/user/email/vacation?flash=Not%20found&type=error');
+    run('UPDATE vacation SET subject=?, body=?, start_date=?, end_date=? WHERE id=?', String(ctx.body.subject || v.subject), String(ctx.body.body || ''), ctx.body.start_date || null, ctx.body.end_date || null, v.id);
+    audit(ctx.user.username, ctx.user.level, 'email.vacation.update', v.email, ctx.ip);
+    return ctx.redirect('/user/email/vacation?domain=' + encodeURIComponent(v.domain) + '&flash=Updated');
   });
 
   router.post('/user/email/vacation/:id/toggle', (ctx) => {
@@ -354,6 +427,7 @@ export function register(router) {
   /* --------------------------------------------------------- mailing lists */
   router.get('/user/email/lists', (ctx) => {
     const rows = all(`SELECT l.* FROM mailing_lists l JOIN domains d ON d.id = l.domain_id WHERE d.user_id = ? ORDER BY l.name`, ctx.user.id);
+    const editing = ctx.query.edit ? rows.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const domains = visibleDomains(ctx.user);
     const body = h`${mailNav(ctx, 'lists')}
       ${listCard({
@@ -364,7 +438,10 @@ export function register(router) {
           { label: 'Created', render: (r) => formatDate(r.created_at) },
         ],
         rows, empty: 'No mailing lists yet.',
-        actions: [{ label: 'Delete', form: (r) => `/user/email/lists/${r.id}/delete`, confirm: 'Delete mailing list?', icon: 'trash', danger: true }],
+        actions: [
+          { label: 'Edytuj', href: (r) => `/user/email/lists?edit=${r.id}`, icon: 'edit' },
+          { label: 'Delete', form: (r) => `/user/email/lists/${r.id}/delete`, confirm: 'Delete mailing list?', icon: 'trash', danger: true },
+        ],
         footer: h`<form method="post" action="/user/email/lists/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <select name="domain">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
@@ -372,7 +449,15 @@ export function register(router) {
           <input name="members" placeholder="a@example.com, b@example.com" style="max-width:340px">
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Create list</button>
         </form>`,
-      })}`;
+      })}
+      ${editing ? card(`Edytuj listę · ${editing.name}@${editing.domain}`, h`<form method="post" action="/user/email/lists/${editing.id}/update" class="oa-form">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <div class="form-grid">
+          <div class="field"><label class="field-label">Lista</label><input value="${editing.name}@${editing.domain}" disabled></div>
+          <div class="field field-full"><label class="field-label">Członkowie (po przecinku)</label><textarea name="members" rows="4">${editing.members || ''}</textarea></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/email/lists">Anuluj</a></div>
+      </form>`) : ''}`;
     return page(ctx, { title: 'Mailing Lists', subtitle: 'Create announcement and discussion lists', body });
   });
 
@@ -383,6 +468,14 @@ export function register(router) {
     run('INSERT INTO mailing_lists(domain_id, domain, name, members, created_at) VALUES(?,?,?,?,?)',
       d.id, d.name, name, String(ctx.body.members || '').trim(), nowIso());
     return ctx.redirect('/user/email/lists?flash=Mailing%20list%20created');
+  });
+
+  router.post('/user/email/lists/:id/update', (ctx) => {
+    const l = get('SELECT * FROM mailing_lists WHERE id = ?', Number(ctx.params.id));
+    if (!l || !domainFor(ctx.user, l.domain_id)) return ctx.redirect('/user/email/lists?flash=Not%20found&type=error');
+    run('UPDATE mailing_lists SET members = ? WHERE id = ?', String(ctx.body.members || '').trim(), l.id);
+    audit(ctx.user.username, ctx.user.level, 'email.list.update', l.name, ctx.ip);
+    return ctx.redirect('/user/email/lists?flash=List%20updated');
   });
 
   router.post('/user/email/lists/:id/delete', (ctx) => {
@@ -397,6 +490,7 @@ export function register(router) {
     const selected = ctx.query.domain || domains[0]?.name;
     const d = domains.find((x) => x.name === selected);
     const filters = d ? all('SELECT * FROM email_filters WHERE domain = ? ORDER BY created_at DESC', d.name) : [];
+    const editing = ctx.query.edit ? filters.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`${mailNav(ctx, 'spam')}
       ${domains.length ? domainSelect(domains, d?.name, { action: '/user/email/spam' }) : ''}
       ${card('Spam filter rules', h`
@@ -408,7 +502,10 @@ export function register(router) {
             { label: 'Status', render: (r) => (r.enabled ? badge('Active', 'ok') : badge('Off', 'muted')) },
           ],
           rows: filters,
-          actions: [{ label: 'Delete', form: (r) => `/user/email/spam/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Delete rule?' }],
+          actions: [
+            { label: 'Edytuj', href: (r) => `/user/email/spam?domain=${encodeURIComponent(d?.name || '')}&edit=${r.id}`, icon: 'edit' },
+            { label: 'Delete', form: (r) => `/user/email/spam/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Delete rule?' },
+          ],
         }) : emptyState('No spam rules for this domain.')}
         <form method="post" action="/user/email/spam/create" style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -420,6 +517,17 @@ export function register(router) {
           <input name="target" placeholder="Junk" style="max-width:120px">
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add rule</button>
         </form>
+        ${editing ? h`<form method="post" action="/user/email/spam/${editing.id}/update" class="oa-form mt-18">
+          <input type="hidden" name="_csrf" value="${ctx.csrf}">
+          <div class="form-grid">
+            <div class="field"><label class="field-label">Field</label><select name="field">${['subject','from','to','body'].map((x) => h`<option ${x === editing.field ? 'selected' : ''}>${x}</option>`)}</select></div>
+            <div class="field"><label class="field-label">Operator</label><select name="operator">${['contains','equals','starts'].map((x) => h`<option ${x === editing.operator ? 'selected' : ''}>${x}</option>`)}</select></div>
+            <div class="field field-full"><label class="field-label">Value</label><input name="value" value="${editing.value}" required></div>
+            <div class="field"><label class="field-label">Action</label><select name="action">${['move','discard','tag'].map((x) => h`<option ${x === editing.action ? 'selected' : ''}>${x}</option>`)}</select></div>
+            <div class="field"><label class="field-label">Target</label><input name="target" value="${editing.target || ''}"></div>
+          </div>
+          <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz regułę</button><a class="btn btn-ghost" href="/user/email/spam?domain=${encodeURIComponent(d?.name || '')}">Anuluj</a></div>
+        </form>` : ''}
       `, { sub: 'Rules applied by the spam filter (SpamAssassin compatible syntax)' })}
       ${card('Mail authentication', (() => {
         const dkim = d ? dkimStatus(d.name) : { exists: false };
@@ -459,6 +567,14 @@ export function register(router) {
       d.name, String(ctx.body.field || 'subject'), String(ctx.body.operator || 'contains'),
       String(ctx.body.value || ''), String(ctx.body.action || 'move'), String(ctx.body.target || ''), 1, nowIso());
     return ctx.redirect('/user/email/spam?domain=' + encodeURIComponent(d.name) + '&flash=Filter%20added');
+  });
+
+  router.post('/user/email/spam/:id/update', (ctx) => {
+    const r = get('SELECT * FROM email_filters WHERE id = ?', Number(ctx.params.id));
+    if (!r || !domainFor(ctx.user, r.domain_id)) return ctx.redirect('/user/email/spam?flash=Not%20found&type=error');
+    run('UPDATE email_filters SET field=?, operator=?, value=?, action=?, target=? WHERE id=?', String(ctx.body.field || r.field), String(ctx.body.operator || r.operator), String(ctx.body.value || ''), String(ctx.body.action || r.action), String(ctx.body.target || ''), r.id);
+    audit(ctx.user.username, ctx.user.level, 'email.filter.update', r.value, ctx.ip);
+    return ctx.redirect('/user/email/spam?domain=' + encodeURIComponent(r.domain) + '&flash=Rule%20updated');
   });
 
   router.post('/user/email/spam/:id/delete', (ctx) => {

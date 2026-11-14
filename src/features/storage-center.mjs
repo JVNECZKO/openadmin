@@ -9,6 +9,7 @@ const A = '/admin/storage';
 export function register(router) {
   router.get(A, (ctx) => {
     const ov = storageOverview();
+    const editing = ctx.query.edit ? ov.paths.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`
       ${ov.warnings.length ? alert(`${ov.warnings.length} lokalizacja(e) przekraczają próg zapełnienia.`, 'warn') : ''}
       ${card('Dodaj lokalizację', form([
@@ -26,9 +27,18 @@ export function register(router) {
           { label: 'Status', render: (r) => r.alert ? badge('alert', 'danger') : r.exists ? badge('OK', 'ok') : badge('brak', 'warn') },
         ],
         rows: ov.paths,
-        actions: [{ label: 'Usuń', form: (r) => `${A}/${r.id}/delete`, icon: 'trash', danger: true, show: (r) => !r.is_default, confirm: 'Usunąć lokalizację?' }],
+        actions: [
+          { label: 'Edytuj', href: (r) => `${A}?edit=${r.id}`, icon: 'edit' },
+          { label: 'Usuń', form: (r) => `${A}/${r.id}/delete`, icon: 'trash', danger: true, show: (r) => !r.is_default, confirm: 'Usunąć lokalizację?' },
+        ],
         empty: 'Brak lokalizacji.',
       }), { padded: false })}
+      ${editing ? card(`Edytuj storage · ${editing.name}`, form([
+        field({ name: 'name', label: 'Nazwa', value: editing.name, required: true }),
+        field({ name: 'path', label: 'Ścieżka', value: editing.path, required: true }),
+        field({ name: 'type', label: 'Typ', type: 'select', value: editing.type, options: ['ext4', 'xfs', 'btrfs', 'zfs', 'cephfs', 'nfs'] }),
+        field({ name: 'alert_percent', label: 'Alert %', type: 'number', value: editing.alert_percent, min: 50, max: 99 }),
+      ], { action: `${A}/${editing.id}/update`, csrf: ctx.csrf, submit: 'Zapisz storage' })) : ''}
       ${kvList([['Domyślna ścieżka', ov.defaultPath]])}
       ${alert('Istniejące konta pozostają w /home; nowa ścieżka domyślna jest zapisywana jako ustawienie i nie przenosi danych automatycznie.', 'info')}`;
     return page(ctx, { title: 'Storage Destinations', subtitle: 'Ścieżki, pojemność i alerty', body, wide: true });
@@ -37,6 +47,10 @@ export function register(router) {
   router.post(`${A}/add`, (ctx) => {
     const r = saveStorage(ctx.body, ctx.user.username);
     return ctx.redirect(`${A}?flash=${encodeURIComponent(r.ok ? 'Storage dodany' : r.error)}${r.ok ? '' : '&type=error'}`);
+  });
+  router.post(`${A}/:id/update`, (ctx) => {
+    const r = saveStorage({ ...ctx.body, id: ctx.params.id }, ctx.user.username);
+    return ctx.redirect(`${A}?flash=${encodeURIComponent(r.ok ? 'Storage zaktualizowany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
   router.post(`${A}/:id/delete`, (ctx) => {
     const r = deleteStorage(ctx.params.id, ctx.user.username);

@@ -69,6 +69,7 @@ export function userDomains(ctx) {
         { label: 'DNS', href: (r) => `/user/dns?domain=${r.name}`, icon: 'dns' },
         { label: 'Files', href: (r) => `/user/files?path=${encodeURIComponent(r.docroot || '/')}`, icon: 'folder' },
         { label: 'SSL', href: (r) => `/user/ssl?domain=${r.name}`, icon: 'lock' },
+        { label: 'Edytuj', href: (r) => `/user/domains/${r.id}/edit`, icon: 'edit' },
         { label: 'Otwórz', href: (r) => `http://${r.name}/`, icon: 'globe' },
         { label: 'Logi', href: (r) => `/user/domains/${r.id}/logs`, icon: 'file' },
         { label: 'Delete', href: '#', icon: 'trash', danger: true, form: (r) => `/user/domains/${r.id}/delete`, confirm: 'Delete this domain and its DNS zone, mail and databases?', icon: 'trash' },
@@ -146,6 +147,32 @@ export function registerDomainsPost(router) {
     return page(ctx, { title: 'Logi domeny', subtitle: d.name, body, wide: true });
   });
 
+  router.get('/user/domains/:id/edit', (ctx) => {
+    const d = domainFor(ctx.user, ctx.params.id);
+    if (!d) return ctx.redirect('/user/domains?flash=Domain%20not%20found&type=error');
+    const body = h`${card(`Edit domain · ${d.name}`, h`<form method="post" action="/user/domains/${d.id}/update" class="oa-form">
+      <input type="hidden" name="_csrf" value="${ctx.csrf}">
+      <div class="form-grid">
+        <div class="field"><label class="field-label">Domain</label><input value="${d.name}" disabled></div>
+        <div class="field"><label class="field-label">Document root</label><input value="${d.docroot || ''}" disabled></div>
+        <div class="field"><label class="field-label">PHP version</label><select name="php_version">${PHP.map((v) => h`<option ${v === d.php_version ? 'selected' : ''}>${v}</option>`)}</select></div>
+        <div class="field"><label class="check-field"><input type="checkbox" name="ssl" value="1" ${d.ssl ? 'checked' : ''}> <span>SSL enabled</span></label></div>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Save domain</button><a class="btn btn-ghost" href="/user/domains">Cancel</a></div>
+    </form>`)}`;
+    return page(ctx, { title: 'Edit domain', subtitle: d.name, body });
+  });
+
+  router.post('/user/domains/:id/update', (ctx) => {
+    const d = domainFor(ctx.user, ctx.params.id);
+    if (!d) return ctx.redirect('/user/domains?flash=Domain%20not%20found&type=error');
+    const php = PHP.includes(String(ctx.body.php_version)) ? String(ctx.body.php_version) : d.php_version;
+    run('UPDATE domains SET php_version = ?, ssl = ? WHERE id = ?', php, ctx.body.ssl ? 1 : 0, d.id);
+    apply({ web: true });
+    audit(ctx.user.username, ctx.user.level, 'domain.update', d.name, ctx.ip);
+    return ctx.redirect('/user/domains?flash=Domain%20updated');
+  });
+
   router.post('/user/domains/:id/delete', (ctx) => {
     const d = domainFor(ctx.user, ctx.params.id);
     if (!d) return ctx.redirect('/user/domains?flash=Domain%20not%20found&type=error');
@@ -174,12 +201,26 @@ export function registerDomainsPost(router) {
     return ctx.redirect('/user/subdomains?flash=' + encodeURIComponent(`Subdomain ${sub}.${d.name} created`));
   });
 
+  router.post('/user/subdomains/:id/update', (ctx) => {
+    const sub = get('SELECT * FROM subdomains WHERE id = ? AND username = ?', Number(ctx.params.id), ctx.user.username);
+    if (!sub) return ctx.redirect('/user/subdomains?flash=Not%20found&type=error');
+    const php = PHP.includes(String(ctx.body.php_version)) ? String(ctx.body.php_version) : sub.php_version;
+    const docroot = String(ctx.body.docroot || sub.docroot);
+    if (!docroot.startsWith(`/home/${ctx.user.username}/`)) return ctx.redirect('/user/subdomains?flash=Document%20root%20must%20be%20inside%20home&type=error');
+    run('UPDATE subdomains SET php_version = ?, docroot = ? WHERE id = ?', php, docroot, sub.id);
+    apply({ web: true });
+    audit(ctx.user.username, ctx.user.level, 'subdomain.update', `${sub.name}`, ctx.ip);
+    return ctx.redirect('/user/subdomains?flash=Subdomain%20updated');
+  });
+
   router.post('/user/subdomains/:id/delete', (ctx) => {
     const s = get('SELECT * FROM subdomains WHERE id = ?', Number(ctx.params.id));
     if (!s || s.username !== ctx.user.username) return ctx.redirect('/user/subdomains?flash=Not%20found&type=error');
     const d = get('SELECT * FROM domains WHERE id = ?', s.domain_id);
     run('DELETE FROM subdomains WHERE id = ?', s.id);
     run('DELETE FROM dns_records WHERE domain_id = ? AND name = ? AND type = ?', s.domain_id, s.name, 'A');
+    apply({ web: true, dns: true });
+    audit(ctx.user.username, ctx.user.level, 'subdomain.delete', `${s.name}.${d?.name || ''}`, ctx.ip);
     return ctx.redirect('/user/subdomains?flash=' + encodeURIComponent(`Subdomain ${s.name}.${d?.name || ''} deleted`));
   });
 
@@ -219,6 +260,7 @@ export function registerDomainsPost(router) {
       ctx.body.priority ? Number(ctx.body.priority) : null, Number(ctx.body.ttl) || 3600, r.id);
     rebuildZone(d.name);
     apply({ dns: true });
+    audit(ctx.user.username, ctx.user.level, 'dns.update', `${d.name} #${r.id}`, ctx.ip);
     return ctx.redirect('/user/dns?domain=' + encodeURIComponent(d.name) + '&flash=Record%20updated');
   });
 
@@ -273,6 +315,7 @@ export function register(router) {
     const selected = ctx.query.domain || domains[0]?.name;
     const d = domains.find((x) => x.name === selected) || domains[0];
     const rows = d ? all('SELECT * FROM subdomains WHERE domain_id = ? ORDER BY name', d.id) : [];
+    const editing = ctx.query.edit ? rows.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`
       ${domains.length ? domainSelect(domains, d?.name, { action: '/user/subdomains' }) : alert('Add a domain before creating subdomains.', 'warn')}
       ${listCard({
@@ -285,6 +328,7 @@ export function register(router) {
         rows,
         empty: 'No subdomains for this domain yet.',
         actions: [
+          { label: 'Edytuj', href: (r) => `/user/subdomains?domain=${encodeURIComponent(d?.name || '')}&edit=${r.id}`, icon: 'edit' },
           { label: 'Files', href: (r) => `/user/files?path=${encodeURIComponent(r.docroot || '/')}`, icon: 'folder' },
           { label: 'Delete', form: (r) => `/user/subdomains/${r.id}/delete`, confirm: 'Delete this subdomain?', icon: 'trash', danger: true },
         ],
@@ -293,7 +337,16 @@ export function register(router) {
           <input type="text" name="name" placeholder="blog" required style="max-width:180px">
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add subdomain</button>
         </form>` : '',
-      })}`;
+      })}
+      ${editing ? card(`Edytuj subdomenę · ${editing.name}.${d?.name}`, h`<form method="post" action="/user/subdomains/${editing.id}/update" class="oa-form">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <div class="form-grid">
+          <div class="field"><label class="field-label">Subdomena</label><input value="${editing.name}.${d?.name}" disabled></div>
+          <div class="field"><label class="field-label">PHP</label><select name="php_version">${PHP.map((v) => h`<option ${v === (editing.php_version || d?.php_version) ? 'selected' : ''}>${v}</option>`)}</select></div>
+          <div class="field field-full"><label class="field-label">Document root</label><input name="docroot" value="${editing.docroot || ''}"></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/subdomains?domain=${encodeURIComponent(d?.name || '')}">Anuluj</a></div>
+      </form>`) : ''}`;
     return page(ctx, { title: 'Subdomains', subtitle: 'Create and manage subdomains on your domains', body });
   });
 

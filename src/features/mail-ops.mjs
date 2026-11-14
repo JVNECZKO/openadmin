@@ -23,6 +23,8 @@ function tab(ctx) {
 export function register(router) {
   router.get(A, (ctx) => {
     const t = tab(ctx);
+    const filterEditing = ctx.query.edit && t === 'filters' ? listFilters().find((f) => String(f.id) === String(ctx.query.edit)) : null;
+    const smtpEditing = ctx.query.edit && t === 'smtp' ? listRemoteSmtp().find((s) => String(s.id) === String(ctx.query.edit)) : null;
     const ov = mailOverview();
     const cfg = mailSettings();
     const grey = greylistingSupport();
@@ -127,13 +129,22 @@ export function register(router) {
           field({ name: 'domain', label: 'Domena docelowa (opcjonalnie)' }),
           field({ name: 'action', label: 'Akcja', type: 'select', options: ['reject', 'defer', 'discard'] }),
         ], { action: `${A}/filters`, csrf: ctx.csrf, submit: 'Dodaj filtr' }))}
+        ${filterEditing ? card(`Edytuj filtr · ${filterEditing.value}`, form([
+          field({ name: 'kind', label: 'Typ', type: 'select', value: filterEditing.kind, options: [{value:'sender_domain',label:'Domena nadawcy'},{value:'rbl',label:'RBL'},{value:'country',label:'Kraj'}] }),
+          field({ name: 'value', label: 'Wartość', value: filterEditing.value, required: true }),
+          field({ name: 'domain', label: 'Domena', value: filterEditing.domain || '' }),
+          field({ name: 'action', label: 'Akcja', type: 'select', value: filterEditing.action, options: ['reject','defer','discard'] }),
+        ], { action: `${A}/filters/${filterEditing.id}/update`, csrf: ctx.csrf, submit: 'Zapisz filtr' })) : ''}
         ${card('Filtry', table({
           columns: [
             { label: 'Typ', key: 'kind' }, { label: 'Wartość', render: (r) => h`<span class="cell-mono">${r.value}</span>` },
             { label: 'Domena', key: 'domain' }, { label: 'Akcja', key: 'action' },
           ],
           rows: listFilters(),
-          actions: [{ label: 'Usuń', form: (r) => `${A}/filters/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć filtr?' }],
+          actions: [
+            { label: 'Edytuj', href: (r) => `${A}?tab=filters&edit=${r.id}`, icon: 'edit' },
+            { label: 'Usuń', form: (r) => `${A}/filters/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć filtr?' },
+          ],
           empty: 'Brak filtrów.',
         }), { padded: false })}
         ${card('Czarna lista domen nadawców', h`<form method="post" action="${A}/blacklist" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -169,10 +180,19 @@ export function register(router) {
           field({ name: 'password', label: 'Hasło', type: 'password' }),
           field({ name: 'tls', label: 'TLS', type: 'checkbox', value: true }),
         ], { action: `${A}/smtp`, csrf: ctx.csrf, submit: 'Zapisz i przetestuj' }))}
+        ${smtpEditing ? card(`Edytuj remote SMTP · ${smtpEditing.name}`, form([
+          field({ name: 'name', label: 'Nazwa', value: smtpEditing.name, required: true }),
+          field({ name: 'host', label: 'Host', value: smtpEditing.host, required: true }),
+          field({ name: 'port', label: 'Port', type: 'number', value: smtpEditing.port }),
+          field({ name: 'username', label: 'Użytkownik', value: smtpEditing.username || '' }),
+          field({ name: 'password', label: 'Nowe hasło (puste = bez zmian)', type: 'password' }),
+          field({ name: 'tls', label: 'TLS', type: 'checkbox', value: !!smtpEditing.tls }),
+        ], { action: `${A}/smtp/${smtpEditing.id}/update`, csrf: ctx.csrf, submit: 'Zapisz remote SMTP' })) : ''}
         ${card('Skonfigurowane serwery', table({
           columns: [{ label: 'Nazwa', key: 'name' }, { label: 'Host', key: 'host' }, { label: 'Port', key: 'port' }, { label: 'Aktywny', render: (r) => badge(r.enabled ? 'tak' : 'nie', r.enabled ? 'ok' : 'muted') }],
           rows: listRemoteSmtp(),
           actions: [
+            { label: 'Edytuj', href: (r) => `${A}?tab=smtp&edit=${r.id}`, icon: 'edit' },
             { label: 'Test', form: (r) => `${A}/smtp/${r.id}/test`, icon: 'check' },
             { label: 'Aktywuj', form: (r) => `${A}/smtp/${r.id}/activate`, icon: 'play' },
           ],
@@ -240,6 +260,12 @@ export function register(router) {
     const r = addFilter(ctx.body, ctx.user.username);
     return ctx.redirect(`${A}?tab=filters&flash=${encodeURIComponent(r.ok ? 'Filtr dodany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
+  router.post(`${A}/filters/:id/update`, (ctx) => {
+    const f = get('SELECT * FROM mail_filters WHERE id = ?', Number(ctx.params.id));
+    if (!f) return ctx.redirect(`${A}?tab=filters&flash=Not%20found&type=error`);
+    run('UPDATE mail_filters SET kind=?, value=?, domain=?, action=? WHERE id=?', String(ctx.body.kind || f.kind), String(ctx.body.value || ''), String(ctx.body.domain || '') || null, String(ctx.body.action || f.action), f.id);
+    return ctx.redirect(`${A}?tab=filters&flash=Filtr%20zaktualizowany`);
+  });
   router.post(`${A}/filters/:id/delete`, (ctx) => { removeFilter(ctx.params.id, ctx.user.username); return ctx.redirect(`${A}?tab=filters&flash=Filtr%20usuni%C4%99ty`); });
   router.post(`${A}/blacklist`, (ctx) => {
     const r = addBlacklist(ctx.body.domain, ctx.user.username);
@@ -259,6 +285,10 @@ export function register(router) {
     if (!r.ok) return ctx.redirect(`${A}?tab=smtp&flash=${encodeURIComponent(r.error)}&type=error`);
     const msg = r.tested?.ok ? 'Zapisano; test TCP OK' : `Zapisano; test nieudany: ${r.tested?.detail || 'brak'}`;
     return ctx.redirect(`${A}?tab=smtp&flash=${encodeURIComponent(msg)}&type=${r.tested?.ok ? 'ok' : 'error'}`);
+  });
+  router.post(`${A}/smtp/:id/update`, async (ctx) => {
+    const r = await saveRemoteSmtp({ ...ctx.body, id: ctx.params.id }, ctx.user.username);
+    return ctx.redirect(`${A}?tab=smtp&flash=${encodeURIComponent(r.ok ? 'Remote SMTP zapisany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
   router.post(`${A}/smtp/:id/test`, async (ctx) => {
     const row = get('SELECT * FROM remote_smtp WHERE id = ?', Number(ctx.params.id));

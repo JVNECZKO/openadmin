@@ -31,6 +31,7 @@ export function register(router) {
     const ssh = getSsh();
     const keys = listRootKeys();
     const blocks = all('SELECT * FROM ip_blocks ORDER BY created_at DESC').map((b) => ({ ...b, expired: b.expires_at && b.expires_at <= nowIso() }));
+    const editing = ctx.query.edit && tab === 'firewall' ? blocks.find((b) => String(b.id) === String(ctx.query.edit)) : null;
     const countries = countryStatus();
     const groups = compilerState();
     const fork = getForkBomb();
@@ -105,9 +106,16 @@ export function register(router) {
             { label: 'Status', render: (r) => badge(r.expired ? 'wygasła' : 'aktywna', r.expired ? 'muted' : 'ok') },
           ],
           rows: blocks,
-          actions: [{ label: 'Usuń', form: (r) => `${A}/ipblock/${r.id}/delete`, icon: 'trash', danger: true, confirm: (r) => `Usunąć blokadę ${r.cidr}?` }],
+          actions: [
+            { label: 'Edytuj', href: (r) => `${A}?tab=firewall&edit=${r.id}`, icon: 'edit' },
+            { label: 'Usuń', form: (r) => `${A}/ipblock/${r.id}/delete`, icon: 'trash', danger: true, confirm: (r) => `Usunąć blokadę ${r.cidr}?` },
+          ],
           empty: 'Brak blokad IP.',
         }), { padded: false })}
+        ${editing ? card(`Edytuj blokadę · ${editing.cidr}`, form([
+          field({ name: 'reason', label: 'Powód', value: editing.reason || '' }),
+          field({ name: 'expires_at', label: 'Wygasa', type: 'datetime-local', value: editing.expires_at ? String(editing.expires_at).slice(0, 16) : '' }),
+        ], { action: `${A}/ipblock/${editing.id}/update`, csrf: ctx.csrf, submit: 'Zapisz blokadę' })) : ''}
         ${card('Zastosuj ponownie', h`<form method="post" action="${A}/firewall/apply"><input type="hidden" name="_csrf" value="${ctx.csrf}">
           <p class="small muted">Przebudowuje nftables z bieżących blokad, krajów i ograniczeń SMTP. Może przerwać istniejące połączenia.</p>
           <button class="btn btn-secondary" type="submit">${icon('refresh', { size: 16 })} Zastosuj firewall</button></form>`)}
@@ -240,6 +248,14 @@ export function register(router) {
   router.post(`${A}/ipblock/add`, (ctx) => {
     const r = addIpBlock(ctx.body.cidr, { reason: String(ctx.body.reason || ''), expiresAt: ctx.body.expires_at || null, actor: ctx.user.username });
     return ctx.redirect(`${A}?tab=firewall&flash=${encodeURIComponent(r.ok ? 'Blokada dodana i zastosowana' : r.error)}${r.ok ? '' : '&type=error'}`);
+  });
+  router.post(`${A}/ipblock/:id/update`, (ctx) => {
+    const row = all('SELECT * FROM ip_blocks WHERE id = ?', Number(ctx.params.id))[0];
+    if (!row) return ctx.redirect(`${A}?tab=firewall&flash=Not%20found&type=error`);
+    run('UPDATE ip_blocks SET reason = ?, expires_at = ? WHERE id = ?', String(ctx.body.reason || ''), ctx.body.expires_at || null, row.id);
+    const applied = applyFirewall();
+    audit(ctx.user.username, 'admin', 'security.ipblock.update', row.cidr, ctx.ip);
+    return ctx.redirect(`${A}?tab=firewall&flash=${encodeURIComponent(applied.ok ? 'Blokada zaktualizowana' : applied.error)}${applied.ok ? '' : '&type=error'}`);
   });
   router.post(`${A}/ipblock/:id/delete`, (ctx) => {
     const r = removeIpBlock(ctx.params.id, ctx.user.username);

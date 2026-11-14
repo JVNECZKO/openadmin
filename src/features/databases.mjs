@@ -43,6 +43,7 @@ export function register(router) {
           { label: 'phpMyAdmin', href: (r) => (r.password_enc && appStatus('phpmyadmin').installed && phpMyAdminSsoEnabled()
             ? `/phpmyadmin/signon.php?token=${encodeURIComponent(ssoToken({ userId: ctx.user.id, db: r.db_name }))}`
             : `/phpmyadmin/?db=${encodeURIComponent(r.db_name)}`), icon: 'database' },
+          { label: 'Hasło', href: (r) => (r.id ? `/user/databases/${r.id}/password` : '#'), icon: 'key', show: (r) => !!r.id },
           { label: 'Delete', form: (r) => `/user/databases/${r.id}/delete`, confirm: 'Delete this database and all its tables?', icon: 'trash', danger: true, show: (r) => !!r.id },
         ],
       })}
@@ -110,6 +111,31 @@ SHOW DATABASES;</pre>
       ctx.user.id, dbName, dbUser, hashPassword(password), encryptSecret(password), 0, nowIso());
     audit(ctx.user.username, ctx.user.level, 'database.create', dbName, ctx.ip);
     return ctx.redirect('/user/databases?flash=' + encodeURIComponent(`Database ${dbName} created${mst.connected ? ' on the server' : ' (recorded only)'}`));
+  });
+
+  router.get('/user/databases/:id/password', (ctx) => {
+    const db = get('SELECT * FROM databases WHERE id = ? AND user_id = ?', Number(ctx.params.id), ctx.user.id);
+    if (!db) return ctx.redirect('/user/databases?flash=Database%20not%20found&type=error');
+    const body = h`${card(`Zmiana hasła · ${db.db_name}`, h`<form method="post" action="/user/databases/${db.id}/password" class="oa-form">
+      <input type="hidden" name="_csrf" value="${ctx.csrf}">
+      <div class="form-grid"><div class="field field-full"><label class="field-label">Nowe hasło</label><input name="password" type="password" minlength="8" required></div></div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Zmień hasło</button><a class="btn btn-ghost" href="/user/databases">Anuluj</a></div>
+    </form>`)}`;
+    return page(ctx, { title: 'Database password', subtitle: db.db_name, body });
+  });
+
+  router.post('/user/databases/:id/password', (ctx) => {
+    const db = get('SELECT * FROM databases WHERE id = ? AND user_id = ?', Number(ctx.params.id), ctx.user.id);
+    if (!db) return ctx.redirect('/user/databases?flash=Database%20not%20found&type=error');
+    const password = String(ctx.body.password || '');
+    if (password.length < 8) return ctx.redirect(`/user/databases/${db.id}/password?flash=Password%20must%20be%208%2B%20characters&type=error`);
+    if (detect().connected) {
+      const r = createAccount(db.db_name, db.db_user, password);
+      if (!r.ok) return ctx.redirect(`/user/databases/${db.id}/password?flash=${encodeURIComponent(r.error)}&type=error`);
+    }
+    run('UPDATE databases SET password = ?, password_enc = ? WHERE id = ?', hashPassword(password), encryptSecret(password), db.id);
+    audit(ctx.user.username, ctx.user.level, 'database.password', db.db_name, ctx.ip);
+    return ctx.redirect('/user/databases?flash=Password%20changed');
   });
 
   router.post('/user/databases/:id/delete', (ctx) => {

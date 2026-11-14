@@ -3,7 +3,7 @@ import { all } from '../db.mjs';
 import { html as h, formatDate } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, table, badge, alert, form, field, kvList } from '../ui/components.mjs';
-import { listKeys, createKey, revokeKey } from '../apikeys.mjs';
+import { listKeys, createKey, revokeKey, updateKey } from '../apikeys.mjs';
 
 const A = '/admin/api-keys';
 
@@ -11,6 +11,7 @@ export function register(router) {
   router.get(A, (ctx) => {
     const users = all("SELECT id, username, level FROM users WHERE level IN ('admin','reseller','user') ORDER BY username");
     const keys = listKeys();
+    const editing = ctx.query.edit ? keys.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`
       ${card('Nowy klucz API', form([
         field({ name: 'user_id', label: 'Właściciel', type: 'select', options: users.map((u) => ({ value: String(u.id), label: `${u.username} (${u.level})` })) }),
@@ -29,9 +30,17 @@ export function register(router) {
           { label: 'Ostatnio', render: (r) => r.last_used_at ? formatDate(r.last_used_at, { time: true }) : '—' },
         ],
         rows: keys,
-        actions: [{ label: 'Unieważnij', form: (r) => `${A}/${r.id}/revoke`, icon: 'trash', danger: true, confirm: 'Unieważnić klucz?' }],
+        actions: [
+          { label: 'Edytuj', href: (r) => `${A}?edit=${r.id}`, icon: 'edit' },
+          { label: 'Unieważnij', form: (r) => `${A}/${r.id}/revoke`, icon: 'trash', danger: true, confirm: 'Unieważnić klucz?' },
+        ],
         empty: 'Brak kluczy API.',
       }), { padded: false })}
+      ${editing ? card(`Edytuj klucz · ${editing.prefix}…`, form([
+        field({ name: 'name', label: 'Nazwa', value: editing.name }),
+        field({ name: 'scopes', label: 'Zakres', type: 'select', value: JSON.parse(editing.scopes || '[]')[0] || 'read', options: ['read', 'write', 'admin'] }),
+        field({ name: 'allowed_ips', label: 'Dozwolone IP', value: JSON.parse(editing.allowed_ips || '[]').join(', '), full: true }),
+      ], { action: `${A}/${editing.id}/update`, csrf: ctx.csrf, submit: 'Zapisz klucz' })) : ''}
       ${card('MCP', h`${kvList([['Endpoint', h`<code>${ctx.req.headers.host ? `https://${ctx.req.headers.host}/mcp` : '/mcp'}</code>`], ['Autoryzacja', 'Bearer <klucz API>'], ['Narzędzia', '14 read-only (list_domains, list_mailboxes, get_health, …)']])}
         <p class="small muted mt-12">Klient MCP wysyła JSON-RPC 2.0: <code>initialize</code>, <code>tools/list</code>, <code>tools/call</code>. Klucz musi mieć zakres read.</p>`)}
       ${alert('Klucz pokazujemy tylko raz. Jeśli IP allowlist jest pusta, klucz działa z każdego adresu — ustaw IP dla produkcji.', 'warn')}`;
@@ -48,6 +57,10 @@ export function register(router) {
       ${kvList([['Prefiks', r.prefix], ['Zakres', scopes.join(', ')], ['MCP', h`<code>Authorization: Bearer ${r.secret}</code>`]])}
       <div class="row mt-18"><a class="btn btn-primary" href="${A}">Wróć</a></div>`)}`;
     return page(ctx, { title: 'Nowy klucz API', subtitle: 'Zapisz go bezpiecznie', body });
+  });
+  router.post(`${A}/:id/update`, (ctx) => {
+    const r = updateKey(ctx.params.id, { name: ctx.body.name, scopes: [ctx.body.scopes], allowedIps: ctx.body.allowed_ips }, ctx.user.username);
+    return ctx.redirect(`${A}?flash=${encodeURIComponent(r.ok ? 'Klucz zaktualizowany' : r.error)}${r.ok ? '' : '&type=error'}`);
   });
   router.post(`${A}/:id/revoke`, (ctx) => { revokeKey(ctx.params.id, ctx.user.username); return ctx.redirect(`${A}?flash=Klucz%20uniewa%C5%BCniony`); });
 }

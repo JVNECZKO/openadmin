@@ -40,6 +40,19 @@ export function create(ownerUsername, { dbName, password = '' } = {}, actor = 'a
   return { ok: true, dbName: name, role, password: pass, simulated: config.provider !== 'linux' };
 }
 
+export function changePassword(id, password, actor = 'admin') {
+  const row = get('SELECT * FROM postgres_databases WHERE id = ?', Number(id));
+  if (!row) return { ok: false, error: 'Not found' };
+  if (String(password).length < 8) return { ok: false, error: 'Hasło min. 8 znaków' };
+  if (config.provider === 'linux' && status().ready) {
+    const r = psql(`ALTER ROLE "${row.db_user}" WITH PASSWORD '${String(password).replace(/'/g, "''")}';`);
+    if (!r.ok) return { ok: false, error: r.error };
+  }
+  run('UPDATE postgres_databases SET password_enc = ? WHERE id = ?', encryptSecret(String(password)), row.id);
+  audit(actor, 'admin', 'postgres.password', row.db_name, '');
+  return { ok: true };
+}
+
 export function drop(id, actor = 'admin') {
   const row = get('SELECT * FROM postgres_databases WHERE id = ?', Number(id));
   if (!row) return { ok: false, error: 'Not found' };

@@ -30,6 +30,14 @@ export function addNotification({ userId = null, level = 'info', title, body = '
 
 export function channels() { return all('SELECT * FROM notification_channels ORDER BY name'); }
 
+export function channelFor(id) {
+  const ch = get('SELECT * FROM notification_channels WHERE id = ?', Number(id));
+  if (!ch) return null;
+  let cfg = {};
+  try { cfg = JSON.parse(decryptSecret(ch.config_enc)); } catch { cfg = {}; }
+  return { ...ch, config: cfg };
+}
+
 export function saveChannel(body, actor = 'admin') {
   const type = ['email', 'webhook', 'slack', 'discord', 'telegram'].includes(body.type) ? body.type : 'webhook';
   const name = String(body.name || '').trim();
