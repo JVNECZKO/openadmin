@@ -4,7 +4,7 @@ What does this change and why?
 
 ## Tests
 
-- [ ] <code>node --test tests/</code> passes
+- [ ] <code>node --test</code> passes
 - [ ] Added or updated a test for the behaviour change
 - [ ] Checked the panel in the browser at desktop and mobile widths
 

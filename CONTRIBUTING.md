@@ -10,7 +10,7 @@ contribute is to reproduce a bug, add a test and keep the change focused.
 
 ## Run the tests
 
-    node --test tests/
+    node --test
 
 The suite covers authentication, quotas, the API, page rendering, backups, DNS, mail and
 webmail. Add a test for every behavioural fix.

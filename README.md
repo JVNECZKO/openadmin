@@ -216,7 +216,7 @@ See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the command matrix.
 Bug reports, compatibility notes and pull requests are welcome. The project has no runtime
 dependencies; the test suite is plain <code>node --test</code>.
 
-    node --test tests/
+    node --test
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
