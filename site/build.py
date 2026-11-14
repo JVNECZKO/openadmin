@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 SITE = "https://openadmin.live"
 VERSION = "1.0.0"
+GITHUB_URL = "https://github.com/JVNECZKO/openadmin"
 DOWNLOAD_PATH = "/openadmin-1.0.0.tar.gz?v=1.0.0"
 ASSET_VER = hashlib.sha256((ROOT / "assets" / "styles.css").read_bytes() + (ROOT / "assets" / "app.js").read_bytes()).hexdigest()[:10]
 SHOT_VER = hashlib.sha256((ROOT / "assets" / "shots" / "mariadb-1440.webp").read_bytes() + (ROOT / "assets" / "shots" / "dashboard-1440.webp").read_bytes() + (ROOT / "assets" / "og.jpg").read_bytes()).hexdigest()[:8]
@@ -49,6 +50,7 @@ ICONS = {
     "menu": '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
     "spark": '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
     "lock": '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.5" y="10" width="15" height="10" rx="2.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 10V7.5a4 4 0 0 1 8 0V10" stroke="currentColor" stroke-width="1.6"/></svg>',
+    "github": '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>',
 }
 
 GRADIENT_DEFS = '<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="oa-grad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop stop-color="#62d0ff"/><stop offset=".52" stop-color="#0a6daa"/><stop offset="1" stop-color="#0b3f69"/></linearGradient></defs></svg>'
@@ -122,6 +124,7 @@ def nav(c):
     </a>
     <nav class="nav-links" aria-label="{attr(c["nav"]["primaryLabel"])}">{links}</nav>
     <div class="nav-actions">
+      <a class="github-link" href="{GITHUB_URL}" target="_blank" rel="noopener noreferrer" aria-label="{attr(c["a11y"]["github"])}" title="GitHub">{ICONS["github"]}</a>
       <div class="lang-switch" role="group" aria-label="{attr(c["nav"]["langAria"])}">
         <a href="/" class="{"is-active" if c["lang"] == "en" else ""}" hreflang="en" lang="en">EN</a>
         <a href="/pl/" class="{"is-active" if c["lang"] == "pl" else ""}" hreflang="pl" lang="pl">PL</a>
@@ -137,6 +140,7 @@ def nav(c):
     <nav class="mobile-nav" aria-label="{attr(c["nav"]["mobileLabel"])}">
       {mobile_links}
       <a class="btn btn-primary" href="#install">{c["nav"]["cta"]}</a>
+      <a class="mobile-github" href="{GITHUB_URL}" target="_blank" rel="noopener noreferrer">{ICONS["github"]}<span>GitHub</span><span class="ext">↗</span></a>
       <a class="mobile-lang" href="{other["href"]}">{other["label"]}</a>
     </nav>
   </div>
@@ -475,6 +479,7 @@ def final_cta(c):
         <a class="btn btn-outline btn-lg" href="#install">{c["finalCta"]["secondary"]}{ICONS["arrow"]}</a>
       </div>
       <span class="final-micro">{c["finalCta"]["micro"]}</span>
+      <a class="final-github" href="{GITHUB_URL}" target="_blank" rel="noopener noreferrer">{ICONS["github"]}{c["finalCta"]["github"]}<span>↗</span></a>
     </div>
   </div>
 </section>'''
@@ -519,6 +524,7 @@ def structured_data(c):
                 "offers": {"@type": "Offer", "price": "0", "priceCurrency": "EUR"},
                 "description": strip_tags(c["meta"]["description"]),
                 "inLanguage": c["lang"],
+                "sameAs": [GITHUB_URL],
             },
             {
                 "@type": "FAQPage",

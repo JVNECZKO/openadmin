@@ -422,6 +422,7 @@ export default {
       "Zainstaluj OpenAdmina na świeżym VPS-ie albo wypróbuj go na laptopie. Zajmie to minutę i nic nie kosztuje.",
     primary: "Pobierz OpenAdmina",
     secondary: "Przeczytaj szybki start",
+    github: "Zobacz źródła na GitHubie",
     micro: "AGPL-3.0 · Node.js ≥ 22.5 · Bez rejestracji",
   },
   footer: {
@@ -444,6 +445,7 @@ export default {
           { label: "Wnętrze OpenAdmina", href: "#inside" },
           { label: "Zgodność", href: "#compare" },
           { label: "FAQ", href: "#faq" },
+          { label: "GitHub", href: "https://github.com/JVNECZKO/openadmin", external: true },
           { label: "Licencja", href: "https://www.gnu.org/licenses/agpl-3.0.html", external: true },
         ],
       },
@@ -465,5 +467,6 @@ export default {
     skip: "Przejdź do treści",
     openMenu: "Otwórz menu",
     closeMenu: "Zamknij menu",
+    github: "OpenAdmin na GitHubie",
   },
 };

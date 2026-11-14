@@ -422,6 +422,7 @@ export default {
       "Install OpenAdmin on a fresh VPS, or take it for a spin on your laptop. It takes a minute, and it costs nothing.",
     primary: "Get OpenAdmin",
     secondary: "Read the quick start",
+    github: "View source on GitHub",
     micro: "AGPL-3.0 · Node.js ≥ 22.5 · No signup",
   },
   footer: {
@@ -444,6 +445,7 @@ export default {
           { label: "Inside OpenAdmin", href: "#inside" },
           { label: "Compatibility", href: "#compare" },
           { label: "FAQ", href: "#faq" },
+          { label: "GitHub", href: "https://github.com/JVNECZKO/openadmin", external: true },
           { label: "License", href: "https://www.gnu.org/licenses/agpl-3.0.html", external: true },
         ],
       },
@@ -465,5 +467,6 @@ export default {
     skip: "Skip to content",
     openMenu: "Open menu",
     closeMenu: "Close menu",
+    github: "OpenAdmin on GitHub",
   },
 };

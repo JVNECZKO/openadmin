@@ -1204,3 +1204,36 @@ code, pre, kbd { font-family: var(--mono); }
 @media (max-width: 720px) {
   .code-block code { font-size: 9px; line-height: 1.95; white-space: pre-wrap; overflow-wrap: anywhere; }
 }
+
+/* ---------- GitHub links ---------- */
+.github-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 35px; height: 35px; flex: none; border-radius: 50%;
+  border: 1px solid var(--line); background: rgba(255, 255, 255, 0.025);
+  color: var(--ink-2); transition: color 0.2s, background 0.2s, border-color 0.2s, transform 0.2s var(--ease);
+}
+.github-link:hover {
+  color: #fff; background: rgba(255, 255, 255, 0.07);
+  border-color: var(--line-2); transform: translateY(-1px);
+}
+.github-link svg { width: 16px; height: 16px; }
+.mobile-github {
+  display: flex; align-items: center; gap: 9px; margin-top: 18px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-2);
+}
+.mobile-github svg { width: 16px; height: 16px; color: #fff; }
+.mobile-github .ext { color: var(--faint); font-size: 10px; }
+.final-github {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 18px;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted);
+  transition: color 0.2s;
+}
+.final-github:hover { color: #fff; }
+.final-github svg { width: 14px; height: 14px; }
+.final-github span { color: var(--faint); }
+@media (max-width: 380px) {
+  .github-link { display: none; }
+}
+
