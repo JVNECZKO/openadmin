@@ -613,10 +613,23 @@
   function initAutoRefresh() {
     const control = $('[data-toggle-auto-refresh]');
     const preference = storageGet(AUTO_KEY);
-    const saved = preference === '1' && !!control;
-    const defaultOnPaths = new Set(['/admin', '/admin/users', '/admin/processes', '/admin/log-center', '/admin/logs', '/user', '/reseller']);
     const cleanPath = (location.pathname || '/').replace(/\/+$/, '') || '/';
-    const defaultOn = preference === null && !!control && defaultOnPaths.has(cleanPath);
+    /* Auto-refresh is only for overview/monitoring screens. Interactive pages
+       (terminal, file editor, wizards, installers, mail compose) must never be
+       silently replaced while the user is typing or reading command output. */
+    const autoSafePaths = new Set([
+      '/user', '/user/statistics', '/reseller', '/reseller/statistics',
+      '/admin', '/admin/users', '/admin/processes', '/admin/log-center', '/admin/logs',
+    ]);
+    const autoAllowed = autoSafePaths.has(cleanPath);
+    if (!autoAllowed && control) {
+      control.hidden = true;
+      control.setAttribute('aria-disabled', 'true');
+      control.title = 'Auto-refresh is available on overview and monitoring pages';
+    }
+    const saved = preference === '1' && !!control && autoAllowed;
+    const defaultOnPaths = new Set(['/admin', '/admin/users', '/admin/processes', '/admin/log-center', '/admin/logs', '/user', '/reseller']);
+    const defaultOn = preference === null && !!control && autoAllowed && defaultOnPaths.has(cleanPath);
     const last = sessionGet(refreshStampKey());
     if (last) showRefreshStamp(last);
     if (saved || defaultOn) {
@@ -1409,6 +1422,49 @@
     show(0, { scroll: false, focus: false });
   }
 
+
+  function initTerminal() {
+    const form = $('.term-form');
+    if (!form) return;
+    const input = $('input[name="command"]', form);
+    const term = $('#term');
+    const submit = $('button[type="submit"]', form);
+    if (!input || !term) return;
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const command = input.value.trim();
+      if (!command) return;
+      const line = document.createElement('div');
+      line.className = 'tline tline-pending';
+      line.textContent = `$ ${command}`;
+      term.appendChild(line);
+      input.value = '';
+      if (submit) { submit.disabled = true; submit.classList.add('is-loading'); }
+      try {
+        const res = await fetch(form.action, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json', 'X-Requested-With': 'fetch' },
+          body: new URLSearchParams(new FormData(form)),
+        });
+        const data = await res.json().catch(() => ({}));
+        const out = document.createElement('div');
+        out.className = 'tline';
+        out.textContent = data.ok ? String(data.output || '(brak wyniku)').split('\n').slice(1).join('\n') : (data.error || `Błąd HTTP ${res.status}`);
+        term.appendChild(out);
+      } catch (error) {
+        const out = document.createElement('div');
+        out.className = 'tline tline-error';
+        out.textContent = `Błąd: ${error.message}`;
+        term.appendChild(out);
+      } finally {
+        if (submit) { submit.disabled = false; submit.classList.remove('is-loading'); }
+        input.focus();
+        term.scrollTop = term.scrollHeight;
+      }
+    });
+  }
+
   function init() {
     root.classList.add('is-ready');
     initSidebar();
@@ -1431,6 +1487,7 @@
     initMisc();
     initUpload();
     initWizard();
+    initTerminal();
     updateAutoRefreshUi();
 
     /* Delegated shell actions keep working for markup inserted later. */

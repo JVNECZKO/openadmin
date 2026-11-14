@@ -496,6 +496,8 @@ export function register(router) {
     if (!ctx.caps.ssh || (ctx.user.level === 'user' && !ctx.user.shell_enabled)) return ctx.redirect('/user/terminal?flash=Shell%20access%20disabled&type=error');
     const cmd = String(ctx.body.command || '').trim();
     const out = runSandboxCommand(ctx.user.username, cmd);
+    const wantsJson = String(ctx.req.headers.accept || '').includes('application/json') || String(ctx.req.headers['x-requested-with'] || '') === 'fetch';
+    if (wantsJson) return { json: { ok: true, output: `$ ${cmd}\n${out}` } };
     return ctx.redirect('/user/terminal?out=' + encodeURIComponent(`$ ${cmd}\n${out}`));
   });
 }
