@@ -222,7 +222,7 @@ export function register(router) {
             columns: [{ label: 'Kraj', render: (r) => h`<span class="cell-mono">${r.country.toUpperCase()}</span>` }, { label: 'Akcja', key: 'action' }],
             rows: listCountries(),
             actions: [{ label: 'Usuń', form: (r) => `${A}/countries/${r.country}/delete`, icon: 'trash', danger: true }],
-          }) : '<p class="small muted">Brak krajów.</p>'}`)}
+          }) : h`<p class="small muted">Brak krajów.</p>`}`)}
         ${!grey.supported ? alert('Greylisting nie jest dostępny na tym serwerze (brak rspamd/postgrey). Ustawienie nie będzie udawać, że działa.', 'info') : ''}
       `;
     }
