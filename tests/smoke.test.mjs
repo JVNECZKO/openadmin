@@ -1364,6 +1364,22 @@ test('autoconfig, autodiscover and mail client settings work', async () => {
   const page = await fetch(base + '/user/email/client-settings?address=info@example.com', { headers: { Cookie: cookie } });
   assert.equal(page.status, 200);
   assert.match(await page.text(), /993/);
+
+  const mailbox = db.get('SELECT * FROM email_accounts ORDER BY id LIMIT 1');
+  assert.ok(mailbox, 'seeded mailbox exists');
+  const setup = await fetch(`${base}/user/email/${mailbox.id}/setup`, { headers: { Cookie: cookie } });
+  assert.equal(setup.status, 200);
+  const setupHtml = await setup.text();
+  assert.match(setupHtml, /IMAP SSL/);
+  assert.match(setupHtml, /993/);
+  assert.match(setupHtml, /587/);
+  assert.match(setupHtml, /DNS poczty/);
+  const tested = await fetch(`${base}/user/email/${mailbox.id}/test`, {
+    method: 'POST', redirect: 'manual', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: (await import('../src/auth.mjs')).getSession(cookie.split('=')[1])?.session.csrf || '' }).toString(),
+  });
+  assert.equal(tested.status, 200);
+  assert.match(await tested.text(), /Test portów/);
 });
 
 test('setup wizard and health page render for the administrator', async () => {

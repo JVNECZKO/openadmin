@@ -20,6 +20,7 @@ import { registerAdminRoutes } from './routes/admin.mjs';
 import { registerApiRoutes } from './routes/api.mjs';
 import { registerLegacy } from './routes/legacy.mjs';
 import { registerCompat } from './routes/compat.mjs';
+import { registerBulkActions } from './features/bulk-actions.mjs';
 import { register as registerWebmail } from './features/webmail.mjs';
 import { APPS, status as appStatus, proxy as proxyApp, ensureStarted } from './apps.mjs';
 import { collectUsage } from './usage.mjs';
@@ -356,6 +357,8 @@ export function createApp() {
   registerCompat(router);
   registerWebmail(router);
   registerMailConfig(router);
+  registerBulkActions(router, { base: '/admin/bulk', level: 'admin' });
+  registerBulkActions(router, { base: '/reseller/bulk', level: 'reseller' });
   return router;
 }
 

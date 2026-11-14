@@ -95,6 +95,7 @@ export function navFor(level, caps = {}, opts = {}) {
     ] },
     { title: 'Zarządzanie użytkownikami', items: [
       U('r-users', 'Moi użytkownicy', '/reseller/users', 'users'),
+      U('r-bulk', 'Operacje masowe', '/reseller/bulk', 'sliders'),
       U('r-create', 'Dodaj użytkownika', '/reseller/users/create', 'plus'),
       U('r-suspended', 'Zawieszeni użytkownicy', '/reseller/users/suspended', 'alert'),
       U('r-domains', 'Domeny klientów', '/reseller/domains', 'globe'),
@@ -191,6 +192,7 @@ export function navFor(level, caps = {}, opts = {}) {
       U('a-cron', 'System Cron', '/admin/cron', 'clock'),
       U('a-bfm', 'Brute Force Monitor', '/admin/brute-force', 'shield'),
       U('a-automation', 'Automation', '/admin/automation', 'refresh'),
+      U('a-bulk', 'Bulk actions', '/admin/bulk', 'sliders'),
     ] },
   ];
 

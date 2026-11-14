@@ -2,7 +2,7 @@
 // catch-all, mailing lists, spam filters and usage reporting.
 import { all, get, run, nowIso, hashPassword, audit, setting } from '../db.mjs';
 import { limitsFor } from '../auth.mjs';
-import { html as h, isEmail, formatBytes, formatDate, randomPassword } from '../util.mjs';
+import { html as h, raw, isEmail, formatBytes, formatDate, randomPassword } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, table, btn, badge, alert, emptyState, kvList, progress } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
@@ -13,6 +13,8 @@ import { apply } from '../apply.mjs';
 import { dkimStatus, generateDkim, deployDkim } from '../dkim.mjs';
 import { systemProvider } from '../providers/index.mjs';
 import { runHooks } from '../plugins.mjs';
+import { qrSvg } from '../qr.mjs';
+import net from 'node:net';
 
 const MAIL_DOMAIN = (ctx, name) => domainFor(ctx.user, name) || visibleDomains(ctx.user)[0];
 
@@ -26,6 +28,7 @@ function mailNav(ctx, active) {
     <a class="tab ${active === 'lists' ? 'active' : ''}" href="/user/email/lists">Mailing lists</a>
     <a class="tab ${active === 'spam' ? 'active' : ''}" href="/user/email/spam">Spam filters</a>
     <a class="tab ${active === 'usage' ? 'active' : ''}" href="/user/email/usage">Usage</a>
+    <a class="tab ${active === 'setup' ? 'active' : ''}" href="/user/email/setup">Setup guide</a>
   </div>`;
 }
 
@@ -57,6 +60,7 @@ export function register(router) {
         actions: [
           { label: 'Edit', href: (r) => `/user/email?domain=${encodeURIComponent(r.domain)}&edit=${r.id}`, icon: 'edit' },
           { label: 'Webmail', href: (r) => `/webmail?email=${encodeURIComponent(r.local_part + '@' + r.domain)}`, icon: 'mail' },
+          { label: 'Setup', href: (r) => `/user/email/${r.id}/setup`, icon: 'settings' },
           { label: 'Suspend / enable', form: (r) => `/user/email/${r.id}/toggle`, icon: 'lock' },
           { label: 'Delete', form: (r) => `/user/email/${r.id}/delete`, confirm: 'Delete this mailbox and all its messages?', icon: 'trash', danger: true },
         ],
@@ -607,6 +611,83 @@ export function register(router) {
       })}`;
     return page(ctx, { title: 'Email Usage', subtitle: 'Mailbox storage and quotas', body });
   });
+
+  /* --------------------------------------------------------- mail onboarding */
+  function dnsAuthHealth(domain) {
+    const rows = all('SELECT name, type, value FROM dns_records WHERE domain_id = (SELECT id FROM domains WHERE name = ?)', domain);
+    const txt = rows.filter((r) => r.type === 'TXT');
+    const spf = txt.some((r) => r.name === '@' && String(r.value).includes('v=spf1'));
+    const dmarc = txt.some((r) => String(r.name).includes('_dmarc') && String(r.value).includes('v=DMARC1'));
+    const dkim = txt.some((r) => String(r.name).includes('_domainkey')) || !!dkimStatus(domain).exists;
+    return { spf, dmarc, dkim, zoneRecords: rows.length };
+  }
+
+  function setupPage(ctx, account, extra = '') {
+    const host = `mail.${account.domain}`;
+    const autoUrl = `https://${ctx.req.headers.host || 'panel'}/mail/config-v1.1.xml?email=${encodeURIComponent(`${account.local_part}@${account.domain}`)}`;
+    const qr = qrSvg(autoUrl, { size: 180 });
+    const auth = dnsAuthHealth(account.domain);
+    return page(ctx, {
+      title: 'Mail setup guide',
+      subtitle: `${account.local_part}@${account.domain}`,
+      body: h`${mailNav(ctx, 'setup')}
+        ${extra ? alert(extra, extra.includes('✅') ? 'ok' : 'warn') : ''}
+        <div class="grid grid-2">
+          ${card('Server settings', h`${kvList([
+            ['E-mail', `${account.local_part}@${account.domain}`],
+            ['Username', `${account.local_part}@${account.domain}`],
+            ['IMAP host', host],
+            ['IMAP SSL', '993 (SSL/TLS)'],
+            ['IMAP STARTTLS', '143'],
+            ['SMTP host', host],
+            ['SMTP submission', '587 (STARTTLS)'],
+            ['SMTP SSL', '465 (SSL/TLS)'],
+            ['Webmail', h`<a class="link" href="/webmail?email=${encodeURIComponent(`${account.local_part}@${account.domain}`)}">Otwórz webmail</a>`],
+          ])}<p class="small muted mt-12">Hasło to hasło skrzynki ustawione w panelu. Nie wysyłamy go e-mailem.</p>`)}
+          ${card('Autokonfiguracja', h`<p class="small muted">Klient poczty może pobrać ustawienia automatycznie z tego adresu (Thunderbird / Outlook / Apple Mail).</p>
+            <pre class="code-block small">${autoUrl}</pre>
+            ${qr ? h`<div style="text-align:center">${raw(qr)}<p class="small muted">Zeskanuj kod, aby otworzyć autokonfigurację.</p></div>` : ''}
+            <form method="post" action="/user/email/${account.id}/test" class="mt-12"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary btn-sm" type="submit">Test połączenia IMAP/SMTP</button></form>`)}
+        </div>
+        ${card('DNS poczty', h`<div class="stack">
+          <div class="spread"><span>SPF</span>${badge(auth.spf ? 'opublikowany' : 'brak rekordu', auth.spf ? 'ok' : 'warn', { dot: true })}</div>
+          <div class="spread"><span>DMARC</span>${badge(auth.dmarc ? 'opublikowany' : 'brak rekordu', auth.dmarc ? 'ok' : 'warn', { dot: true })}</div>
+          <div class="spread"><span>DKIM</span>${badge(auth.dkim ? 'klucz opublikowany' : 'brak klucza', auth.dkim ? 'ok' : 'warn', { dot: true })}</div>
+          <p class="small muted">Rekordów w strefie: ${auth.zoneRecords}. Braki uzupełnisz w DNS; panel pokazuje realny stan strefy, nie obietnicę.</p>
+          <a class="link" href="/user/dns?domain=${encodeURIComponent(account.domain)}">Otwórz DNS domeny →</a>
+        </div>`)}`,
+    });
+  }
+
+  router.get('/user/email/setup', (ctx) => {
+    const rows = all(`SELECT e.* FROM email_accounts e JOIN domains d ON d.id = e.domain_id
+      WHERE d.user_id = ? ORDER BY e.domain, e.local_part LIMIT 100`, ctx.user.id);
+    if (!rows.length) return ctx.redirect('/user/email');
+    const selected = rows.find((r) => String(r.id) === String(ctx.query.id)) || rows[0];
+    return setupPage(ctx, selected);
+  });
+
+  router.get('/user/email/:id/setup', (ctx) => {
+    const account = get(`SELECT e.* FROM email_accounts e JOIN domains d ON d.id = e.domain_id
+      WHERE e.id = ? AND d.user_id = ?`, Number(ctx.params.id), ctx.user.id);
+    if (!account) return ctx.redirect('/user/email?flash=Mailbox%20not%20found&type=error');
+    return setupPage(ctx, account);
+  });
+
+  router.post('/user/email/:id/test', (ctx) => {
+    const account = get(`SELECT e.* FROM email_accounts e JOIN domains d ON d.id = e.domain_id
+      WHERE e.id = ? AND d.user_id = ?`, Number(ctx.params.id), ctx.user.id);
+    if (!account) return ctx.redirect('/user/email?flash=Mailbox%20not%20found&type=error');
+    const probe = (port) => new Promise((resolve) => {
+      const socket = net.connect({ host: '127.0.0.1', port, timeout: 1200 });
+      socket.once('connect', () => { socket.destroy(); resolve(true); });
+      socket.once('timeout', () => { socket.destroy(); resolve(false); });
+      socket.once('error', () => resolve(false));
+    });
+    return Promise.all([probe(1143), probe(25)]).then(([imap, smtp]) => setupPage(ctx, account,
+      `Test portów: IMAP ${imap ? '✅ otwarty' : '❌ zamknięty'}, SMTP ${smtp ? '✅ otwarty' : '❌ zamknięty'}. To test dostępności usług, nie weryfikacja hasła.`));
+  });
+
 
 }
 
