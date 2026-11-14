@@ -568,6 +568,7 @@ export function register(router) {
       if (check !== full) throw new Error('Ścieżka docelowa zmieniła się podczas uploadu.');
       fs.renameSync(temp, full);
       fs.chmodSync(full, 0o644);
+      systemProvider().chownUser(ctx.user.username);
     } catch (error) {
       return { status: 403, json: { ok: false, code: 'write_failed', error: error.message } };
     }
