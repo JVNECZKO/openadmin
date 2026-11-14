@@ -12,6 +12,7 @@ import { sendMail, mtaStatus } from '../mta.mjs';
 import { systemProvider } from '../providers/index.mjs';
 import { syncMaildirs } from '../maildir.mjs';
 import { checkDisk } from '../quota.mjs';
+import { hashSessionToken } from '../auth.mjs';
 
 const COOKIE = 'OA_WEBMAIL';
 const FOLDERS = ['INBOX', 'Drafts', 'Sent', 'Trash'];
@@ -19,10 +20,19 @@ const TTL_HOURS = 8;
 
 function mailSession(token) {
   if (!token) return null;
-  const row = get('SELECT * FROM webmail_sessions WHERE token = ?', token);
+  const hash = hashSessionToken(token);
+  let row = get('SELECT * FROM webmail_sessions WHERE token = ?', hash);
+  if (!row) {
+    // One-time migration for sessions created before token hashing.
+    row = get('SELECT * FROM webmail_sessions WHERE token = ?', token);
+    if (row) {
+      run('UPDATE webmail_sessions SET token = ? WHERE token = ?', hash, token);
+      row = { ...row, token: hash };
+    }
+  }
   if (!row) return null;
   if (new Date(row.expires_at).getTime() < Date.now()) {
-    run('DELETE FROM webmail_sessions WHERE token = ?', token);
+    run('DELETE FROM webmail_sessions WHERE token = ?', hash);
     return null;
   }
   const account = get('SELECT * FROM email_accounts WHERE local_part || char(64) || domain = ?', row.mailbox);
@@ -33,12 +43,12 @@ function mailSession(token) {
 function createSession(mailbox) {
   const token = crypto.randomBytes(28).toString('hex');
   const expires = new Date(Date.now() + TTL_HOURS * 3600 * 1000).toISOString();
-  run('INSERT INTO webmail_sessions(token, mailbox, created_at, expires_at) VALUES(?,?,?,?)', token, mailbox, nowIso(), expires);
+  run('INSERT INTO webmail_sessions(token, mailbox, created_at, expires_at) VALUES(?,?,?,?)', hashSessionToken(token), mailbox, nowIso(), expires);
   return token;
 }
 
 function cookieFor(token) {
-  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${TTL_HOURS * 3600}${config.https ? '; Secure' : ''}`;
+  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${TTL_HOURS * 3600}${config.https ? '; Secure' : ''}`;
 }
 
 function attachmentDir() {
@@ -360,7 +370,7 @@ export function register(router) {
 
   router.get('/webmail/logout', (ctx) => {
     const token = ctx.cookies[COOKIE];
-    if (token) run('DELETE FROM webmail_sessions WHERE token = ?', token);
+    if (token) run('DELETE FROM webmail_sessions WHERE token = ?', hashSessionToken(token));
     ctx.res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; Max-Age=0`);
     return ctx.redirect('/webmail');
   });

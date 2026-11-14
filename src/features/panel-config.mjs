@@ -42,7 +42,7 @@ export function register(router) {
           field({ name: 'alias', label: 'Alias panelu', value: n.alias }),
           field({ name: 'enduserPort', label: 'Port enduser (planowany)', type: 'number', value: n.enduserPort }),
         ], { action: `${A}/network`, csrf: ctx.csrf, submit: 'Zapisz sieć' }))}
-        <form method="post" action="${A}/restart"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger" type="submit" onclick="return confirm('Zrestartować panel? Połączenie zostanie przerwane.')">Restart panelu</button></form>
+        <form method="post" action="${A}/restart"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger" type="submit" data-confirm="Zrestartować panel? Połączenie zostanie przerwane.">Restart panelu</button></form>
         ${alert('Zmiana portu wymaga restartu. Alias wymaga zewnętrznego reverse proxy/SNI; panel zapisuje ustawienie, ale sam nie tworzy vhosta dla aliasu.', 'warn')}
       ` : ''}
       ${tab === 'export' ? h`

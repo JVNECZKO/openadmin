@@ -1,4 +1,5 @@
 // Response helpers shared by route modules.
+import crypto from 'node:crypto';
 import { html as h, raw } from '../util.mjs';
 import { renderPage } from './layout.mjs';
 import { navFor } from './nav.mjs';
@@ -6,7 +7,10 @@ import { enhanceFormA11y } from './a11y.mjs';
 
 export function sendHtml(res, markup, status = 200) {
   const rawBody = markup && markup.__raw ? markup.value : String(markup ?? '');
-  const body = enhanceFormA11y(rawBody);
+  const nonce = crypto.randomBytes(18).toString('base64');
+  let body = enhanceFormA11y(rawBody);
+  body = body.replace(/<script\b(?![^>]*\bnonce=)/gi, `<script nonce="${nonce}"`);
+  res.setHeader('Content-Security-Policy', `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'nonce-${nonce}'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'`);
   res.writeHead(status, {
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),

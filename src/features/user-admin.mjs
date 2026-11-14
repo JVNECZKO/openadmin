@@ -460,7 +460,7 @@ export function userDetailPage(ctx, { path, target }) {
     ${provision ? card('Wynik provisioningu konta', h`${renderAccountResult(provision, { title: 'Kroki wykonania' })}`,
     { sub: `${formatDate(provision.at, { time: true })} · ${provision.rolledBack ? 'rollback wykonany' : provision.ok ? 'sukces' : 'częściowy wynik'}` }) : ''}`;
   return page(ctx, { title: target.username, subtitle: `${target.level} account · ${target.email || ''}`, body, actions: [
-    btn('Sign in as user', { href: `${path}/${target.id}/login-as`, variant: 'secondary', icon: 'logout', attrs: 'onclick="return confirm(\'Open this account in a new session?\')"' }),
+    btn('Sign in as user', { href: `${path}/${target.id}/login-as`, variant: 'secondary', icon: 'logout', attrs: 'data-confirm="Open this account in a new session?"' }),
   ] });
 }
 

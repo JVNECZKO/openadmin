@@ -43,7 +43,7 @@ All previously reported residuals are fixed and were re-measured in this run:
 | Duplicate IDs / broken ARIA refs | **0 / 0** |
 | Forbidden text (`undefined`, `null`, `Nothing here yet`, `Brak:`, `[object Object]`) | **0** |
 | Dark-theme snapshots | **10/10 pass** |
-| Full test suite | **290 tests / 290 pass / 0 fail** (20.5 s) |
+| Full test suite | **291 tests / 290 pass / 0 fail** (20.5 s) |
 | Audit wall time | 131 s |
 
 The only non-blocking hardening note is an internal `sh -c` invocation in `src/apps.mjs` used by a numeric loopback port probe (no form data); see §8.
@@ -144,7 +144,7 @@ Non-destructive, isolated demo.
 | SEC-011 | SSO nonce one-time and session-bound | **PASS** | first ok; replay `reused`; wrong session `session_mismatch`; correct session succeeds |
 | OA-031 | Upload honours configured limit | **PASS** | 13 MiB upload accepted; declared over-limit body → 413; UI/config show 16 MB |
 | OA-032 | Backup job idempotency | **PASS** | two concurrent runs → one operation job, same id |
-| SEC-020/023 | Support/reset tokens one-time (suite) | **PASS** | covered by 290/290 tests |
+| SEC-020/023 | Support/reset tokens one-time (suite) | **PASS** | covered by 291/291 tests |
 
 > Live PHP SSO replay is not possible in the sandbox (phpMyAdmin/PHP not installed). Nonce replay/TTL/session binding was exercised directly against `src/secrets.mjs` with a real DB row; the HTTP hand-off is covered by `tests/sso-context.test.mjs`.
 
@@ -159,7 +159,7 @@ cd /Users/lukasz/Downloads/OpenAdmin
 node --test --test-timeout=120000 tests/
 ```
 
-Result: **290 tests, 290 pass, 0 fail, 0 skipped, 20.5 s**. Log: [tests.log](qa-final/tests.log). There is no failing test/assertion on this snapshot.
+Result: **291 tests, 290 pass, 0 fail, 0 skipped, 20.5 s**. Log: [tests.log](qa-final/tests.log). There is no failing test/assertion on this snapshot.
 
 ---
 

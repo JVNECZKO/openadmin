@@ -59,20 +59,20 @@ export function register(router) {
       ` : ''}
       ${tab === 'ini' ? h`
         ${card('Wersja', h`<form method="get" action="${A}" class="row"><input type="hidden" name="tab" value="ini">
-          <select name="version" onchange="this.form.submit()">${vers.map((x) => h`<option ${x === v ? 'selected' : ''}>${x}</option>`)}</select></form>`)}
+          <select name="version" data-auto-submit>${vers.map((x) => h`<option ${x === v ? 'selected' : ''}>${x}</option>`)}</select></form>`)}
         ${card('INI · PHP ' + v, form(INI_FIELDS.map(([key, label]) => field({ name: key, label, value: ini[key]?.local_value ?? ini[key] ?? '', full: ['display_errors', 'log_errors', 'allow_url_fopen', 'allow_url_include', 'opcache.enable'].includes(key) ? false : false })), { action: `${A}/ini?version=${v}`, csrf: ctx.csrf, submit: 'Zapisz INI' }), { sub: 'Tylko bezpieczna lista dyrektyw; zapis waliduje php-fpm -t i przeładowuje usługę.' })}
         ${managedIni(v) ? card('Zarządzany plik', h`<pre class="code-block">${managedIni(v)}</pre>`) : ''}
       ` : ''}
       ${tab === 'extensions' ? h`
         ${card('Wersja', h`<form method="get" action="${A}" class="row"><input type="hidden" name="tab" value="extensions">
-          <select name="version" onchange="this.form.submit()">${vers.map((x) => h`<option ${x === v ? 'selected' : ''}>${x}</option>`)}</select></form>`)}
+          <select name="version" data-auto-submit>${vers.map((x) => h`<option ${x === v ? 'selected' : ''}>${x}</option>`)}</select></form>`)}
         ${card('Rozszerzenia PHP ' + v, h`<div class="grid grid-3">${extensions(v).map((ext) => h`<div class="service-row"><span class="service-dot on"></span><span class="cell-mono">${ext}</span>
           <form method="post" action="${A}/extensions?version=${v}" class="inline" style="margin-left:auto"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="ext" value="${ext}"><input type="hidden" name="enabled" value="0"><button class="btn btn-ghost btn-sm" type="submit">Wyłącz</button></form></div>`)}</div>
           <p class="small muted mt-12">Lista pokazuje aktywne rozszerzenia. Wyłączanie wymaga phpdismod i może wymagać ponownego uruchomienia FPM.</p>`, { padded: true })}
       ` : ''}
       ${tab === 'fpm' ? h`
         ${card('Konto', h`<form method="get" action="${A}" class="row"><input type="hidden" name="tab" value="fpm">
-          <select name="user" onchange="this.form.submit()">${users.map((u) => h`<option ${u.username === user ? 'selected' : ''}>${u.username}</option>`)}</select></form>`)}
+          <select name="user" data-auto-submit>${users.map((u) => h`<option ${u.username === user ? 'selected' : ''}>${u.username}</option>`)}</select></form>`)}
         ${user ? card('Pool FPM · ' + user, form(FPM_FIELDS.map(([key, label]) => field({
           name: key, label, value: fpmSettings(user)[key] ?? '',
           type: key === 'pm' ? 'select' : 'text',

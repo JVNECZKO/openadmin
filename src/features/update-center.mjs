@@ -141,7 +141,7 @@ function jobDetail(ctx, job) {
         ['Błąd', job.error || '—'],
       ])}
       ${['queued', 'running', 'cancelling'].includes(job.status) ? h`<div class="row mt-18">
-        <form method="post" action="${A}/jobs/${job.id}/cancel" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger btn-sm" type="submit" onclick="return confirm('Anulować zadanie? Operacja zakończy się po bezpiecznym punkcie kontrolnym.')">Anuluj</button></form>
+        <form method="post" action="${A}/jobs/${job.id}/cancel" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger btn-sm" type="submit" data-confirm="Anulować zadanie? Operacja zakończy się po bezpiecznym punkcie kontrolnym.">Anuluj</button></form>
       </div>` : ''}
       ${job.retryable ? h`<div class="row mt-18">
         <form method="post" action="${A}/jobs/${job.id}/retry" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary btn-sm" type="submit">Ponów</button></form>
@@ -214,7 +214,7 @@ export function register(router) {
       ${r.verification && !r.verification.ok ? alert(r.verification.error, 'error') : ''}
       ${r.compatibility?.errors?.length ? alert(r.compatibility.errors.join('; '), 'error') : ''}
       ${r.notes ? h`<pre class="code-block small mt-12">${String(r.notes).slice(0, 4000)}</pre>` : ''}
-      <div class="row mt-18"><a class="btn btn-primary" href="${A}">Wróć</a>${r.canApply && r.update ? h`<form method="post" action="${A}/panel/apply" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger" type="submit" onclick="return confirm('Zastosować podpisane wydanie ${r.latest}? Zostanie wykonany backup, restart i smoke test; przy błędzie nastąpi automatyczny rollback.')">Zastosuj ${r.latest}</button></form>` : ''}</div>`)}`;
+      <div class="row mt-18"><a class="btn btn-primary" href="${A}">Wróć</a>${r.canApply && r.update ? h`<form method="post" action="${A}/panel/apply" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger" type="submit" data-confirm="Zastosować podpisane wydanie ${r.latest}? Zostanie wykonany backup, restart i smoke test; przy błędzie nastąpi automatyczny rollback.">Zastosuj ${r.latest}</button></form>` : ''}</div>`)}`;
     return page(ctx, { title: 'Aktualizacje panelu', subtitle: r.latest, body });
   });
 
@@ -266,7 +266,7 @@ export function register(router) {
       rows: r.packages || [],
       empty: r.simulated ? 'Sandbox — brak pakietów OS.' : 'Brak aktualizacji.',
     }), { padded: false })}
-      ${r.packages?.length ? h`<form method="post" action="${A}/os/apply" class="mt-18"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger" type="submit" onclick="return confirm('Zaktualizować pakiety OS?')">Zainstaluj aktualizacje</button></form>` : ''}
+      ${r.packages?.length ? h`<form method="post" action="${A}/os/apply" class="mt-18"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger" type="submit" data-confirm="Zaktualizować pakiety OS?">Zainstaluj aktualizacje</button></form>` : ''}
       <div class="row mt-18"><a class="btn btn-primary" href="${A}?tab=os">Wróć</a></div>`;
     return page(ctx, { title: 'Aktualizacje OS', subtitle: 'Dry-run', body });
   });

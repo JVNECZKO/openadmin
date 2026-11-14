@@ -70,7 +70,7 @@ export function register(router) {
       ${tab === 'cleanup' ? h`
         ${card('Cleanup DNS', h`<p class="small muted">Wykrywa duplikaty rekordów i puste wartości, przebudowuje strefy. Dry-run nic nie zmienia.</p>
           <div class="row"><form method="post" action="${A}/cleanup" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary" type="submit">Dry-run</button></form>
-          <form method="post" action="${A}/cleanup/apply" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger" type="submit" onclick="return confirm('Usunąć duplikaty i przebudować strefy?')">Wyczyść</button></form></div>`)}
+          <form method="post" action="${A}/cleanup/apply" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger" type="submit" data-confirm="Usunąć duplikaty i przebudować strefy?">Wyczyść</button></form></div>`)}
         ${alert('DNS cluster jest kolejnym etapem — nie udajemy klastra, jeśli nie ma skonfigurowanych węzłów.', 'info')}
       ` : ''}`;
     return page(ctx, { title: 'DNS Operations', subtitle: 'TTL, MX, szablony i cleanup', body, wide: true });

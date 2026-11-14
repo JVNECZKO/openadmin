@@ -1506,9 +1506,22 @@
     initTerminal();
     updateAutoRefreshUi();
 
+    document.addEventListener('change', (event) => {
+      if (event.target.matches('[data-auto-submit]') && event.target.form) event.target.form.requestSubmit();
+    });
+
     /* Delegated shell actions keep working for markup inserted later. */
     document.addEventListener('click', (event) => {
       const target = event.target;
+      const confirmEl = target.closest('[data-confirm]');
+      if (confirmEl && confirmEl.tagName !== 'FORM' && confirmEl.dataset.oaConfirmed !== '1') {
+        if (!window.confirm(confirmEl.getAttribute('data-confirm') || 'Are you sure?')) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+        confirmEl.dataset.oaConfirmed = '1';
+      }
       if (target.closest('[data-sidebar-open]')) { sidebarOpen(); return; }
       if (target.closest('[data-sidebar-close]')) { sidebarClose(); return; }
       if (target.closest('[data-menu-toggle]')) {

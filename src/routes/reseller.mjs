@@ -157,7 +157,7 @@ function iconLink(href, iconName, label) {
 function postIcon(ctx, action, iconName, label, confirmText = '') {
   return h`<form method="post" action="${action}" class="inline">
     <input type="hidden" name="_csrf" value="${ctx.csrf}">
-    <button class="icon-btn" type="submit" title="${label}" aria-label="${label}" ${confirmText ? raw(`onclick="return confirm('${confirmText.replace(/'/g, "\\'")}')"`) : ''}>${icon(iconName, { size: 16 })}</button>
+    <button class="icon-btn" type="submit" title="${label}" aria-label="${label}" ${confirmText ? raw(`data-confirm="${String(confirmText).replace(/"/g, '&quot;')}"`) : ''}>${icon(iconName, { size: 16 })}</button>
   </form>`;
 }
 

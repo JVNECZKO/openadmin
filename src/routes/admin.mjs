@@ -367,14 +367,14 @@ export function registerAdminRoutes(router) {
         <thead><tr><th>PID</th><th>User</th><th>CPU %</th><th>MEM %</th><th>Command</th><th></th></tr></thead>
         <tbody>${rows.map((p) => h`<tr><td class="cell-mono">${p.pid}</td><td>${p.user}</td><td>${p.cpu.toFixed(1)}</td><td>${p.mem.toFixed(1)}</td><td class="cell-mono truncate" style="max-width:520px;display:block">${p.command}</td>
           <td class="col-actions"><div class="row-actions">
-            <form method="post" action="/admin/processes/${p.pid}/kill" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="icon-btn danger" type="submit" title="Kill" onclick="return confirm('Wysłać SIGTERM do PID ${p.pid}?')">${icon('close', { size: 16 })}</button></form>
+            <form method="post" action="/admin/processes/${p.pid}/kill" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="icon-btn danger" type="submit" title="Kill" data-confirm="Wysłać SIGTERM do PID ${p.pid}?">${icon('close', { size: 16 })}</button></form>
             <form method="post" action="/admin/processes/${p.pid}/trace" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="icon-btn" type="submit" title="Trace">${icon('eye', { size: 16 })}</button></form>
           </div></td></tr>`)}</tbody>
       </table></div>
       ${pages > 1 ? h`<div class="row mt-12"><a class="btn btn-ghost btn-sm ${pageNo <= 1 ? 'disabled' : ''}" href="/admin/processes?page=${pageNo - 1}${q ? '&q=' + encodeURIComponent(q) : ''}">← Poprzednia</a><span class="small muted">Strona ${pageNo} z ${pages}</span><a class="btn btn-ghost btn-sm ${pageNo >= pages ? 'disabled' : ''}" href="/admin/processes?page=${pageNo + 1}${q ? '&q=' + encodeURIComponent(q) : ''}">Następna →</a></div>` : ''}`, { sub: `${filtered.length} procesów${q ? ` (filtr: ${q})` : ''} · load ${os.loadavg()[0].toFixed(2)} · ${os.cpus().length} rdzeni`, padded: false })}
       ${card('Kill all by user', h`<form method="post" action="/admin/processes/user" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
         <select name="user">${[...new Set(rows.map((r) => r.user))].map((u) => h`<option>${u}</option>`)}</select>
-        <button class="btn btn-danger" type="submit" onclick="return confirm('Wysłać SIGTERM do wszystkich procesów tego użytkownika?')">Kill all</button></form>`)}
+        <button class="btn btn-danger" type="submit" data-confirm="Wysłać SIGTERM do wszystkich procesów tego użytkownika?">Kill all</button></form>`)}
       ${logs.length ? card('Process action log', table({
         columns: [{ label: 'Czas', render: (r) => formatDate(r.created_at, { time: true }) }, { label: 'Akcja', key: 'action' }, { label: 'PID', key: 'pid' }, { label: 'Użytkownik', key: 'user' }, { label: 'Wynik', key: 'result' }],
         rows: logs,
@@ -522,7 +522,7 @@ export function registerAdminRoutes(router) {
       <p class="small muted mb-18">A reboot restarts every service and drops all active sessions. This is simulated in the sandbox provider.</p>
       ${alert('All websites and mailboxes will be unavailable for 1–2 minutes.', 'warn')}
       <form method="post" action="/admin/reboot"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <button class="btn btn-danger" type="submit" onclick="return confirm('Reboot the server now?')">${icon('refresh', { size: 16 })} Reboot now</button></form>`)}`;
+        <button class="btn btn-danger" type="submit" data-confirm="Reboot the server now?">${icon('refresh', { size: 16 })} Reboot now</button></form>`)}`;
     return page(ctx, { title: 'Reboot', subtitle: 'Restart the server', body });
   });
   router.post('/admin/reboot', (ctx) => {
@@ -816,7 +816,7 @@ export function registerAdminRoutes(router) {
           <td class="col-actions"><div class="row-actions">
             <a class="icon-btn" href="${A}/dns?domain=${encodeURIComponent(d.name)}&edit=${r.id}" title="Edit">${icon('edit', { size: 16 })}</a>
             <form method="post" action="${A}/dns/${r.id}/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-            <button class="icon-btn danger" type="submit" onclick="return confirm('Delete record?')">${icon('trash', { size: 16 })}</button></form></div></td></tr>`)}</tbody>
+            <button class="icon-btn danger" type="submit" data-confirm="Delete record?">${icon('trash', { size: 16 })}</button></form></div></td></tr>`)}</tbody>
       </table></div>`, { padded: false }) : ''}
       ${d && editing ? card(`Edit record · ${editing.type} ${editing.name}`, h`<form method="post" action="${A}/dns/${editing.id}/update" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">

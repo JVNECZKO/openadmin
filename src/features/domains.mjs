@@ -781,7 +781,7 @@ export function register(router) {
             <td class="col-actions"><div class="row-actions">
               <a class="icon-btn" href="/user/dns?domain=${encodeURIComponent(d.name)}&edit=${r.id}" title="Edit">${icon('edit', { size: 16 })}</a>
               <form method="post" action="/user/dns/${r.id}/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-                <button class="icon-btn danger" type="submit" title="Delete" onclick="return confirm('Delete this record?')">${icon('trash', { size: 16 })}</button></form>
+                <button class="icon-btn danger" type="submit" title="Delete" data-confirm="Delete this record?">${icon('trash', { size: 16 })}</button></form>
             </div></td>
           </tr>`)}
           </tbody>

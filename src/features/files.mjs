@@ -412,7 +412,7 @@ export function register(router) {
                 <button class="icon-btn" type="button" data-open-modal="rename-${encodeURIComponent(f.name)}" title="Rename">${icon('tag', { size: 16 })}</button>
                 <form method="post" action="/user/files/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
                   <input type="hidden" name="path" value="${display}"><input type="hidden" name="name" value="${f.name}">
-                  <button class="icon-btn danger" type="submit" title="Delete" onclick="return confirm('Delete ${e(f.name)}?')">${icon('trash', { size: 16 })}</button></form>
+                  <button class="icon-btn danger" type="submit" title="Delete" data-confirm="Delete ${e(f.name)}?">${icon('trash', { size: 16 })}</button></form>
               </div>`}</td>
             </tr>`) : h`<tr><td colspan="5">${emptyState('This directory is empty.')}</td></tr>`}
           </tbody>
@@ -665,7 +665,7 @@ export function register(router) {
         ${card('Restore', h`<p class="small muted mb-12">Restore a previous backup over your current account. Existing files with the same name are replaced.</p>
           <form method="post" action="/user/backups/restore" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
             <select name="id">${rows.map((r) => h`<option value="${r.id}">${r.filename}</option>`)}</select>
-            <button class="btn btn-secondary" type="submit" onclick="return confirm('Restore this backup?')">Restore backup</button></form>`)}
+            <button class="btn btn-secondary" type="submit" data-confirm="Restore this backup?">Restore backup</button></form>`)}
       </div>
       ${listCard({
         title: 'Backup history', sub: `${rows.length} archive(s)`,

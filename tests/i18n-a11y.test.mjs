@@ -533,7 +533,7 @@ for (const [label, user, route] of [
 
 /* ------------------------------------------------------ app catalog state */
 function extractCatalogScript(html) {
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+  const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
   const script = scripts.find((entry) => entry.includes('data-app-card') && entry.includes('data-app-filter'));
   assert.ok(script, 'catalogue filter script must be present');
   return script;
@@ -736,4 +736,18 @@ test('catalogue tiles and installed rows label icon-only actions', async () => {
       assert.ok(html.includes(`id="${ref}"`), `missing aria-describedby target ${ref}`);
     }
   }
+});
+
+test('CSP uses a nonce and all rendered scripts carry it', async () => {
+  const cookie = await loginAs('demoadmin');
+  const { res, html } = await page('/admin', cookie);
+  const csp = res.headers.get('content-security-policy') || '';
+  assert.match(csp, /script-src 'self' 'nonce-[A-Za-z0-9+/=]+'/);
+  assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/);
+  const nonce = /script-src 'self' 'nonce-([^']+)'/.exec(csp)?.[1];
+  assert.ok(nonce, 'nonce is present');
+  const scripts = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0]);
+  assert.ok(scripts.length > 0);
+  for (const tag of scripts) assert.match(tag, new RegExp(`nonce="${nonce.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`), tag);
+  assert.doesNotMatch(html, /\son(click|change|submit|load|error)=/i, 'no inline event handlers');
 });
