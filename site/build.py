@@ -159,7 +159,7 @@ def hero_visual(c):
     <div class="browser-bar">
       <span class="browser-dots"><i></i><i></i><i></i></span>
       <span class="browser-url"><span class="url-lock">{ICONS["lock"]}</span>{c["hero"]["frame"]["url"]}</span>
-      <span class="browser-live"><i></i>live</span>
+      <span class="browser-live"><i></i>{"na żywo" if c["lang"] == "pl" else "live"}</span>
     </div>
     <div class="browser-screen">
       <img src="/assets/shots/dashboard-1440.webp?v={SHOT_VER}" srcset="/assets/shots/dashboard-900.webp?v={SHOT_VER} 900w, /assets/shots/dashboard-1440.webp?v={SHOT_VER} 1440w" sizes="(min-width: 1100px) 1100px, 92vw" width="1440" height="1150" alt="{attr(c["hero"]["frame"]["alt"])}" fetchpriority="high" decoding="async">
@@ -199,8 +199,18 @@ def tech(c):
 </section>'''
 
 
-def feature_visual(kind):
+def feature_visual(kind, lang):
+    pl = lang == "pl"
     if kind == "levels":
+        if pl:
+            return '''<div class="viz levels-viz" aria-hidden="true">
+    <div class="level-switch"><span class="on">Administrator</span><span>Reseller</span><span>Użytkownik</span></div>
+    <div class="level-rows">
+      <div class="level-row"><span class="lv-badge">A</span><div><b>Administrator</b><small>Serwer · Pakiety · Audyt</small></div><span class="lv-count">wszystko</span></div>
+      <div class="level-row"><span class="lv-badge">R</span><div><b>Reseller</b><small>Użytkownicy · Własne pakiety · IP</small></div><span class="lv-count">12</span></div>
+      <div class="level-row"><span class="lv-badge">U</span><div><b>Użytkownik</b><small>Domeny · Poczta · Pliki</small></div><span class="lv-count">48</span></div>
+    </div>
+  </div>'''
         return '''<div class="viz levels-viz" aria-hidden="true">
     <div class="level-switch"><span class="on">Admin</span><span>Reseller</span><span>User</span></div>
     <div class="level-rows">
@@ -210,16 +220,19 @@ def feature_visual(kind):
     </div>
   </div>'''
     if kind == "deps":
+        comment = "// bez zależności" if pl else "// no dependencies"
+        lock = "bez lockfile’a" if pl else "no lockfile"
+        addons = "bez natywnych dodatków" if pl else "no native addons"
         return '''<div class="viz deps-viz" aria-hidden="true">
     <div class="mini-code">
       <div class="mini-bar"><span></span><span></span><span></span><em>package.json</em></div>
-      <pre><code><span class="tok-dim">// no dependencies</span>
+      <pre><code><span class="tok-dim">''' + comment + '''</span>
 {
   <span class="tok-key">"engines"</span>: { <span class="tok-key">"node"</span>: <span class="tok-str">"&gt;=22.5.0"</span> },
   <span class="tok-key">"dependencies"</span>: <span class="tok-acc">{}</span>
 }</code></pre>
     </div>
-    <div class="deps-badges"><span>''' + ICONS["check"] + ''' no lockfile</span><span>''' + ICONS["check"] + ''' no native addons</span></div>
+    <div class="deps-badges"><span>''' + ICONS["check"] + ''' ''' + lock + '''</span><span>''' + ICONS["check"] + ''' ''' + addons + '''</span></div>
   </div>'''
     if kind == "api":
         return '''<div class="viz api-viz" aria-hidden="true">
@@ -235,24 +248,30 @@ def feature_visual(kind):
     <div class="api-pills"><span>CMD_API</span><span>REST</span><span>OpenAPI 3</span></div>
   </div>'''
     if kind == "servers":
+        detected = "wykryty" if pl else "detected"
+        generate = "wygeneruj" if pl else "generate"
         return '''<div class="viz servers-viz" aria-hidden="true">
-    <div class="server-row"><span class="s-dot on"></span><b>Nginx</b><em>nginx -t</em><span class="s-tag">detected</span></div>
-    <div class="server-row"><span class="s-dot on"></span><b>Apache</b><em>apachectl configtest</em><span class="s-tag">detected</span></div>
-    <div class="server-row"><span class="s-dot"></span><b>OpenLiteSpeed</b><em>lswsctrl</em><span class="s-tag quiet">generate</span></div>
-    <div class="server-row"><span class="s-dot"></span><b>LiteSpeed Ent.</b><em>lshttpd</em><span class="s-tag quiet">generate</span></div>
+    <div class="server-row"><span class="s-dot on"></span><b>Nginx</b><em>nginx -t</em><span class="s-tag">''' + detected + '''</span></div>
+    <div class="server-row"><span class="s-dot on"></span><b>Apache</b><em>apachectl configtest</em><span class="s-tag">''' + detected + '''</span></div>
+    <div class="server-row"><span class="s-dot"></span><b>OpenLiteSpeed</b><em>lswsctrl</em><span class="s-tag quiet">''' + generate + '''</span></div>
+    <div class="server-row"><span class="s-dot"></span><b>LiteSpeed Ent.</b><em>lshttpd</em><span class="s-tag quiet">''' + generate + '''</span></div>
   </div>'''
     if kind == "mail":
+        foot = "podpis DKIM · IMAP4rev1" if pl else "DKIM signed · IMAP4rev1"
         return '''<div class="viz mail-viz" aria-hidden="true">
     <div class="flow"><span class="flow-node">SMTP</span><i>→</i><span class="flow-node">Exim</span><i>→</i><span class="flow-node">Dovecot</span></div>
     <div class="flow"><span class="flow-node">MX</span><i>→</i><span class="flow-node">Maildir</span><i>→</i><span class="flow-node acc">Webmail</span></div>
-    <div class="mail-foot"><span class="status-dot"></span>DKIM signed · IMAP4rev1</div>
+    <div class="mail-foot"><span class="status-dot"></span>''' + foot + '''</div>
   </div>'''
     if kind == "security":
+        recovery = "TOTP + kody zapasowe" if pl else "TOTP + recovery"
+        csrf = "CSRF / żądanie" if pl else "CSRF / request"
+        audit = "dziennik audytu" if pl else "audit log"
         return '''<div class="viz sec-viz" aria-hidden="true">
     <span>''' + ICONS["check"] + ''' scrypt N=16384</span>
-    <span>''' + ICONS["check"] + ''' TOTP + recovery</span>
-    <span>''' + ICONS["check"] + ''' CSRF / request</span>
-    <span>''' + ICONS["check"] + ''' audit log</span>
+    <span>''' + ICONS["check"] + ''' ''' + recovery + '''</span>
+    <span>''' + ICONS["check"] + ''' ''' + csrf + '''</span>
+    <span>''' + ICONS["check"] + ''' ''' + audit + '''</span>
   </div>'''
     if kind == "files":
         return '''<div class="viz files-viz" aria-hidden="true">
@@ -272,7 +291,7 @@ def features(c):
         <div class="card-top"><span class="card-icon">{ICONS[card["icon"]]}</span><span class="card-kicker">{card["kicker"]}</span></div>
         <h3>{card["title"]}</h3>
         <p>{card["body"]}</p>
-        {feature_visual(card["visual"])}
+        {feature_visual(card["visual"], c["lang"])}
       </article>''')
     return f'''<section class="section features" id="features">
   <div class="container">
@@ -299,7 +318,7 @@ def screenshots(c):
           <div class="browser-bar">
             <span class="browser-dots"><i></i><i></i><i></i></span>
             <span class="browser-url"><span class="url-lock">{ICONS["lock"]}</span>openadmin.live:2222/{t["id"]}</span>
-            <span class="browser-live"><i></i>live</span>
+            <span class="browser-live"><i></i>{"na żywo" if c["lang"] == "pl" else "live"}</span>
           </div>
           <div class="browser-screen"><img src="/assets/shots/{t["image"]}-1440.webp?v={SHOT_VER}" srcset="/assets/shots/{t["image"]}-900.webp?v={SHOT_VER} 900w, /assets/shots/{t["image"]}-1440.webp?v={SHOT_VER} 1440w" sizes="(min-width: 1100px) 1120px, 92vw" width="1440" height="1150" alt="{attr(t["alt"])}" loading="lazy" decoding="async"></div>
         </figure>
@@ -367,7 +386,7 @@ def inside(c):
     <div class="inside-grid">
       <div class="inside-points">{points}</div>
       <div class="inside-terminal reveal" style="--d:.1s">
-        <div class="term-bar"><span class="browser-dots"><i></i><i></i><i></i></span><em>{c["inside"]["specLabel"]}</em><span class="term-badge">read-only</span></div>
+        <div class="term-bar"><span class="browser-dots"><i></i><i></i><i></i></span><em>{c["inside"]["specLabel"]}</em><span class="term-badge">{"tylko odczyt" if c["lang"] == "pl" else "read-only"}</span></div>
         <pre class="term-tree"><code>{tree}</code></pre>
         <div class="spec-grid">{specs}</div>
       </div>

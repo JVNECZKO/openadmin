@@ -6,7 +6,7 @@ export default {
   meta: {
     title: "OpenAdmin — darmowy panel hostingowy o otwartym kodzie",
     description:
-      "Darmowy panel hostingowy zgodny z DirectAdminem. Cztery serwery WWW, poczta, DNS, backupy i API ze 110 komendami. AGPL-3.0, bez kluczy licencyjnych.",
+      "Darmowy panel hostingowy zgodny z DirectAdminem. Cztery serwery WWW, poczta, DNS, kopie zapasowe i API ze 110 komendami. AGPL-3.0, bez kluczy licencyjnych.",
     ogTitle: "Twój serwer. Twój panel. Twoje zasady.",
     ogDescription:
       "OpenAdmin to darmowy panel hostingowy o otwartym kodzie, który naprawdę należy do Ciebie. Zgodny z DirectAdminem, bez limitów i w pełni audytowalny.",
@@ -15,7 +15,7 @@ export default {
     links: [
       { href: "#features", label: "Funkcje" },
       { href: "#screenshots", label: "Zrzuty ekranu" },
-      { href: "#inside", label: "Wnętrze" },
+      { href: "#inside", label: "Kulisy" },
       { href: "#install", label: "Instalacja" },
       { href: "#compare", label: "Porównanie" },
       { href: "#faq", label: "FAQ" },
@@ -24,7 +24,6 @@ export default {
     primaryLabel: "Główna",
     mobileLabel: "Mobilna",
     menu: "Menu",
-    close: "Zamknij menu",
     langAria: "Język",
   },
   hero: {
@@ -33,10 +32,10 @@ export default {
     titleAccent: "należy do Ciebie",
     titleAfter: ".",
     lead:
-      "OpenAdmin to darmowy panel hostingowy zgodny z DirectAdminem, zbudowany do pracy na prawdziwych serwerach. Trzy poziomy dostępu, cztery serwery WWW, poczta, DNS, backupy i API ze 110 komendami — bez kluczy licencyjnych i bez zależności npm.",
+      "OpenAdmin to darmowy, zgodny z DirectAdminem panel hostingowy do prawdziwych serwerów. Trzy poziomy dostępu, cztery serwery WWW, poczta, DNS, kopie zapasowe i API ze 110 komendami — bez kluczy licencyjnych i bez zależności npm.",
     primary: "Zainstaluj w kilka minut",
     secondary: "Zobacz panel od środka",
-    micro: ["Node.js ≥ 22.5", "Zero telemetrii", "Bez npm install"],
+    micro: ["Node.js ≥ 22.5", "Zero telemetrii", "Bez instalowania pakietów"],
     stats: [
       { value: "4", label: "serwery WWW, jeden interfejs" },
       { value: "110", label: "komend CMD_API" },
@@ -45,8 +44,8 @@ export default {
     ],
     frame: {
       url: "openadmin.live:2222",
-      alt: "Pulpit OpenAdmina z domenami, skrzynkami e-mail, transferem i limitami konta",
-      caption: "Pulpit administratora — dane na żywo, prawdziwe pliki systemowe.",
+      alt: "Pulpit użytkownika OpenAdmina z domenami, skrzynkami e-mail, transferem i limitami konta",
+      caption: "Pulpit użytkownika — dane na żywo, prawdziwe pliki systemowe.",
     },
     chipLabels: ["zależności npm", "komend API", "bez opłat"],
   },
@@ -61,7 +60,7 @@ export default {
     eyebrow: "Co jest w środku",
     title: "Kompletny panel, nie demo.",
     lead:
-      "Każdy ekran zapisuje prawdziwe pliki: strefy BIND, skrzynki Maildir, vhosty, crontaby i certyfikaty TLS. Panel jest produktem — nic nie zostało schowane za płatnym progiem.",
+      "Każdy ekran zapisuje dane w prawdziwych plikach: strefy BIND, skrzynki Maildir, konfiguracje vhostów, zadania cron i certyfikaty TLS. Panel to produkt — nic nie jest ukryte za dodatkową opłatą.",
     cards: [
       {
         id: "levels",
@@ -70,7 +69,7 @@ export default {
         kicker: "Model dostępu",
         title: "Trzy poziomy. Jedno logowanie.",
         body:
-          "Admin ⊃ Reseller ⊃ Użytkownik, a limity pakietów są egzekwowane zarówno w interfejsie, jak i w API. Przełączasz poziom z panelu bocznego — bez drugiego konta i drugiego panelu.",
+          "Administrator ⊃ Reseller ⊃ Użytkownik, a limity pakietów obowiązują zarówno w interfejsie, jak i w API. Poziom zmieniasz z panelu bocznego — bez drugiego konta i drugiego panelu.",
         visual: "levels",
       },
       {
@@ -90,17 +89,17 @@ export default {
         kicker: "Zgodność",
         title: "DNA DirectAdmina.",
         body:
-          "Wszystkie 110 opublikowanych komend <code>CMD_API_*</code> odpowiadają w znanym formacie <code>error=0&amp;list[]</code>. Twoje skrypty rozliczeniowe i provisioningowe już go znają.",
+          "Wszystkie 110 opublikowanych komend <code>CMD_API_*</code> odpowiadają w znanym formacie <code>error=0&amp;list[]</code>. Twoje skrypty rozliczeniowe i automatyzujące wdrożenia już go znają.",
         visual: "api",
       },
       {
         id: "servers",
         span: "lg",
         icon: "server",
-        kicker: "Stack WWW",
+        kicker: "Serwery WWW",
         title: "Cztery serwery WWW, jeden ekran.",
         body:
-          "Nginx, Apache, OpenLiteSpeed i LiteSpeed Enterprise. Wykryj stack, wygeneruj vhost, zwaliduj, wdróż i przeładuj — bez ręcznego pisania konfiguracji.",
+          "Nginx, Apache, OpenLiteSpeed i LiteSpeed Enterprise. Panel wykrywa serwer, generuje vhost, sprawdza konfigurację, wdraża ją i przeładowuje usługę — bez ręcznego pisania plików.",
         visual: "servers",
       },
       {
@@ -108,9 +107,9 @@ export default {
         span: "sm",
         icon: "mail",
         kicker: "Poczta",
-        title: "Poczta, która naprawdę wychodzi.",
+        title: "Poczta, która naprawdę wychodzi z serwera.",
         body:
-          "Skrzynki, limity, przekierowania, autorespondery, catch-all, filtry spamu, webmail, IMAP i prawdziwa dostawa przez MX.",
+          "Skrzynki i limity, przekierowania, automatyczne odpowiedzi, catch-all, filtry antyspamowe, webmail, IMAP i prawdziwa dostawa przez MX.",
         visual: "mail",
       },
       {
@@ -120,7 +119,7 @@ export default {
         kicker: "Bezpieczeństwo",
         title: "Bezpieczny domyślnie.",
         body:
-          "Hasła scrypt, TOTP, tokeny CSRF, limitowanie logowań, menedżer plików w jailu i pełny dziennik audytu.",
+          "Hasła hashowane scrypt, uwierzytelnianie dwuskładnikowe TOTP, tokeny CSRF, ograniczanie liczby logowań, menedżer plików ograniczony do katalogu konta i pełny dziennik audytu.",
         visual: "security",
       },
       {
@@ -130,7 +129,7 @@ export default {
         kicker: "Własność",
         title: "Wszystko należy do Ciebie.",
         body:
-          "Strefy BIND, backupy tar.gz, certyfikaty OpenSSL, crontaby i unity systemd. Zwykłe pliki, nie zamknięta baza danych.",
+          "Strefy BIND, kopie zapasowe tar.gz, certyfikaty OpenSSL, zadania cron i jednostki systemd. Zwykłe pliki, a nie zamknięta baza danych.",
         visual: "files",
       },
     ],
@@ -148,17 +147,17 @@ export default {
         kicker: "Poziom użytkownika",
         title: "Poranna odprawa",
         body:
-          "Usługi, zużycie, domeny i zgłoszenia na jednym ekranie. Limity wynikają z pakietu konta, a nie z zahardkodowanego menu.",
+          "Usługi, zużycie, domeny i zgłoszenia na jednym ekranie. Limity wynikają z pakietu konta, a nie z menu zapisanego na stałe.",
         image: "dashboard",
         alt: "Pulpit użytkownika OpenAdmina z wykresem transferu, listą domen i limitami konta",
       },
       {
         id: "admin",
-        label: "Admin",
+        label: "Administrator",
         kicker: "Poziom administratora",
         title: "Cały serwer na jednym ekranie",
         body:
-          "Użytkownicy, resellerzy, usługi, transfer i otwarte zgłoszenia. Restart, logi i podszycie się pod konto bez wychodzenia z panelu.",
+          "Użytkownicy, resellerzy, usługi, transfer i otwarte zgłoszenia. Restart, logi i logowanie na konto użytkownika bez wychodzenia z panelu.",
         image: "admin",
         alt: "Pulpit administratora OpenAdmina z przeglądem serwera i statusem usług",
       },
@@ -168,7 +167,7 @@ export default {
         kicker: "Poczta",
         title: "Od skrzynki do webmaila",
         body:
-          "Twórz skrzynki z limitami, ustaw przekierowania i autorespondery, a potem otwórz wbudowany webmail jednym kliknięciem.",
+          "Twórz skrzynki z limitami, ustawiaj przekierowania i automatyczne odpowiedzi, a potem otwieraj wbudowany webmail jednym kliknięciem.",
         image: "email",
         alt: "Ekran poczty w OpenAdminie ze skrzynkami i limitami",
       },
@@ -176,9 +175,9 @@ export default {
         id: "webserver",
         label: "Serwer WWW",
         kicker: "Infrastruktura",
-        title: "Cztery stacki, poprawnie generowane",
+        title: "Cztery serwery WWW, poprawnie skonfigurowane",
         body:
-          "Wykryj, co jest zainstalowane, wygeneruj vhost dla domeny, sprawdź nawiasy i dyrektywy, wdróż i przeładuj usługę.",
+          "Panel wykrywa, co jest zainstalowane, generuje vhost dla domeny, sprawdza składnię, wdraża konfigurację i przeładowuje usługę.",
         image: "webserver",
         alt: "Ekran serwera WWW w OpenAdminie z opcjami Nginx, Apache i LiteSpeed",
       },
@@ -188,7 +187,7 @@ export default {
         kicker: "Dane",
         title: "Prawdziwa baza, nie atrapa",
         body:
-          "Połącz się z działającym MariaDB: przeglądaj bazy i konta, twórz i usuwaj, uruchamiaj SQL z konsoli.",
+          "Połącz się z działającym MariaDB: przeglądaj bazy i konta, twórz je i usuwaj, uruchamiaj zapytania SQL z konsoli.",
         image: "mariadb",
         alt: "Ekran MariaDB w OpenAdminie z bazami i konsolą SQL",
       },
@@ -196,9 +195,9 @@ export default {
         id: "files",
         label: "Pliki",
         kicker: "System plików",
-        title: "Menedżer plików w jailu",
+        title: "Menedżer plików z ograniczeniem do konta",
         body:
-          "Przeglądaj, wgrywaj, zmieniaj nazwy, edytuj inline i pobieraj archiwa — każda ścieżka jest kanonizowana i zamknięta w katalogu domowym konta.",
+          "Przeglądaj, wgrywaj, zmieniaj nazwy, edytuj bezpośrednio i pobieraj archiwa — każda ścieżka jest normalizowana i ograniczona do katalogu domowego konta.",
         image: "files",
         alt: "Menedżer plików OpenAdmina z katalogiem domowym konta",
       },
@@ -206,61 +205,61 @@ export default {
   },
   manifesto: {
     eyebrow: "Licencja to funkcja",
-    quote: "Nic do kupienia. Nic do aktywowania. Nic za paywallem.",
+    quote: "Nic do kupienia. Nic do aktywowania. Nic za dodatkową opłatą.",
     body:
-      "OpenAdmin jest na licencji AGPL-3.0. Uruchom go na jednym serwerze albo na stu. Czytaj każdą linię, forkuj, poprawiaj, wdrażaj. Nie ma serwera licencji, limitu kont ani telefonowania do domu.",
+      "OpenAdmin jest dostępny na licencji AGPL-3.0. Uruchom go na jednym serwerze albo na stu. Czytaj każdą linię, twórz własne wersje, poprawiaj, wdrażaj. Nie ma serwera licencji, limitu kont ani wysyłania danych na zewnątrz.",
     principles: [
-      { title: "Darmowy na zawsze", body: "Bez zegara triala, bez rozliczania stanowisk, bez przycisku „Pro”." },
-      { title: "Najpierw źródło", body: "Panel to czytelny JavaScript, od początku do końca." },
-      { title: "Bez uzależnienia", body: "Strefy, poczta, backupy i baza zostają zwykłymi plikami." },
+      { title: "Darmowy na zawsze", body: "Bez okresu próbnego, bez opłat za stanowiska, bez przycisku „Pro”." },
+      { title: "Najpierw kod źródłowy", body: "Panel to czytelny JavaScript, od początku do końca." },
+      { title: "Bez uzależnienia", body: "Strefy, poczta, kopie zapasowe i baza zostają zwykłymi plikami." },
     ],
   },
   compare: {
     eyebrow: "Zgodność z DirectAdminem",
-    title: "Ta sama pamięć mięśniowa. Inna licencja.",
+    title: "Te same nawyki. Inna licencja.",
     lead:
-      "Jeśli Twój zespół zna DirectAdmina, zna już OpenAdmina: te same poziomy, te same nazwy paneli i ta sama konwencja API. Zmienia się to, co jest pod spodem.",
+      "Jeśli Twój zespół zna DirectAdmina, zna już OpenAdmina: te same poziomy, te same nazwy paneli i ta sama konwencja API. Różni się to, co jest pod spodem.",
     columns: { open: "OpenAdmin", other: "Zamknięte panele" },
     rows: [
       { label: "Licencja", open: "AGPL-3.0, darmowa na zawsze", other: "Subskrypcja za serwer", tone: "good" },
-      { label: "Konta i domeny", open: "Bez limitu", other: "Często w pakietach", tone: "good" },
+      { label: "Konta i domeny", open: "Bez limitu", other: "Często ograniczone pakietem", tone: "good" },
       { label: "Kod źródłowy", open: "Czytelny JavaScript", other: "Zamknięty", tone: "good" },
       { label: "API", open: "110 CMD_API + REST + OpenAPI", other: "Zależne od dostawcy", tone: "good" },
-      { label: "Dane panelu", open: "SQLite + zwykłe pliki", other: "Nieprzejrzysty magazyn", tone: "good" },
+      { label: "Dane panelu", open: "SQLite + zwykłe pliki", other: "Zamknięty magazyn danych", tone: "good" },
       { label: "Rozszerzenia", open: "Wtyczki, skórki, szablony", other: "Rozszerzenia dostawcy", tone: "good" },
       { label: "Migracja", open: "Import cPanel / DirectAdmin", other: "Narzędzia dostawcy", tone: "good" },
       { label: "Telemetria", open: "Brak", other: "Różnie", tone: "good" },
     ],
     note:
-      "OpenAdmin to niezależna implementacja napisana od zera. Dzieli konwencję CMD_API, architekturę informacji i konwencje danych — nie kod, binaria ani assety. DirectAdmin jest znakiem towarowym swojego właściciela.",
+      "OpenAdmin to niezależna implementacja napisana od zera. Zachowuje te same konwencje CMD_API, strukturę informacji i konwencje danych — ale nie zawiera kodu, binariów ani materiałów DirectAdmina. DirectAdmin jest znakiem towarowym swojego właściciela.",
   },
   inside: {
     eyebrow: "Wnętrze pudełka",
     title: "Nudna technologia. Celowo.",
     lead:
-      "Jeden proces Node, jeden plik SQLite, zero kroku build. Wszystko uprzywilejowane przechodzi przez granicę providera, więc możesz testować na laptopie i przenieść się na Linuksa bez uczenia się produktu od nowa.",
+      "Jeden proces Node, jeden plik SQLite, zero etapu budowania. Wszystko, co wymaga uprawnień, przechodzi przez warstwę systemową, więc możesz testować na laptopie i przenieść się na Linuksa bez uczenia się produktu od nowa.",
     points: [
       {
         icon: "database",
         title: "node:sqlite",
         body:
-          "WAL, transakcje i indeksy w jednym pliku, który możesz skopiować. Backup to plik, nie eksport od dostawcy.",
+          "WAL, transakcje i indeksy w jednym pliku, który możesz skopiować. Kopia zapasowa to plik, a nie eksport od dostawcy.",
       },
       {
         icon: "shield",
         title: "sandbox → linux",
         body:
-          "Jedna granica providera odpowiada za dostęp do systemu. Interfejs nigdy nie udaje, że usługa została zrestartowana, jeśli nie została.",
+          "Jedna warstwa systemowa odpowiada za dostęp do systemu. Interfejs nigdy nie udaje, że usługa została ponownie uruchomiona, jeśli tak się nie stało.",
       },
       {
         icon: "route",
         title: "119 tras",
         body:
-          "Pełna zgodność tras frontendu DirectAdmina z oryginalnymi tytułami stron oraz wszystkimi 110 historycznymi adresami CMD_*.",
+          "Pełna zgodność tras interfejsu DirectAdmina z oryginalnymi tytułami stron oraz wszystkimi 110 historycznymi adresami CMD_*.",
       },
       {
         icon: "package",
-        title: "npm install nie jest potrzebne",
+        title: "Nie musisz uruchamiać npm install",
         body:
           "Bez natywnych dodatków, bez dryfu lockfile’a, bez niespodzianek w łańcuchu dostaw. Klonujesz i uruchamiasz.",
       },
@@ -272,7 +271,7 @@ export default {
       "├── src/providers/          granica sandbox → linux",
       "├── src/features/           jeden moduł na obszar panelu",
       "├── src/compat/             110 komend CMD_API",
-      "├── bin/openadmin.mjs       install · doctor · backup",
+      "├── bin/openadmin.mjs       instalacja · doctor · kopie zapasowe",
       "├── data/openadmin.db       jeden plik SQLite",
       "└── install.sh              systemd · użytkownicy · TLS",
     ],
@@ -289,14 +288,14 @@ export default {
     eyebrow: "Zacznij",
     title: "Od zera do panelu w czasie jednej kawy.",
     lead:
-      "Jedyny wymóg to Node.js 22.5+. Wypróbuj demo na laptopie albo uruchom instalator produkcyjny na świeżym Debianie, Ubuntu, Rocky lub AlmaLinux.",
+      "Wymagany jest tylko Node.js 22.5+. Wypróbuj demo na laptopie albo uruchom instalator produkcyjny na świeżym Debianie, Ubuntu, Rocky lub AlmaLinux.",
     tabs: [
       {
         id: "demo",
         label: "Wypróbuj demo",
-        title: "Przekop się przez panel na laptopie",
+        title: "Poznaj panel na laptopie",
         body:
-          "Pobiera źródła, uruchamia panel na porcie 2222 i zakłada trzy konta demo. Bez serwera bazy, bez roota, bez rejestracji.",
+          "Skrypt pobiera źródła, uruchamia panel na porcie 2222 i zakłada trzy konta demo. Nie potrzebujesz serwera bazy danych, konta root ani rejestracji.",
         code:
           "curl -fsSLO \\\n" +
           "  'https://openadmin.live/openadmin-1.0.0.tar.gz?v=1.0.0'\n" +
@@ -307,15 +306,15 @@ export default {
         accounts: [
           { level: "Użytkownik", user: "demouser", pass: "demo" },
           { level: "Reseller", user: "demoreseller", pass: "demo" },
-          { level: "Admin", user: "demoadmin", pass: "demo" },
+          { level: "Administrator", user: "demoadmin", pass: "demo" },
         ],
       },
       {
         id: "linux",
         label: "Instalacja na Linuksie",
-        title: "Utwardzona instalacja jedną komendą",
+        title: "Instalacja produkcyjna jedną komendą",
         body:
-          "Tworzy użytkownika systemowego i katalog danych, instaluje Node.js, jeśli trzeba, zapisuje unit systemd i jednorazowo wypisuje wygenerowane hasło administratora.",
+          "Instalator tworzy użytkownika systemowego i katalog danych, instaluje Node.js, jeśli trzeba, zapisuje jednostkę systemd i jednorazowo wypisuje wygenerowane hasło administratora.",
         code:
           "curl -fsSLO \\\n" +
           "  'https://openadmin.live/openadmin-1.0.0.tar.gz?v=1.0.0'\n" +
@@ -329,9 +328,9 @@ export default {
       {
         id: "cli",
         label: "CLI",
-        title: "Zautomatyzuj nudne",
+        title: "Zautomatyzuj nudne zadania",
         body:
-          "Te same operacje, których używa panel, dostępne z terminala: instalacja, start, reset hasła, dodanie użytkownika, backup i diagnostyka środowiska.",
+          "Te same operacje, których używa panel, dostępne z terminala: instalacja, uruchamianie, resetowanie hasła, dodawanie użytkownika, kopia zapasowa i diagnostyka środowiska.",
         code:
           "node bin/openadmin.mjs install --demo\n" +
           "node bin/openadmin.mjs doctor\n" +
@@ -341,7 +340,7 @@ export default {
         accounts: [],
       },
     ],
-    asideNote: "W trybie sandbox działa bez roota. Dopiero provider linuksowy wykonuje zapisy systemowe.",
+    asideNote: "W trybie sandbox panel działa bez konta root. Dopiero warstwa linuksowa wykonuje zapisy systemowe.",
     facts: [
       { label: "Środowisko", value: "Node.js ≥ 22.5" },
       { label: "Port", value: "2222" },
@@ -360,7 +359,7 @@ export default {
   },
   pricing: {
     eyebrow: "Cennik",
-    title: "0 €. Nie trial.",
+    title: "0 €. Bez okresu próbnego.",
     lead:
       "Jedna licencja: AGPL-3.0. Bez limitu kont, domen i serwerów. Wsparcie to kod źródłowy i ludzie, którzy go czytają.",
     badge: "Darmowy na zawsze",
@@ -369,15 +368,15 @@ export default {
     per: "na zawsze",
     features: [
       "Bez limitu kont, domen i serwerów",
-      "Panele admina, resellera i użytkownika",
+      "Panele administratora, resellera i użytkownika",
       "Wszystkie 110 komend CMD_API",
       "Nginx, Apache, OpenLiteSpeed, LiteSpeed",
-      "Poczta, DNS, SSL, backupy, cron, bazy",
-      "TOTP i dziennik audytu",
+      "Poczta, DNS, SSL, kopie zapasowe, cron, bazy danych",
+      "Uwierzytelnianie dwuskładnikowe TOTP i dziennik audytu",
       "Pełny kod źródłowy i aktualizacje",
       "Zero telemetrii, zero serwera licencji",
     ],
-    cta: "Pobierz v1.0.0",
+    cta: "Pobierz wersję 1.0.0",
     note: "Bez karty. Bez rejestracji. Bez „skontaktuj się z działem sprzedaży”.",
   },
   faq: {
@@ -387,15 +386,15 @@ export default {
     items: [
       {
         q: "Czy OpenAdmin naprawdę jest darmowy?",
-        a: "Tak. Cały panel jest na licencji AGPL-3.0-or-later. Nie ma kluczy licencyjnych, limitów stanowisk ani funkcji za paywallem. Możesz używać go komercyjnie, modyfikować i redystrybuować na tej samej licencji.",
+        a: "Tak. Cały panel jest na licencji AGPL-3.0-or-later. Nie ma kluczy licencyjnych, limitów stanowisk ani płatnych funkcji. Możesz używać go komercyjnie, modyfikować i rozpowszechniać na tej samej licencji.",
       },
       {
         q: "Czy to fork DirectAdmina?",
-        a: "Nie. To niezależna implementacja napisana od zera. Świadomie odwzorowuje powierzchnię komend CMD_API, nazwy paneli i konwencje <code>/home/&lt;user&gt;/domains/…</code>, ale nie zawiera kodu, binariów ani assetów DirectAdmina.",
+        a: "Nie. To niezależna implementacja napisana od zera. Świadomie zachowuje zestaw komend CMD_API, nazwy paneli i konwencje <code>/home/&lt;user&gt;/domains/…</code>, ale nie zawiera kodu, binariów ani materiałów DirectAdmina.",
       },
       {
-        q: "Czy zainstaluję go na hostingu współdzielonym?",
-        a: "Nie do prawdziwej administracji systemem. OpenAdmin potrzebuje VPS-a lub serwera dedykowanego oraz roota do zapisu w <code>/etc</code>, przeładowywania usług i tworzenia użytkowników systemowych. Domyślny provider sandbox działa jednak na laptopie bez roota, do testów.",
+        q: "Czy mogę go zainstalować na hostingu współdzielonym?",
+        a: "Nie, jeśli chcesz naprawdę zarządzać serwerem. OpenAdmin potrzebuje serwera VPS lub dedykowanego oraz konta root do zapisu w <code>/etc</code>, przeładowywania usług i tworzenia użytkowników systemowych. Domyślny tryb sandbox działa jednak na laptopie bez konta root — do testów.",
       },
       {
         q: "Czy naprawdę zarządza pocztą i DNS?",
@@ -403,15 +402,15 @@ export default {
       },
       {
         q: "Co stanie się z moimi danymi, jeśli odejdę?",
-        a: "Nic nie zostaje uwięzione. Stan panelu to jeden plik SQLite; strony, strefy, poczta, certyfikaty i backupy to zwykłe pliki w katalogach kont. Zabierasz je ze sobą.",
+        a: "Twoje dane nie zostają zablokowane. Stan panelu to jeden plik SQLite; strony, strefy, poczta, certyfikaty i kopie zapasowe to zwykłe pliki w katalogach kont. Zabierasz je ze sobą.",
       },
       {
-        q: "Czy panel telefonuje do domu?",
-        a: "Zero telemetrii, zero sprawdzania licencji, zero beaconów aktualizacji. Panel działa w całości na Twoim serwerze. Sam decydujesz, kiedy aktualizować.",
+        q: "Czy panel łączy się z zewnętrznymi serwerami?",
+        a: "Zero telemetrii, zero sprawdzania licencji, zero sygnałów o aktualizacjach. Panel działa w całości na Twoim serwerze. Sam decydujesz, kiedy aktualizować.",
       },
       {
-        q: "Czy mogę współtworzyć lub zrobić fork?",
-        a: "Na tym polega AGPL. Czytaj źródła, zgłaszaj problemy, wysyłaj poprawki albo poprowadź projekt własną drogą. Baza kodu jest wystarczająco mała, by zrozumieć ją w jedno popołudnie.",
+        q: "Czy mogę współtworzyć projekt lub stworzyć własną wersję?",
+        a: "Na tym polega AGPL. Czytaj źródła, zgłaszaj problemy, wysyłaj poprawki albo rozwijaj projekt po swojemu. Baza kodu jest wystarczająco mała, by zrozumieć ją w jedno popołudnie.",
       },
     ],
   },
@@ -419,7 +418,7 @@ export default {
     eyebrow: "Gotowy, gdy Ty jesteś",
     title: "Twój serwer. Twój panel. Twoje zasady.",
     lead:
-      "Zainstaluj OpenAdmina na świeżym VPS-ie albo wypróbuj go na laptopie. Zajmie to minutę i nic nie kosztuje.",
+      "Zainstaluj OpenAdmina na świeżym serwerze VPS albo wypróbuj go na laptopie. Zajmie to minutę i nic nie kosztuje.",
     primary: "Pobierz OpenAdmina",
     secondary: "Przeczytaj szybki start",
     github: "Zobacz źródła na GitHubie",
@@ -427,7 +426,7 @@ export default {
   },
   footer: {
     tagline:
-      "Darmowy panel hostingowy o otwartym kodzie, zgodny z DirectAdminem. Zbudowany na Node.js, bez trackerów.",
+      "Darmowy panel hostingowy o otwartym kodzie, zgodny z DirectAdminem. Zbudowany na Node.js, bez śledzenia.",
     groups: [
       {
         title: "Produkt",

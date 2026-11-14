@@ -248,7 +248,8 @@ code, pre, kbd { font-family: var(--mono); }
 .site-header.menu-open .menu-icon-open { display: none; }
 .site-header.menu-open .menu-icon-close { display: inline-flex; }
 .mobile-menu {
-  position: fixed; inset: 78px 0 auto 0; z-index: 99;
+  position: fixed; inset: 78px 0 0 0; z-index: 99; overflow-y: auto;
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
   background: rgba(5, 8, 14, 0.97); backdrop-filter: blur(24px);
   border-bottom: 1px solid var(--line); padding: 20px 4vw 32px;
 }
