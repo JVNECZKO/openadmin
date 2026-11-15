@@ -26,7 +26,7 @@ export function register(router) {
           <div class="field field-full"><label class="field-label">…albo ścieżka na serwerze (dla dużych plików)</label><input name="path" placeholder="/root/cpmove-user.tar.gz"></div>
         </div>
         <p class="small muted">Dla większych backupów wgraj plik przez SFTP do <code>${path.join(config.dataDir, 'imports')}</code> i podaj ścieżkę. Import nie nadpisuje istniejących domen — dopisuje rekordy DNS i pliki.</p>
-        <div class="form-actions"><button class="btn btn-primary" type="submit" onclick="document.getElementById('importMode').value='import'">Analizuj i importuj</button> <button class="btn btn-secondary" type="submit" onclick="document.getElementById('importMode').value='preview'">Podgląd bez zmian</button></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit" id="importSubmit">Analizuj i importuj</button> <button class="btn btn-secondary" type="submit" id="importPreview">Podgląd bez zmian</button></div>
       </form>`, { sub: 'Bezpieczne rozpakowanie, raport co zostało zaimportowane' })}
       ${card('Co jest importowane', h`<ul class="small" style="line-height:1.9;padding-left:18px">
         <li><strong>Pliki:</strong> katalogi <code>public_html</code> trafiają do odpowiednich domen.</li>
@@ -36,7 +36,9 @@ export function register(router) {
       </ul>`)}
       <script>
       (function(){
-        var form=document.getElementById('importForm'), file=document.getElementById('importFile'), data=document.getElementById('importData');
+        var form=document.getElementById('importForm'), file=document.getElementById('importFile'), data=document.getElementById('importData'), mode=document.getElementById('importMode');
+        document.getElementById('importSubmit').addEventListener('click', function(){ mode.value='import'; });
+        document.getElementById('importPreview').addEventListener('click', function(){ mode.value='preview'; });
         form.addEventListener('submit', function(e){
           if (!file.files.length) return;
           e.preventDefault();
