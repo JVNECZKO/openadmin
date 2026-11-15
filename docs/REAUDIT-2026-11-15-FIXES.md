@@ -58,3 +58,14 @@ the database page, Roundcube health is HTTP 200, and the Exim queue is empty.
 - The backup target uses a separate restricted `sftp-server` key; it cannot open a
   shell. The panel stores it encrypted (`v2` secret format) and materializes it only
   for the duration of the SFTP transfer.
+
+## Security posture after live hardening
+
+- Security Center now reflects all sshd drop-ins and actual `authorized_keys`, not only
+  its legacy managed file.
+- Live posture moved from 17% to **83% (5/6)**: firewall, key-only SSH, root key,
+  fork-bomb limits and SMTP egress restrictions pass. Only ModSecurity/WAF is
+  unavailable on this nginx host.
+- A daily offsite SFTP backup with a dedicated key completed; the remote archive
+  SHA-256 matches the local archive and the restore preview reads all homes and the
+  panel database snapshot.

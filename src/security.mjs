@@ -135,9 +135,20 @@ export function removeIpBlock(id, actor = 'admin') {
 export function getSsh() {
   const managed = readManaged(SSHD_DROPIN) || '';
   const main = (() => { try { return fs.readFileSync('/etc/ssh/sshd_config', 'utf8'); } catch { return ''; } })();
+  const dropins = (() => {
+    try {
+      return fs.readdirSync('/etc/ssh/sshd_config.d').filter((f) => f.endsWith('.conf')).sort()
+        .map((f) => fs.readFileSync(path.join('/etc/ssh/sshd_config.d', f), 'utf8'));
+    } catch { return []; }
+  })();
   const pick = (key) => {
-    const m = new RegExp(`^\\s*${key}\\s+(\\S+)`, 'im').exec(managed) || new RegExp(`^\\s*${key}\\s+(\\S+)`, 'im').exec(main);
-    return m ? m[1] : '';
+    const re = new RegExp(`^\\s*${key}\\s+(\\S+)`, 'im');
+    let value = '';
+    for (const source of [main, ...dropins, managed]) {
+      const m = re.exec(source);
+      if (m) value = m[1];
+    }
+    return value;
   };
   return {
     port: Number(pick('Port') || 22),
@@ -175,7 +186,18 @@ export function saveSsh(body, actor = 'admin') {
 }
 
 export function listRootKeys() {
-  return all('SELECT * FROM root_ssh_keys ORDER BY created_at DESC');
+  const rows = all('SELECT * FROM root_ssh_keys ORDER BY created_at DESC');
+  const seen = new Set(rows.map((r) => String(r.public_key || '').trim()));
+  try {
+    const lines = fs.readFileSync(ROOT_KEYS, 'utf8').split('\n');
+    for (const line of lines) {
+      const pub = line.trim();
+      if (!/^(ssh-(rsa|ed25519)|ecdsa-sha2-nistp\d+)\s+/.test(pub) || seen.has(pub)) continue;
+      seen.add(pub);
+      rows.push({ id: `file-${rows.length + 1}`, name: 'authorized_keys', public_key: pub, fingerprint: fingerprint(pub), source: 'file' });
+    }
+  } catch { /* no root authorized_keys */ }
+  return rows;
 }
 
 function fingerprint(pub) {
@@ -396,7 +418,7 @@ export function securitySummary() {
     { key: 'ssh-password', priority: 'P0', label: 'Logowanie SSH hasłem', ok: !ssh.password_authentication, evidence: ssh.password_authentication ? 'PasswordAuthentication yes' : 'wyłączone', impact: 'Zwiększone ryzyko brute force SSH', action: '?tab=ssh', fix: 'Wyłącz hasła, używaj kluczy' },
     { key: 'root-keys', priority: 'P1', label: 'Klucze roota', ok: keys.length > 0, evidence: `${keys.length} klucz(y)`, impact: 'Brak awaryjnego dostępu po kluczu', action: '?tab=keys', fix: 'Dodaj klucz publiczny roota' },
     { key: 'forkbomb', priority: 'P1', label: 'Ochrona fork bomb', ok: !!fork.enabled, evidence: fork.enabled ? `nproc=${fork.nproc}` : 'wyłączona', impact: 'Jeden proces może wyczerpać PID-y', action: '?tab=groups', fix: 'Włącz limity nproc/nofile' },
-    { key: 'smtp-restrictions', priority: 'P1', label: 'Ograniczenia SMTP', ok: !!smtp.enabled, evidence: smtp.enabled ? 'aktywne' : 'wyłączone', impact: 'Możliwy spam wychodzący z kont', action: '?tab=mail', fix: 'Włącz ograniczenia egress' },
+    { key: 'smtp-restrictions', priority: 'P1', label: 'Ograniczenia SMTP', ok: !!smtp, evidence: smtp ? 'aktywne' : 'wyłączone', impact: 'Możliwy spam wychodzący z kont', action: '?tab=mail', fix: 'Włącz ograniczenia egress' },
     { key: 'modsecurity', priority: 'P2', label: 'ModSecurity / WAF', ok: !!mod.supported, evidence: mod.supported ? mod.engine : 'niedostępny', impact: 'Brak reguł WAF dla aplikacji WWW', action: '?tab=waf', fix: 'Zainstaluj mod_security2 lub WAF nginx' },
   ];
   const passed = posture.filter((x) => x.ok).length;
