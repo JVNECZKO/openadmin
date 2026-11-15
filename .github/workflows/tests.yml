@@ -18,10 +18,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.x"
+          cache: npm
       - name: Show runtime
         run: node --version
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+      - name: Build descriptor
+        run: node tools/build-info.mjs
       - name: Run test suite
-        run: node --test
+        run: node --test tests/*.test.mjs
+      - name: Generate SBOM
+        run: npm sbom --sbom-format=cyclonedx > sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-node-22
+          path: sbom.cdx.json
 
   node-24:
     name: Node.js 24
@@ -32,7 +45,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24.x"
+          cache: npm
       - name: Show runtime
         run: node --version
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Dependency audit
+        run: npm audit --audit-level=high
       - name: Run test suite
-        run: node --test
+        run: node --test tests/*.test.mjs

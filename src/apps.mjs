@@ -172,14 +172,17 @@ $secretPath = dirname(__DIR__) . '/.pma-signon-secret';
 $secret = trim((string) @file_get_contents($secretPath));
 if ($secret === '') openadmin_signon_fail('service');
 
-$context = stream_context_create(['http' => [
-    'method' => 'POST',
-    'header' => "Content-Type: application/json\\r\\nX-OpenAdmin-Secret: " . $secret . "\\r\\n",
-    'content' => json_encode(['token' => $token, 'session' => $panelSession]),
-    'timeout' => 5,
-    'ignore_errors' => true,
-]]);
-$response = @file_get_contents('http://127.0.0.1:${config.port}/api/phpmyadmin/credentials', false, $context);
+$context = stream_context_create([
+    'http' => [
+        'method' => 'POST',
+        'header' => "Content-Type: application/json\r\nX-OpenAdmin-Secret: " . $secret . "\r\n",
+        'content' => json_encode(['token' => $token, 'session' => $panelSession]),
+        'timeout' => 5,
+        'ignore_errors' => true,
+    ],
+    'ssl' => ['verify_peer' => false, 'verify_peer_name' => false],
+]);
+$response = @file_get_contents('${config.https ? 'https' : 'http'}://127.0.0.1:${config.port}/api/phpmyadmin/credentials', false, $context);
 $data = $response ? json_decode($response, true) : null;
 if (!is_array($data) || empty($data['ok'])) {
     $code = (is_array($data) && isset($data['code'])) ? (string) $data['code'] : 'unavailable';

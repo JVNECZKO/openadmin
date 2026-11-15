@@ -558,3 +558,16 @@ test('healthReport aggregates a failing mail queue into fail and exposes functio
   assert.equal(report.metrics.memory.unit, 'bytes');
   assert.equal(report.metrics.disk.unit, 'bytes');
 });
+
+test('application health probes the real /phpmyadmin/ and /roundcube/ base paths', async () => {
+  const seen = [];
+  const stub = async (url) => { seen.push(url); return { ok: true, status: 200, body: '' }; };
+  const st = (id) => ({ id, name: id, installed: true, pid: 123, running: true, port: id === 'phpmyadmin' ? 8082 : 8083, url: `/${id}/`, php: true, missingExtensions: [] });
+  const a = await health.applicationHealth('phpmyadmin', { statusFn: st, http: stub, ssoEnabled: () => true });
+  assert.equal(a.state, 'running');
+  assert.match(seen[0], /\/phpmyadmin\/$/);
+  seen.length = 0;
+  const b = await health.applicationHealth('roundcube', { statusFn: st, http: stub, ssoEnabled: () => false });
+  assert.equal(b.state, 'running');
+  assert.match(seen[0], /\/roundcube\/$/);
+});

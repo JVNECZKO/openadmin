@@ -752,3 +752,11 @@ test('CSP uses a nonce and all rendered scripts carry it', async () => {
   for (const tag of scripts) assert.match(tag, new RegExp(`nonce="${nonce.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`), tag);
   assert.doesNotMatch(html, /\son(click|change|submit|load|error)=/i, 'no inline event handlers');
 });
+
+test('admin navigation is translated in Polish, not mixed English labels', async () => {
+  const cookie = await loginAs('demoadmin');
+  const { html } = await page('/admin', cookie);
+  const raw = ['Mail Operations', 'Live transfer', 'Panel Configuration', 'Show All Users', 'User Tools', 'Plans & Limits', 'User Statistics', 'Message System', 'Support Access', 'Audit Log', 'System Cron', 'Bulk actions'];
+  for (const label of raw) assert.doesNotMatch(html, new RegExp(`>${label}<`), `raw nav label: ${label}`);
+  assert.match(html, /Operacje poczty|Centrum uwagi|Automatyzacja/);
+});

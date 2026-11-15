@@ -247,7 +247,7 @@ test('admin automation page renders and status endpoint returns JSON', async () 
   const page = await fetch(base + '/admin/automation', { headers: { Cookie: cookie } });
   assert.equal(page.status, 200);
   const html = await page.text();
-  assert.match(html, /Automation/);
+  assert.match(html, /Automatyzacja|Automation/);
   assert.match(html, /backup\.daily/);
   assert.match(html, /health\.check/);
   assert.match(html, /Recent runs/);
