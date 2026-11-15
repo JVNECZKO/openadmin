@@ -48,3 +48,18 @@ Base report: `AUDYT_UI_UX_OPENADMIN_2026-11-15.md`.
 - `node tools/qa-final.mjs`: 54/54, 350 routes, 0 route issues, 14/14 security,
   27 axe pages, 7/7 counters, 65 screenshots.
 - Screenshots: light/dark demo at 390 and 1280 in `/tmp/oa-ui-qa6/shots`.
+
+## Final verification
+
+- Implementation commit: `817f31a`.
+- `node --test`: 305/305.
+- `node tools/qa-final.mjs`: 54/54 checks, 350 routes with **0 issues**, no
+  horizontal overflow, no clipped key-page text, no touch target under 44 px on
+  audited mobile routes, 14/14 security, 27 axe pages, 65 screenshots.
+- Live: `https://192.168.3.240:2222`, build `1.0.0+817f31a7b9ce`; login renders
+  in Polish; admin/user dashboards show the slimmed layouts.
+
+Residual: the historical CSS file still contains some older duplicate component
+blocks (the newest responsive/action/table rules are authoritative and passed QA);
+advanced feature screens outside the audited core may still contain technical
+English labels. These are not hidden by the UI changes.
