@@ -104,3 +104,12 @@ Admin TOTP enrolment was completed and the login flow was exercised end-to-end
 (`/login` → `/login/2fa` → `/admin` with 200). The one-time enrolment file with the
 secret and recovery codes is local, mode 0600, and gitignored:
 `ADMIN-2FA-SETUP.txt`. Store it in the authenticator and remove the plaintext file.
+
+## Import and localization follow-up
+
+- Added a read-only cPanel/DirectAdmin import preview: it extracts, analyses and
+  removes the temporary tree without creating users, domains or databases; the UI
+  exposes a separate “Podgląd bez zmian” action. A regression assertion proves the
+  preview creates no domain.
+- Automation and admin navigation now reject the audit's raw English labels in tests.
+- Admin TOTP is enabled; `/login` → `/login/2fa` → `/admin` was exercised to HTTP 200.
