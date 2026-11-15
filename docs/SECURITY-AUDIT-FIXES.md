@@ -61,3 +61,12 @@
 - DNS is checked before outbound fetch, but the final socket resolution is owned
   by Node fetch; a custom pinned-IP transport would close the remaining
   DNS-rebinding race.
+
+## Final verification
+
+- `node --test`: **311/311 pass**.
+- `node tools/qa-final.mjs`: **54/54**, 395 route/width combinations, 0 issues,
+  14/14 security checks, 27 axe pages, 65 screenshots.
+- Live: `https://192.168.3.240:2222`, build `1.0.0+b5188d49f933`, commit
+  `b5188d4`; Security Center **100% (6/6)**; playground shows the disabled
+  state; login/2FA still works.
