@@ -113,3 +113,11 @@ secret and recovery codes is local, mode 0600, and gitignored:
   preview creates no domain.
 - Automation and admin navigation now reject the audit's raw English labels in tests.
 - Admin TOTP is enabled; `/login` → `/login/2fa` → `/admin` was exercised to HTTP 200.
+
+## WAF enabled
+
+Installed the nginx ModSecurity module and OWASP CRS 3.3.4. The panel manages
+`/etc/modsecurity/openadmin.conf` and `/etc/nginx/conf.d/00-modsecurity.conf`;
+the live engine runs in **DetectionOnly** mode (914 CRS rules loaded) to avoid
+blocking legitimate hosting traffic before exclusion tuning. Security Center now
+detects nginx ModSecurity and reports **100% (6/6)**.

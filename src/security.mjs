@@ -21,7 +21,8 @@ export function capabilities() {
   const nft = which('nft');
   const sshd = which('sshd') || '/usr/sbin/sshd';
   const apache = which('apache2ctl');
-  const modsec = apache ? sh('apache2ctl', ['-M']).stdout.includes('security2_module') : false;
+  const modsec = (apache ? sh('apache2ctl', ['-M']).stdout.includes('security2_module') : false)
+    || fs.existsSync('/usr/lib/nginx/modules/ngx_http_modsecurity_module.so');
   const exim = which('exim4') || which('exim');
   return {
     provider: config.provider,
@@ -394,12 +395,17 @@ export function modsecStatus() {
 export function saveModsec(body, actor = 'admin') {
   const engine = ['On', 'Off', 'DetectionOnly'].includes(String(body.engine)) ? String(body.engine) : 'On';
   const paranoia = Math.min(4, Math.max(1, Number(body.paranoia || 2)));
-  const text = `# Managed by OpenAdmin\nSecRuleEngine ${engine}\nSecAction "id:900000,phase:1,pass,t:none,nolog,setvar:tx.paranoia_level=${paranoia}"\n`;
+  const crs = fs.existsSync('/etc/modsecurity/crs/crs-setup.conf');
+  const text = `# Managed by OpenAdmin\nSecRuleEngine ${engine}\nSecRequestBodyAccess On\nSecResponseBodyAccess Off\nSecAction "id:900000,phase:1,pass,t:none,nolog,setvar:tx.paranoia_level=${paranoia}"\n${crs ? 'Include /etc/modsecurity/crs/crs-setup.conf\nInclude /usr/share/modsecurity-crs/rules/*.conf' : ''}\n`;
   writeManaged(MODSEC_CONF, text, { mode: 0o600 });
   if (config.provider === 'linux' && isRoot() && capabilities().apache) {
     const r = sh('apache2ctl', ['configtest']);
     if (!r.ok) return { ok: false, error: `Apache validation failed: ${r.stderr || r.error}` };
     serviceReload('apache2');
+  } else if (config.provider === 'linux' && isRoot() && which('nginx')) {
+    const r = sh('nginx', ['-t']);
+    if (!r.ok) return { ok: false, error: `nginx validation failed: ${r.stderr || r.error}` };
+    serviceReload('nginx');
   }
   audit(actor, 'admin', 'security.modsec.save', `${engine}/PL${paranoia}`, '');
   return { ok: true, simulated: config.provider !== 'linux' || !capabilities().modsecurity };
