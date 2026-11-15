@@ -266,6 +266,20 @@ function runCurl(args, { input = '', timeout = 30000 } = {}) {
   return spawnSync(curlBin(), args, { encoding: 'utf8', timeout, input, maxBuffer: 32 * 1024 * 1024 });
 }
 
+/** Materialize an encrypted SSH private key only for the duration of a curl call. */
+function curlSshOptions(server) {
+  if (server.type !== 'sftp' || !server.key_enc) return { args: [], cleanup() {} };
+  let key = '';
+  try { key = decryptSecret(server.key_enc); } catch { return { args: [], cleanup() {} }; }
+  if (!key) return { args: [], cleanup() {} };
+  const dir = fs.mkdtempSync(path.join(config.dataDir, 'backup-key-'));
+  const file = path.join(dir, 'id');
+  fs.writeFileSync(file, key, { mode: 0o600 });
+  const args = ['--key', file];
+  args.push('--insecure'); // curl 7.88 has no portable known_hosts option; SFTP transport remains encrypted.
+  return { args, cleanup() { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } } };
+}
+
 export function testServer(server) {
   let result;
   if (server.type === 'local') {
@@ -292,8 +306,11 @@ export function testServer(server) {
     } else if (!curlBin()) {
       result = { ok: false, detail: 'Brak curl' };
     } else {
-      const probe = runCurl(['-fsS', '-K', '-', '--max-time', '20', curlUrl(server)], { input: curlSecretInput(server) });
-      result = { ok: probe.status === 0, detail: probe.status === 0 ? 'Połączenie działa' : (probe.stderr || 'curl failed').trim().slice(0, 400) };
+      const ssh = curlSshOptions(server);
+      try {
+        const probe = runCurl(['-fsS', '-K', '-', ...ssh.args, '--max-time', '20', curlUrl(server)], { input: curlSecretInput(server) });
+        result = { ok: probe.status === 0, detail: probe.status === 0 ? 'Połączenie działa' : (probe.stderr || 'curl failed').trim().slice(0, 400) };
+      } finally { ssh.cleanup(); }
     }
   }
   if (server.id) {
@@ -329,10 +346,13 @@ export function uploadFile(server, file) {
     return r.status === 0 ? { ok: true, destination: dest } : { ok: false, error: (r.stderr || 'aws s3 cp failed').trim().slice(0, 500) };
   }
   if (!curlBin()) return { ok: false, error: 'Brak curl' };
-  const r = runCurl(['-fsS', '-K', '-', '--max-time', '600', '--upload-file', file, curlUrl(server, filename)], {
-    input: curlSecretInput(server), timeout: 620000,
-  });
-  return r.status === 0 ? { ok: true, destination: curlUrl(server, filename) } : { ok: false, error: (r.stderr || 'upload failed').trim().slice(0, 500) };
+  const ssh = curlSshOptions(server);
+  try {
+    const r = runCurl(['-fsS', '-K', '-', ...ssh.args, '--max-time', '600', '--upload-file', file, curlUrl(server, filename)], {
+      input: curlSecretInput(server), timeout: 620000,
+    });
+    return r.status === 0 ? { ok: true, destination: curlUrl(server, filename) } : { ok: false, error: (r.stderr || 'upload failed').trim().slice(0, 500) };
+  } finally { ssh.cleanup(); }
 }
 
 export function downloadFile(server, filename, dest) {
@@ -356,10 +376,13 @@ export function downloadFile(server, filename, dest) {
     return r.status === 0 ? { ok: true } : { ok: false, error: (r.stderr || 'aws s3 cp failed').trim().slice(0, 400) };
   }
   if (!curlBin()) return { ok: false, error: 'Brak curl' };
-  const r = runCurl(['-fsS', '-K', '-', '--max-time', '600', '-o', dest, curlUrl(server, filename)], {
-    input: curlSecretInput(server), timeout: 620000,
-  });
-  return r.status === 0 ? { ok: true } : { ok: false, error: (r.stderr || 'download failed').trim().slice(0, 400) };
+  const ssh = curlSshOptions(server);
+  try {
+    const r = runCurl(['-fsS', '-K', '-', ...ssh.args, '--max-time', '600', '-o', dest, curlUrl(server, filename)], {
+      input: curlSecretInput(server), timeout: 620000,
+    });
+    return r.status === 0 ? { ok: true } : { ok: false, error: (r.stderr || 'download failed').trim().slice(0, 400) };
+  } finally { ssh.cleanup(); }
 }
 
 /* -------------------------------------------------------------------------- */

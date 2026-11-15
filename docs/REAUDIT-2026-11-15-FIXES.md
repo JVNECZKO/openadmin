@@ -37,3 +37,14 @@
 
 Live checks: `/healthz` liveness-only, build `1.0.0+eae9b3c…`, phpMyAdmin SSO reaches
 the database page, Roundcube health is HTTP 200, and the Exim queue is empty.
+
+## Live operational completion (2026-11-15)
+
+- Enabled a daily backup job (`03:00 Europe/Warsaw`) with a real SFTP destination on
+  the Proxmox host, using a dedicated restricted `sftp-server` key stored encrypted by
+  the panel. A full server backup completed: 272.7 MB, SHA-256
+  `5d6a45298bcb57dea7a7818bc5d31cff994a4cd7561c6e12d7c40cfa1ddd8711`; the remote copy
+  has the same digest and the restore preview opened the archive successfully.
+- The Exim queue is empty; the 13 frozen notification bounces were removed after fixing
+  the unrouteable recipient handling.
+- Live build descriptor now resolves to the deployed commit through `build-info.json`.

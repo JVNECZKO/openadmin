@@ -133,6 +133,7 @@ export function register(router) {
           field({ name: 'path', label: 'Katalog / bucket / prefiks', placeholder: '/backups lub s3://bucket/openadmin', full: true }),
           field({ name: 'username', label: 'Użytkownik / Access Key' }),
           field({ name: 'password', label: 'Hasło / Secret Key', type: 'password' }),
+          field({ name: 'key', label: 'Klucz prywatny SSH (SFTP)', type: 'textarea', rows: 4, full: true, help: 'Wklej klucz PEM/OpenSSH. Jest szyfrowany w bazie i używany tylko podczas transferu.' }),
         ], { action: `${A}/servers`, csrf: ctx.csrf, submit: 'Zapisz i przetestuj' }))}
         ${editServer ? card(`Edytuj lokalizację · ${editServer.name}`, form([
           field({ name: 'name', label: 'Nazwa', value: editServer.name, required: true }),
@@ -142,6 +143,7 @@ export function register(router) {
           field({ name: 'path', label: 'Katalog/bucket', value: editServer.path || '', full: true }),
           field({ name: 'username', label: 'Użytkownik', value: editServer.username || '' }),
           field({ name: 'password', label: 'Nowe hasło (puste = bez zmian)', type: 'password' }),
+          field({ name: 'key', label: 'Nowy klucz SSH (puste = bez zmian)', type: 'textarea', rows: 4, full: true, help: 'Klucz jest szyfrowany i usuwany z procesu po transferze.' }),
         ], { action: `${A}/servers/${editServer.id}/update`, csrf: ctx.csrf, submit: 'Zapisz lokalizację' })) : ''}
         ${card('Lokalizacje', table({
           columns: [
