@@ -121,3 +121,12 @@ Installed the nginx ModSecurity module and OWASP CRS 3.3.4. The panel manages
 the live engine runs in **DetectionOnly** mode (914 CRS rules loaded) to avoid
 blocking legitimate hosting traffic before exclusion tuning. Security Center now
 detects nginx ModSecurity and reports **100% (6/6)**.
+
+## Final QA (after WAF/CSP changes)
+
+- `node --test tests/*.test.mjs`: **305/305 pass**, no warnings.
+- `node tools/qa-final.mjs`: **54/54 checks**, 350 routes, 0 routes with issues,
+  14/14 security checks, 27 axe pages, 7/7 counters, 65 screenshots.
+- Live build: `1.0.0+645e3c0b051a`; Security Center: **100% (6/6)**.
+- Remaining hard external dependency: a publicly trusted certificate for the panel
+  hostname. The panel IP is private, so public ACME cannot validate it.
