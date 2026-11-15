@@ -17,7 +17,8 @@
     "dev": "node --watch src/server.mjs",
     "install-panel": "node bin/openadmin.mjs install",
     "test": "node --test tests/*.test.mjs",
-    "site": "bash site/build.sh"
+    "site": "bash site/build.sh",
+    "build:info": "node tools/build-info.mjs"
   },
   "keywords": [
     "control-panel",

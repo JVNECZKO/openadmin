@@ -2,6 +2,7 @@
 // The panel never claims a message was sent unless the MTA exited successfully.
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { get, setting } from './db.mjs';
 
 const CANDIDATES = [
   '/usr/sbin/sendmail', '/usr/lib/sendmail', '/usr/bin/sendmail',
@@ -84,6 +85,12 @@ export function buildMessage({ from, to, subject, body, headers = {}, attachment
 }
 
 export function sendMail({ from, to, subject, body, headers = {}, attachments = [] }) {
+  const recipientDomain = String(to || '').split('@').pop().toLowerCase();
+  const panelDomain = String(setting('server_name', 'localhost')).split(':')[0].toLowerCase();
+  const hosted = recipientDomain ? get('SELECT id FROM domains WHERE lower(name) = ? LIMIT 1', recipientDomain) : null;
+  if (recipientDomain && !hosted && (recipientDomain === panelDomain || recipientDomain === 'localhost' || recipientDomain.endsWith('.local'))) {
+    return { ok: false, skipped: true, output: `Pomięto niedoręczalny adres panelu ${to}; powiadomienie pozostaje w panelu.` };
+  }
   const bin = findMta();
   if (!bin) return { ok: false, output: 'No local MTA found (sendmail/exim/msmtp). Install one to deliver external mail.' };
   const message = buildMessage({ from, to, subject, body, headers, attachments });

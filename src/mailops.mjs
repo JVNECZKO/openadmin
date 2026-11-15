@@ -491,13 +491,38 @@ export function removeBlacklist(id) {
   return { ok: true };
 }
 
+
+/** One queue reading shared by Health, Action Center and Automation. */
+export function mailQueueSnapshot() {
+  const result = queueList();
+  if (!result || result.ok === false) {
+    return { ok: false, error: result?.error || 'Kolejka poczty jest niedostępna', total: 0, failed: 0, deferred: 0, queued: 0, rows: [], source: 'unavailable' };
+  }
+  const rows = Array.isArray(result.rows) ? result.rows : [];
+  const counts = rows.reduce((acc, row) => {
+    const key = row.status || 'queued';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  return {
+    ok: true,
+    total: rows.length,
+    failed: counts.failed || 0,
+    deferred: counts.deferred || 0,
+    queued: counts.queued || 0,
+    rows,
+    simulated: !!result.simulated || rows.some((row) => row.db),
+    source: result.simulated || rows.some((row) => row.db) ? 'panel queue' : 'Exim queue',
+  };
+}
+
 export function mailOverview() {
-  const q = queueList();
+  const q = mailQueueSnapshot();
   const stats = Object.fromEntries(eventStats().map((r) => [r.status, r.n]));
   return {
-    queue: q.rows.length,
-    deferred: q.rows.filter((r) => r.status === 'deferred').length,
-    failed: stats.failed || 0,
+    queue: q.total,
+    deferred: q.deferred,
+    failed: q.failed,
     delivered: stats.delivered || 0,
     events: Object.values(stats).reduce((a, b) => a + b, 0),
     simulated: q.simulated,

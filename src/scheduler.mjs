@@ -175,6 +175,7 @@ export function autoUnsuspendExpired({ now = Date.now() } = {}) {
 
 export async function schedulerTick({ now = Date.now(), limit = 2 } = {}) {
   ensureSchedulerSchema();
+  ensureJobSchema();
   const started = Date.now();
   const autoUnsuspended = autoUnsuspendExpired({ now });
   const recoveredJobs = recoverInterruptedJobs({ now });
@@ -218,6 +219,7 @@ export function startScheduler() {
   if (timer) return timer;
   try {
     ensureSchedulerSchema();
+    ensureJobSchema();
     seedAutomationJobs();
     recoverInterruptedRuns();
     recoverInterruptedJobs();

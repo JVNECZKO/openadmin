@@ -54,3 +54,9 @@ screenshots/
 .claude/
 AGENTS.md
 CLAUDE.md
+
+# Generated at package/deploy time; never trust a checkout's .git at runtime.
+build-info.json
+AUDYT_PO_POPRAWKACH_2026-11-15.md
+reaudit-2026-11-15/
+screenshots-reaudit/

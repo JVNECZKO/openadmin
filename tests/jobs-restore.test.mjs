@@ -1,4 +1,5 @@
 // Durable jobs, transactional restore, scheduler leases and update signing.
+process.env.OA_IMAP_PORT = '0';
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

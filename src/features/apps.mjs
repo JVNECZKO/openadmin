@@ -52,7 +52,9 @@ function appRow(ctx, st) {
       </div>
     </div>
     <div class="app-row-actions">
-      ${st.running ? h`<a class="btn btn-secondary btn-sm" href="/${st.id}/" target="_blank" rel="noopener">Open</a>` : ''}
+      ${st.running ? (st.id === 'phpmyadmin'
+        ? h`<a class="btn btn-secondary btn-sm" href="/user/databases">Wybierz bazę</a>`
+        : h`<a class="btn btn-secondary btn-sm" href="/${st.id}/" target="_blank" rel="noopener">Open</a>`) : ''}
       ${!st.installed && ctx.user.level === 'admin' ? h`<form method="post" action="/admin/web-apps/${st.id}/install" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
         <button class="btn btn-primary btn-sm" type="submit">Install</button></form>` : ''}
       ${st.installed && !st.running && ctx.user.level === 'admin' ? h`<form method="post" action="/admin/web-apps/${st.id}/start" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">

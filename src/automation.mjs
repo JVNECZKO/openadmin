@@ -11,6 +11,7 @@ import { config } from './config.mjs';
 import { listStorage } from './storage.mjs';
 import { homeRoot } from './paths.mjs';
 import { formatBytes } from './util.mjs';
+import { deriveJobObservation } from './metrics.mjs';
 
 export const MIN_INTERVAL_SECONDS = 15;
 export const MAX_INTERVAL_SECONDS = 30 * 86400;
@@ -144,6 +145,7 @@ export function automationStatus() {
       description: definition?.description || '',
       due: cfg.enabled && !!job.enabled && dueAt(job.next_run_at, now),
       next_in_seconds: Number.isFinite(next) ? Math.max(0, Math.round((next - now) / 1000)) : null,
+      observation: deriveJobObservation({ key: job.key, status: job.last_status, output: job.last_output, error: job.last_error || (job.last_status === 'error' ? job.last_output : '') }),
     };
   });
   return {
@@ -154,6 +156,8 @@ export function automationStatus() {
       jobs: jobs.length,
       enabled: jobs.filter((job) => job.enabled).length,
       failures: jobs.reduce((sum, job) => sum + Number(job.fail_count || 0), 0),
+      critical: jobs.filter((job) => job.observation?.observedStatus === 'critical').length,
+      warning: jobs.filter((job) => job.observation?.observedStatus === 'warning').length,
     },
     settings: {
       disk_threshold: cfg.diskThreshold,
@@ -161,7 +165,10 @@ export function automationStatus() {
       mail_retry: cfg.mailRetry,
     },
     jobs,
-    lastRuns: all('SELECT * FROM automation_runs ORDER BY id DESC LIMIT 20'),
+    lastRuns: all('SELECT * FROM automation_runs ORDER BY id DESC LIMIT 20').map((run) => ({
+      ...run,
+      observation: deriveJobObservation({ key: run.job_key, status: run.status, output: run.output, error: run.error }),
+    })),
     generated_at: new Date(now).toISOString(),
   };
 }
@@ -345,18 +352,12 @@ async function jobMailQueue() {
     return unavailable(`Mail queue module is not available: ${error.message}`);
   }
   if (typeof mailops.queueList !== 'function') return unavailable('Mail queue inspector is not available (queueList missing)');
-  const result = mailops.queueList();
-  if (!result || result.ok === false) return unavailable(result?.error || 'Mail queue is unavailable', result?.error || '');
-  const rows = Array.isArray(result.rows) ? result.rows : [];
-  const counts = rows.reduce((acc, row) => {
-    const key = row.status || 'queued';
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-  const source = result.simulated || rows.some((row) => row.db) ? 'panel queue' : 'Exim queue';
-  const summary = `${source}: total=${rows.length}, deferred=${counts.deferred || 0}, failed=${counts.failed || 0}, queued=${counts.queued || 0}`;
+  const snap = typeof mailops.mailQueueSnapshot === 'function' ? mailops.mailQueueSnapshot() : null;
+  if (!snap || snap.ok === false) return unavailable(snap?.error || 'Mail queue is unavailable', snap?.error || '');
+  const rows = snap.rows;
+  const summary = `${snap.source}: total=${snap.total}, deferred=${snap.deferred}, failed=${snap.failed}, queued=${snap.queued}`;
   const cfg = automationSettings();
-  if (!cfg.mailRetry) return { status: 'ok', output: `${summary}; retry disabled` };
+  if (!cfg.mailRetry) return { status: 'ok', output: `${summary}; retry disabled`, observation: snap.failed > 0 ? 'critical' : snap.deferred > 0 ? 'warning' : 'ok' };
   if (typeof mailops.queueAction !== 'function') return unavailable(`${summary}; queueAction missing, retry is unavailable`);
   const candidates = rows.filter((row) => row.status === 'failed' || row.status === 'deferred').slice(0, 10);
   let retried = 0;
@@ -593,7 +594,8 @@ export async function runAutomationJob(key, { trigger = 'manual', actor = 'admin
     if (status === 'error') notifyJobFailure(job, error, output);
     inFlight.delete(job.key);
   }
-  return { ok: status === 'ok' || status === 'warn', status, output, error, job: get('SELECT * FROM automation_jobs WHERE key = ?', job.key) };
+  const observation = deriveJobObservation({ key: job.key, status, output, error });
+  return { ok: status === 'ok' || status === 'warn', status, output, error, observation: observation.observedStatus, executionStatus: observation.executionStatus, observedStatus: observation.observedStatus, job: get('SELECT * FROM automation_jobs WHERE key = ?', job.key) };
 }
 
 /** One scheduler tick: run jobs whose next_run_at is due. Never throws per job. */

@@ -9,6 +9,7 @@ import path from 'node:path';
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openadmin-metrics-test-'));
 process.env.OA_DATA_DIR = dataDir;
 process.env.OA_PORT = '0';
+process.env.OA_IMAP_PORT = '0';
 process.env.OA_HOST = '127.0.0.1';
 process.env.OA_DEMO = '0';
 process.env.OA_PROVIDER = 'sandbox';

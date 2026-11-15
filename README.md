@@ -262,3 +262,12 @@ See [LICENSE](LICENSE).
 
 OpenAdmin is an independent project and is not affiliated with DirectAdmin or cPanel.
 DirectAdmin and cPanel are trademarks of their respective owners.
+
+
+### Build identification
+
+Generate the immutable deployment descriptor before packaging and copy it next
+to `package.json` in the installed tree. The runtime reads this file first.
+
+    node tools/build-info.mjs
+    scp build-info.json root@host:/usr/local/openadmin/build-info.json

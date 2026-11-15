@@ -16,6 +16,7 @@ import { all, get, run, setting, nowIso, audit } from './db.mjs';
 import { config } from './config.mjs';
 import { systemProvider } from './providers/index.mjs';
 import { MetricsService, serviceStateRows, deriveJobObservation } from './metrics.mjs';
+import { mailQueueSnapshot } from './mailops.mjs';
 import {
   listServers as listBackupServers,
   listRuns as listBackupRuns,
@@ -625,11 +626,12 @@ export function collectActionCenter({
   /* ------------------------------------------------------------------- mail */
   observe('mail', 'Kolejka i bounce poczty', () => {
     const items = [];
-    const queue = all('SELECT status, COUNT(*) AS n FROM mail_queue GROUP BY status');
-    const byStatus = Object.fromEntries(queue.map((row) => [row.status || 'queued', Number(row.n) || 0]));
-    const failed = byStatus.failed || 0;
-    const deferred = byStatus.deferred || 0;
-    const total = Object.values(byStatus).reduce((sum, value) => sum + value, 0);
+    const snap = mailQueueSnapshot();
+    if (snap.ok === false) throw new Error(snap.error || 'Kolejka poczty jest niedostępna');
+    const byStatus = { failed: snap.failed, deferred: snap.deferred, queued: snap.queued, total: snap.total };
+    const failed = snap.failed;
+    const deferred = snap.deferred;
+    const total = snap.total;
     if (failed > 0) {
       items.push(makeFinding({
         dedupeKey: 'mail:queue-failed',
@@ -641,7 +643,7 @@ export function collectActionCenter({
         action: { label: 'Otwórz kolejkę', href: '/admin/mail?tab=queue' },
         detailsHref: '/admin/mail?tab=queue',
         source: 'mail',
-        sourceDetail: `mail_queue: ${failed} failed, ${deferred} deferred, ${total} łącznie`,
+        sourceDetail: `${snap.source}: ${failed} failed, ${deferred} deferred, ${total} łącznie`,
         observedAt: atIso,
         evidence: { byStatus, total },
       }));
@@ -979,27 +981,28 @@ export function collectActionCenter({
         error: job.last_status === 'error' ? job.last_output : '',
       });
       const failed = Number(job.fail_count || 0) > 0 || String(job.last_status || '') === 'error';
-      if (!failed) continue;
+      const observedBad = ['critical', 'warning'].includes(observation.observedStatus);
+      if (!failed && !observedBad) continue;
       failures.push({ job, observation });
       items.push(makeFinding({
         dedupeKey: `automation-failed:${job.key}`,
         type: 'automation',
         severity: observation.observedStatus === 'critical' ? 'P1' : 'P2',
-        title: `Zadanie automatyzacji „${job.label}” kończy się błędem`,
-        impact: 'Powtarzalna kontrola lub czynność porządkowa nie wykonuje się, więc problem może pozostać niewykryty.',
+        title: observation.observedStatus === 'critical' ? `Kontrola „${job.label}” wykryła stan krytyczny` : `Zadanie automatyzacji „${job.label}” wymaga uwagi`,
+        impact: observation.observedStatus === 'critical' ? 'Kontrola wykonała się, ale wykryła realny problem operacyjny — nie jest to sukces.' : 'Powtarzalna kontrola lub czynność porządkowa nie wykonuje się poprawnie.',
         recommendation: 'Otwórz zadanie, sprawdź ostatni błąd i uruchom je ręcznie po poprawieniu przyczyny.',
         action: { label: 'Otwórz automatyzację', href: `/admin/automation?edit=${encodeURIComponent(job.key)}` },
         detailsHref: '/admin/automation',
         source: 'automation',
-        sourceDetail: `${job.fail_count || 0} niepowodzeń · ${job.last_run_at || 'brak uruchomienia'} · ${String(job.last_output || '').slice(0, 240)}`,
+        sourceDetail: `wykonanie ${job.last_status} · obserwacja ${observation.observedStatus} · ${job.fail_count || 0} niepowodzeń · ${String(job.last_output || '').slice(0, 240)}`,
         observedAt: job.last_run_at || atIso,
-        evidence: { key: job.key, failCount: job.fail_count, lastStatus: job.last_status, observedStatus: observation.observedStatus },
+        evidence: { key: job.key, failCount: job.fail_count, lastStatus: job.last_status, observedStatus: observation.observedStatus, reason: observation.reason },
       }));
     }
     const enabled = jobs.filter((job) => Number(job.enabled) === 1).length;
     return {
       items,
-      detail: `${enabled}/${jobs.length} zadań włączonych · ${failures.length} z niepowodzeniami`,
+      detail: `${enabled}/${jobs.length} zadań włączonych · ${failures.filter((f) => f.observation.observedStatus === 'critical').length} krytycznych obserwacji · ${failures.length} wymaga uwagi`,
     };
   });
 

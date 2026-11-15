@@ -8,6 +8,7 @@ import path from 'node:path';
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openadmin-automation-test-'));
 process.env.OA_DATA_DIR = dataDir;
 process.env.OA_PORT = '0';
+process.env.OA_IMAP_PORT = '0';
 process.env.OA_HOST = '127.0.0.1';
 process.env.OA_DEMO = '1';
 process.env.OA_ADMIN_PASSWORD = 'admin-test-pass';
@@ -54,6 +55,8 @@ before(async () => {
 });
 
 after(async () => {
+  const { stopScheduler } = await import('../src/scheduler.mjs');
+  stopScheduler();
   const { stopImap } = await import('../src/imap.mjs');
   stopImap();
   await new Promise((resolve) => server.close(resolve));
@@ -101,7 +104,7 @@ test('automationStatus is JSON-serializable and reports jobs, due count and last
   assert.ok(Array.isArray(status.jobs));
   assert.ok(Array.isArray(status.lastRuns));
   assert.deepEqual(Object.keys(status.settings).sort(), ['disk_threshold', 'mail_retry', 'tmp_days']);
-  assert.deepEqual(Object.keys(status.totals).sort(), ['enabled', 'failures', 'jobs']);
+  assert.deepEqual(Object.keys(status.totals).sort(), ['critical', 'enabled', 'failures', 'jobs', 'warning']);
   assert.ok(status.jobs.every((job) => typeof job.due === 'boolean' && typeof job.description === 'string'));
   assert.ok(status.jobs.every((job) => ['key', 'label', 'enabled', 'interval_seconds', 'last_run_at', 'next_run_at', 'last_status', 'last_output', 'run_count', 'fail_count'].every((key) => key in job)));
   assert.doesNotThrow(() => JSON.parse(JSON.stringify(status)));
@@ -303,4 +306,25 @@ test('global switch and clear-failures use CSRF-protected forms', async () => {
   const cleared = await form('/admin/automation/clear-failures', { _csrf: csrf }, cookie);
   assert.equal(cleared.status, 302);
   assert.equal(db.get('SELECT COALESCE(SUM(fail_count), 0) AS n FROM automation_jobs').n, 0);
+});
+
+test('mail failed=9 is critical on dashboard, health, action center and automation', async () => {
+  db.run('DELETE FROM mail_queue');
+  for (let i = 0; i < 9; i += 1) {
+    db.run(`INSERT INTO mail_queue(sender, recipient, subject, status, error, created_at) VALUES(?,?,?,?,?,?)`,
+      'sender@example.test', `rcpt${i}@example.test`, 'contract test', 'failed', 'rejected', db.nowIso());
+  }
+  const run = await automation.runAutomationJob('mail.queue', { trigger: 'manual', actor: 'demoadmin' });
+  assert.equal(run.status, 'ok', 'technical execution succeeds');
+  assert.equal(run.observation, 'critical', 'observed result is critical');
+  const cookie = await loginAs('demoadmin');
+  const pages = ['/admin', '/admin/health', '/admin/action-center', '/admin/automation'];
+  for (const url of pages) {
+    const res = await fetch(base + url, { headers: { Cookie: cookie } });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /9/, `page ${url} exposes the failed count`);
+    assert.match(html, /krytyczn|critical|CRITICAL|failed/i, `page ${url} exposes a critical state`);
+  }
+  db.run('DELETE FROM mail_queue');
 });

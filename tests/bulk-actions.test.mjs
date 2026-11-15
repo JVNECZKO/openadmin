@@ -2,6 +2,7 @@
 // tamper/expiry, partial failures, audits and idempotency. The engine is tested
 // directly against the real DB; the route surface is exercised through the real
 // Router with fake request contexts so no production route edit is required.
+process.env.OA_IMAP_PORT = '0';
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

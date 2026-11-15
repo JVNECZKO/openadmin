@@ -314,7 +314,15 @@ export function startImap({ port = Number(config.imapPort || 1143), host = '127.
   running.listen(port, host, () => {
     console.log(`  IMAP server listening on ${host}:${running.address().port}`);
   });
-  running.on('error', (e) => console.warn('[openadmin] IMAP:', e.message));
+  running.on('error', (e) => {
+    if (e.code === 'EADDRINUSE' && Number(port) !== 0) {
+      try { running.close(); } catch { /* ignore */ }
+      running = null;
+      try { startImap({ port: 0, host }); } catch (fallback) { console.warn('[openadmin] IMAP fallback:', fallback.message); }
+      return;
+    }
+    console.warn('[openadmin] IMAP:', e.message);
+  });
   if (typeof running.unref === 'function') running.unref();
   return running;
 }

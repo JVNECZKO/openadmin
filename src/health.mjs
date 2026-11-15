@@ -214,7 +214,7 @@ export async function applicationHealth(id, {
   result.login = {
     kind: id === 'phpmyadmin' ? 'sso' : 'password',
     sso: id === 'phpmyadmin' ? sso : false,
-    path: id === 'phpmyadmin' && sso ? '/signon.php' : '/',
+    path: id === 'phpmyadmin' && sso ? '/phpmyadmin/signon.php' : `/${id}/`,
     ready: false,
   };
 
@@ -233,7 +233,9 @@ export async function applicationHealth(id, {
 
   let response;
   try {
-    response = await http(`http://127.0.0.1:${app.port}/`, {
+    // Probe the application's real base path on the loopback server, not `/`
+    // (which is intentionally a 404 on the shared webroot).
+    response = await http(`http://127.0.0.1:${app.port}${result.basePath}`, {
       timeout: 2000,
       headers: { Host: `127.0.0.1:${app.port}` },
     });

@@ -114,6 +114,13 @@ export function schemaInfo() {
   }
 }
 
+function buildArtifact() {
+  for (const file of [path.join(config.root, 'build-info.json'), path.join(config.root, 'src', 'build-info.json')]) {
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* try next */ }
+  }
+  return null;
+}
+
 function gitInfo() {
   try {
     const commit = spawnSync('git', ['rev-parse', '--short=12', 'HEAD'], { cwd: config.root, encoding: 'utf8', timeout: 5000 });
@@ -136,14 +143,16 @@ export function buildInfo() {
   if (!deployedAt) {
     try { deployedAt = fs.statSync(path.join(config.root, 'src', 'server.mjs')).mtime.toISOString(); } catch { deployedAt = ''; }
   }
-  const commit = process.env.OA_COMMIT || git.commit || '';
+  const artifact = buildArtifact();
+  const commit = process.env.OA_COMMIT || artifact?.commit || git.commit || '';
   return {
     version: VERSION,
-    buildId: process.env.OA_BUILD_ID || (commit ? `${VERSION}+${commit}` : VERSION),
+    buildId: process.env.OA_BUILD_ID || artifact?.buildId || (commit ? `${VERSION}+${commit}` : VERSION),
     commit,
-    commitDate: git.commitDate || '',
+    commitDate: artifact?.commitDate || git.commitDate || '',
     dirty: git.dirty,
-    deployedAt,
+    deployedAt: artifact?.deployedAt || deployedAt,
+    manifestSha256: artifact?.manifestSha256 || '',
     channel: updateChannel(),
     schema,
     assets,
@@ -172,6 +181,7 @@ export function diagnosticsText() {
     `channel: ${info.channel}`,
     `schema: v${info.schema.version}, ${info.schema.tables} tables, hash ${info.schema.hash}`,
     `assets: ${info.assets.files} files, sha256 ${info.assets.sha256}`,
+    `manifest: ${info.manifestSha256 || 'unknown'}`,
     `node: ${info.node} ${info.platform}`,
     `provider: ${info.provider}`,
     `pinned update keys: ${info.updateKeys.count}${info.updateKeys.errors.length ? ` (errors: ${info.updateKeys.errors.join('; ')})` : ''}`,

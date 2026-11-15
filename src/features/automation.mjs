@@ -18,6 +18,9 @@ function statusBadge(status) {
     unavailable: ['warn', 'Unavailable'],
     running: ['brand', 'Running'],
     pending: ['muted', 'Pending'],
+    critical: ['danger', 'CRITICAL'],
+    warning: ['warn', 'Warning'],
+    unknown: ['muted', 'Unknown'],
   };
   const [tone, label] = map[String(status || 'pending').toLowerCase()] || ['muted', status || 'Pending'];
   return badge(label, tone, { dot: true });
@@ -39,7 +42,7 @@ function durationLabel(run) {
 
 function lastRunCell(job) {
   if (!job.last_run_at) return h`<span class="small muted">never</span>`;
-  return h`${statusBadge(job.last_status)}<div class="small muted">${formatDate(job.last_run_at, { time: true })} · ${timeAgo(job.last_run_at)}</div>`;
+  return h`<div class="small muted">wykonanie: ${statusBadge(job.last_status)}</div><div class="small muted">stan: ${statusBadge(job.observation?.observedStatus || 'unknown')}</div><div class="small muted">${formatDate(job.last_run_at, { time: true })} · ${timeAgo(job.last_run_at)}</div>`;
 }
 
 function nextRunCell(job) {
@@ -75,12 +78,14 @@ export function register(router) {
     </form>`;
     const body = h`
       ${!status.enabled ? alert('Global automation is paused. Scheduled jobs will not run until it is enabled.', 'warn') : ''}
-      ${status.enabled && status.totals.failures ? alert(`${status.totals.failures} failed job attempt(s) are recorded. Inspect Recent runs, fix the cause, then run the job again.`, 'warn') : ''}
+      ${status.enabled && status.totals.critical ? alert(`${status.totals.critical} kontrola(-e) wykazała stan krytyczny mimo technicznego sukcesu wykonania. Otwórz szczegóły i napraw obserwowany problem.`, 'danger') : ''}
+      ${status.enabled && !status.totals.critical && status.totals.failures ? alert(`${status.totals.failures} failed job attempt(s) are recorded. Inspect Recent runs, fix the cause, then run the job again.`, 'warn') : ''}
       <div class="stat-grid">
         ${statCard({ label: 'Automation', value: status.enabled ? 'ON' : 'OFF', sub: status.enabled ? 'global scheduler active' : 'paused globally', icon: 'refresh', tone: status.enabled ? 'ok' : 'warn' })}
         ${statCard({ label: 'Due now', value: String(status.due), sub: 'jobs waiting for the next tick', icon: 'clock', tone: status.due ? 'warn' : 'ok' })}
         ${statCard({ label: 'Scheduled jobs', value: `${status.totals.enabled}/${status.totals.jobs}`, sub: 'enabled / total', icon: 'list' })}
-        ${statCard({ label: 'Failures', value: String(status.totals.failures), sub: 'cumulative failed attempts', icon: 'alert', tone: status.totals.failures ? 'danger' : 'ok' })}
+        ${statCard({ label: 'Krytyczne obserwacje', value: String(status.totals.critical), sub: 'wynik kontroli, nie tylko wykonanie', icon: 'alert', tone: status.totals.critical ? 'danger' : 'ok' })}
+        ${statCard({ label: 'Nieudane wykonania', value: String(status.totals.failures), sub: 'skumulowane próby', icon: 'x', tone: status.totals.failures ? 'warn' : 'ok' })}
       </div>
       ${card('Automation settings', form([
         field({ name: 'enabled', label: 'Global automation', type: 'checkbox', value: status.enabled, help: 'Disabling this stops scheduled runs; manual Run now still works.' }),
@@ -109,7 +114,8 @@ export function register(router) {
           { label: 'Job', render: (run) => h`<span class="cell-mono">${run.job_key}</span>` },
           { label: 'Started', render: (run) => h`<div>${formatDate(run.started_at, { time: true })}</div><div class="small muted">${timeAgo(run.started_at)}</div>` },
           { label: 'Duration', render: (run) => durationLabel(run) },
-          { label: 'Status', render: (run) => statusBadge(run.status) },
+          { label: 'Wykonanie', render: (run) => statusBadge(run.status) },
+          { label: 'Stan kontroli', render: (run) => statusBadge(run.observation?.observedStatus || 'unknown') },
           { label: 'Output / error', render: (run) => h`<span class="small ${run.error ? 'danger' : 'muted'}">${clip(run.error || run.output || '—')}</span>` },
         ],
         rows: status.lastRuns,

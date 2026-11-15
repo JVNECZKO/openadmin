@@ -204,7 +204,7 @@ export function navFor(level, caps = {}, opts = {}) {
   else if (level === 'reseller') groups.push(...resellerGroups);
   else groups.push(...userGroups);
 
-  return groups.map((g) => ({ ...g, items: g.items.filter((i) => i.cap !== false) }));
+  return groups.map((g) => ({ ...g, title: t(lang, g.title), items: g.items.filter((i) => i.cap !== false).map((i) => ({ ...i, label: t(lang, i.label) })) }));
 }
 
 export function isActive(itemHref, path) {

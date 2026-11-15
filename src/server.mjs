@@ -26,7 +26,7 @@ import { APPS, status as appStatus, proxy as proxyApp, ensureStarted } from './a
 import { collectUsage } from './usage.mjs';
 import { formatCidr, ipMatches, normalizeIp } from './apikeys.mjs';
 import { enforceAll } from './quota.mjs';
-import { startScheduler } from './scheduler.mjs';
+import { startScheduler, stopScheduler } from './scheduler.mjs';
 import { startImap, stopImap } from './imap.mjs';
 import { syncMail } from './mail.mjs';
 import { syncMaildirs } from './maildir.mjs';
@@ -375,13 +375,18 @@ export function start() {
     ? https.createServer({ cert: fs.readFileSync(config.certFile), key: fs.readFileSync(config.keyFile) }, handler)
     : http.createServer(handler);
 
-  try { startImap(); } catch (e) { console.warn('[openadmin] IMAP:', e.message); }
+  try { startImap(); } catch (e) {
+    if (e.code === 'EADDRINUSE') {
+      try { startImap({ port: 0 }); } catch (fallback) { console.warn('[openadmin] IMAP fallback:', fallback.message); }
+    } else console.warn('[openadmin] IMAP:', e.message);
+  }
   server.listen(config.port, config.host, () => {
     const scheme = secure ? 'https' : 'http';
     const host = config.host === '0.0.0.0' ? 'localhost' : config.host;
     console.log(`\n  OpenAdmin v${VERSION} listening on ${scheme}://${host}:${config.port}`);
     console.log(`  Provider: ${config.provider} · Demo: ${config.demo ? 'on' : 'off'} · License: unlimited (free)\n`);
   });
+  server.on('close', () => { try { stopScheduler(); } catch { /* ignore */ } });
   server.on('error', (e) => {
     if (e.code === 'EADDRINUSE') console.error(`Port ${config.port} is already in use. Set OA_PORT to another port.`);
     else console.error(e);

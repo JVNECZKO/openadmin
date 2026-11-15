@@ -1,5 +1,6 @@
 // SEC-002, SEC-003, SEC-021, SEC-022 regression tests.
 // Every temporary file lives below os.tmpdir(); the repository is untouched.
+process.env.OA_IMAP_PORT = '0';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
