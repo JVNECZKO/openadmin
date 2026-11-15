@@ -48,3 +48,13 @@ the database page, Roundcube health is HTTP 200, and the Exim queue is empty.
 - The Exim queue is empty; the 13 frozen notification bounces were removed after fixing
   the unrouteable recipient handling.
 - Live build descriptor now resolves to the deployed commit through `build-info.json`.
+
+## Host hardening performed live
+
+- Added a dedicated operator Ed25519 key to the container and switched sshd to
+  `PasswordAuthentication no`, `KbdInteractiveAuthentication no`,
+  `PermitRootLogin prohibit-password`; `sshd -t` passed, key login works and password
+  login is rejected. Proxmox console access remains available as recovery.
+- The backup target uses a separate restricted `sftp-server` key; it cannot open a
+  shell. The panel stores it encrypted (`v2` secret format) and materializes it only
+  for the duration of the SFTP transfer.
