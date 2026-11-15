@@ -560,13 +560,13 @@ function runSandboxCommand(username, input) {
 }
 
 function defaultErrorPage(code) {
-  const titles = { 400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 500: 'Internal Server Error', 503: 'Service Unavailable' };
+  const titles = { 400: 'Nieprawidłowe żądanie', 401: 'Brak autoryzacji', 403: 'Brak dostępu', 404: 'Nie znaleziono', 500: 'Błąd wewnętrzny serwera', 503: 'Usługa niedostępna' };
   return `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>${code} ${titles[code] || 'Error'}</title>
+<html lang="pl">
+<head><meta charset="utf-8"><title>${code} ${titles[code] || 'Błąd'}</title>
 <style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0;background:#f6f9fc;color:#17222e}h1{font-size:64px;margin:0;color:#0a6daa}p{color:#5b6b7d}</style>
 </head>
-<body><main><h1>${code}</h1><p>${titles[code] || 'Something went wrong'}</p></main></body>
+<body><main><h1>${code}</h1><p>${titles[code] || 'Coś poszło nie tak'}</p></main></body>
 </html>`;
 }
 

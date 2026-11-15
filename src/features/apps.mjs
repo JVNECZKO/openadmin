@@ -46,21 +46,21 @@ function appRow(ctx, st) {
       <strong>${st.name} <span class="small muted">${st.version || st.version === '' ? 'v' + st.version : ''}</span></strong>
       <span class="small muted">${st.description}</span>
       <div class="row" style="gap:6px;margin-top:6px">
-        ${st.installed ? badge('installed', 'ok') : badge('not installed', 'muted')}
-        ${st.running ? badge('running on :' + st.port, 'brand') : badge('stopped', 'muted')}
-        ${st.missingExtensions.length ? badge('missing PHP: ' + st.missingExtensions.join(', '), 'warn') : ''}
+        ${st.installed ? badge('zainstalowana', 'ok') : badge('niezainstalowana', 'muted')}
+        ${st.running ? badge('działa na :' + st.port, 'brand') : badge('zatrzymana', 'muted')}
+        ${st.missingExtensions.length ? badge('brakuje PHP: ' + st.missingExtensions.join(', '), 'warn') : ''}
       </div>
     </div>
     <div class="app-row-actions">
       ${st.running ? (st.id === 'phpmyadmin'
         ? h`<a class="btn btn-secondary btn-sm" href="/user/databases">Wybierz bazę</a>`
-        : h`<a class="btn btn-secondary btn-sm" href="/${st.id}/" target="_blank" rel="noopener">Open</a>`) : ''}
+        : h`<a class="btn btn-secondary btn-sm" href="/${st.id}/" target="_blank" rel="noopener">Otwórz</a>`) : ''}
       ${!st.installed && ctx.user.level === 'admin' ? h`<form method="post" action="/admin/web-apps/${st.id}/install" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <button class="btn btn-primary btn-sm" type="submit">Install</button></form>` : ''}
+        <button class="btn btn-primary btn-sm" type="submit">Zainstaluj</button></form>` : ''}
       ${st.installed && !st.running && ctx.user.level === 'admin' ? h`<form method="post" action="/admin/web-apps/${st.id}/start" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <button class="btn btn-primary btn-sm" type="submit" ${runnable ? '' : 'disabled'}>Start</button></form>` : ''}
+        <button class="btn btn-primary btn-sm" type="submit" ${runnable ? '' : 'disabled'}>Uruchom</button></form>` : ''}
       ${st.running && ctx.user.level === 'admin' ? h`<form method="post" action="/admin/web-apps/${st.id}/stop" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <button class="btn btn-ghost btn-sm" type="submit">Stop</button></form>` : ''}
+        <button class="btn btn-ghost btn-sm" type="submit">Zatrzymaj</button></form>` : ''}
     </div>
   </div>`;
 }
@@ -70,24 +70,33 @@ function fallbackPage(ctx, id) {
   const st = status(id);
   const admin = ctx.user && ctx.user.level === 'admin';
   const body = h`${card(`${st.name}`, h`
-    ${!st.installed ? alert(`${st.name} is not installed yet on this server.${admin ? ' Use the button below to download the official release into the panel data directory.' : ' Ask your administrator to install it from Admin → Web Apps.'}`, 'info') : ''}
-    ${st.installed && st.missingExtensions.length ? alert(`Installed, but PHP is missing: ${st.missingExtensions.join(', ')}. On Debian/Ubuntu install <code>php-${st.missingExtensions.join(' php-')}</code>.`, 'warn') : ''}
+    ${!st.installed ? alert(`${st.name} nie jest jeszcze zainstalowana na tym serwerze.${admin ? ' Użyj przycisku poniżej, aby pobrać oficjalne wydanie do katalogu danych panelu.' : ' Poproś administratora o instalację w Admin → Aplikacje WWW.'}`, 'info') : ''}
+    ${st.installed && st.missingExtensions.length ? alert(`Zainstalowana, ale brakuje PHP: ${st.missingExtensions.join(', ')}. W Debian/Ubuntu zainstaluj <code>php-${st.missingExtensions.join(' php-')}</code>.`, 'warn') : ''}
     ${kvList([
-      ['Version', st.version || st.version === '' ? 'v' + st.version : 'not installed'],
-      ['Status', st.running ? badge('running', 'ok') : badge('stopped', 'muted')],
+      ['Wersja', st.version || st.version === '' ? 'v' + st.version : 'niezainstalowana'],
+      ['Status', st.running ? badge('działa', 'ok') : badge('zatrzymana', 'muted')],
       ['URL', h`<code>/${st.id}/</code>`],
-      ['Requires', st.requires.join(', ')],
-      ['Data directory', st.dir],
+      ['Wymaga', st.requires.join(', ')],
+      ['Katalog danych', st.dir],
     ])}
     <div class="row mt-18">
       ${admin && !st.installed ? h`<form method="post" action="/admin/web-apps/${st.id}/install" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <button class="btn btn-primary" type="submit">Install ${st.name}</button></form>` : ''}
+        <button class="btn btn-primary" type="submit">Zainstaluj ${st.name}</button></form>` : ''}
       ${admin && st.installed && !st.running ? h`<form method="post" action="/admin/web-apps/${st.id}/start" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <button class="btn btn-primary" type="submit" ${st.missingExtensions.length ? 'disabled' : ''}>Start ${st.name}</button></form>` : ''}
-      ${admin ? h`<a class="btn btn-secondary" href="/admin/web-apps">All web apps</a>` : ''}
-      ${!id || id === 'phpmyadmin' ? h`<a class="btn btn-ghost" href="/user/databases">Databases</a>` : h`<a class="btn btn-ghost" href="/user/email">Mailboxes</a>`}
+        <button class="btn btn-primary" type="submit" ${st.missingExtensions.length ? 'disabled' : ''}>Uruchom ${st.name}</button></form>` : ''}
+      ${admin ? h`<a class="btn btn-secondary" href="/admin/web-apps">Wszystkie aplikacje</a>` : ''}
+      ${!id || id === 'phpmyadmin' ? h`<a class="btn btn-ghost" href="/user/databases">Bazy danych</a>` : h`<a class="btn btn-ghost" href="/user/email">Skrzynki</a>`}
     </div>`)}`;
   return page(ctx, { title: st.name, subtitle: st.description, body });
+}
+
+function logTail(id, query = '') {
+  const raw = logs(id) || '';
+  const needle = String(query || '').toLowerCase();
+  const lines = raw.split('\n');
+  const filtered = needle ? lines.filter((line) => line.toLowerCase().includes(needle)) : lines;
+  const tail = filtered.slice(-40).join('\n');
+  return tail || 'Brak wpisów w logu.';
 }
 
 export function register(router) {
@@ -106,25 +115,25 @@ export function register(router) {
   router.get('/admin/web-apps', (ctx) => {
     const all = statusAll();
     const body = h`
-      ${alert('phpMyAdmin and Roundcube are downloaded from their official release archives into the panel data directory, configured locally and served on loopback behind the panel. Nothing is bundled into the repository.', 'info')}
-      ${card('Applications', h`${Object.values(all).map((st) => appRow(ctx, st))}`, { sub: 'One-click install, start and stop' })}
-      ${card('PHP runtime', h`${(() => {
+      ${alert('phpMyAdmin i Roundcube są pobierane z oficjalnych archiwów do katalogu danych panelu, konfigurowane lokalnie i udostępniane przez loopback za panelem. Nic nie jest dołączane do repozytorium.', 'info')}
+      ${card('Aplikacje', h`${Object.values(all).map((st) => appRow(ctx, st))}`, { sub: 'Instalacja, uruchamianie i zatrzymywanie jednym kliknięciem' })}
+      ${card('Środowisko PHP', h`${(() => {
         const exts = all.phpmyadmin?.missingExtensions || [];
         return kvList([
-          ['PHP CLI', all.phpmyadmin?.php ? badge('available', 'ok') : badge('missing', 'danger')],
-          ['mysqli', all.phpmyadmin?.missingExtensions.includes('mysqli') ? badge('missing', 'danger') : badge('present', 'ok')],
-          ['imap (Roundcube)', all.roundcube?.missingExtensions.includes('imap') ? badge('missing', 'warn') : badge('present', 'ok')],
-          ['pdo_sqlite', all.roundcube?.missingExtensions.includes('pdo_sqlite') ? badge('missing', 'warn') : badge('present', 'ok')],
+          ['PHP CLI', all.phpmyadmin?.php ? badge('dostępne', 'ok') : badge('brak', 'danger')],
+          ['mysqli', all.phpmyadmin?.missingExtensions.includes('mysqli') ? badge('brak', 'danger') : badge('obecne', 'ok')],
+          ['imap (Roundcube)', all.roundcube?.missingExtensions.includes('imap') ? badge('brak', 'warn') : badge('obecne', 'ok')],
+          ['pdo_sqlite', all.roundcube?.missingExtensions.includes('pdo_sqlite') ? badge('brak', 'warn') : badge('obecne', 'ok')],
         ]);
       })()}`)}
-      ${all.phpmyadmin?.installed ? card('phpMyAdmin single sign-on', h`
+      ${all.phpmyadmin?.installed ? card('Jednokrotne logowanie phpMyAdmin', h`
         ${phpMyAdminSsoEnabled()
-          ? alert('SSO is enabled: the Databases page opens phpMyAdmin for a database with a stored credential. Every hand-off uses a random nonce stored only as a hash, expires after 60 seconds and is consumed exactly once.', 'ok')
-          : alert('Enable SSO to open phpMyAdmin directly from the Databases page. The hand-off uses a one-time nonce, never a reusable URL token.', 'info')}
+          ? alert('SSO jest włączone: strona Bazy danych otwiera phpMyAdmin dla bazy z zapisanymi danymi dostępowymi. Każde przekazanie używa losowego nonce zapisanego tylko jako hash, wygasa po 60 sekundach i jest jednorazowe.', 'ok')
+          : alert('Włącz SSO, aby otwierać phpMyAdmin bezpośrednio ze strony Bazy danych. Przekazanie używa jednorazowego nonce, nigdy wielokrotnego tokenu URL.', 'info')}
         <form method="post" action="/admin/web-apps/phpmyadmin/sso"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <button class="btn btn-primary btn-sm" type="submit">${phpMyAdminSsoEnabled() ? 'Regenerate SSO configuration' : 'Enable SSO'}</button></form>`)
+          <button class="btn btn-primary btn-sm" type="submit">${phpMyAdminSsoEnabled() ? 'Wygeneruj ponownie konfigurację SSO' : 'Włącz SSO'}</button></form>`)
         : ''}
-      ${card('Webmail sign-in', h`
+      ${card('Logowanie do webmaila', h`
         ${alert('Standardowe wejście do webmaila z listy skrzynek otwiera formularz logowania i wymaga hasła skrzynki. Panel pokazuje ostrzeżenie przed przejściem i nie obiecuje logowania bez hasła; Roundcube również wymaga hasła skrzynki.', 'warn')}
         <p class="small muted">Jeśli skrzynka ma inne hasło niż konto panelu, użyj hasła skrzynki. Administrator/reseller może je zresetować w liście skrzynek.</p>
         <div class="row mt-12">
@@ -139,29 +148,49 @@ export function register(router) {
           ['Nagłówki wewnętrzne', badge('filtrowane', 'ok')],
           ['SSO phpMyAdmin', phpMyAdminSsoEnabled() ? badge('włączone', 'ok') : badge('wyłączone', 'muted')],
         ])}`)}
-      ${card('PHP-FPM deployment', h`<p class="small muted mb-12">For production, run phpMyAdmin through PHP-FPM instead of PHP's development server. Generate a pool and nginx snippet, then deploy on Linux as root.</p>
+      ${card('Wdrożenie PHP-FPM', h`<p class="small muted mb-12">W produkcji uruchamiaj phpMyAdmin przez PHP-FPM zamiast serwera deweloperskiego PHP. Wygeneruj pool i fragment nginx, a następnie wdróż na Linuksie jako root.</p>
         <div class="row">
           <form method="post" action="/admin/web-apps/fpm/generate" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-            <button class="btn btn-secondary btn-sm" type="submit">Generate configs</button></form>
+            <button class="btn btn-secondary btn-sm" type="submit">Wygeneruj konfigurację</button></form>
           <form method="post" action="/admin/web-apps/fpm/deploy" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-            <button class="btn btn-primary btn-sm" type="submit">Deploy to PHP-FPM</button></form>
+            <button class="btn btn-primary btn-sm" type="submit">Wdróż do PHP-FPM</button></form>
           <span class="small muted">${ctx.query.fpm ? ctx.query.fpm : ''}</span>
         </div>`)}
-      ${Object.values(all).filter((st) => st.installed).map((st) => card(`${st.name} log`, h`<pre class="code-block">${logs(st.id) || 'No log output yet.'}</pre>`, {
-        actions: [h`<a class="link small" href="/admin/web-apps">Refresh</a>`],
-      }))}`;
-    return page(ctx, { title: 'Web Apps', subtitle: 'phpMyAdmin, Roundcube and their PHP runtime', body });
+      ${Object.values(all).filter((st) => st.installed).map((st) => {
+        const activeFilter = String(ctx.query.logapp || '') === st.id ? String(ctx.query.logq || '') : '';
+        return card(`${st.name} — log`, h`
+          <form method="get" action="/admin/web-apps" class="row" style="gap:8px;margin-bottom:8px">
+            <input type="hidden" name="logapp" value="${st.id}">
+            <input name="logq" value="${activeFilter}" placeholder="Szukaj w logu" style="flex:1;max-width:280px">
+            <button class="btn btn-secondary btn-sm" type="submit">Szukaj</button>
+            <a class="btn btn-ghost btn-sm" href="/admin/web-apps/${st.id}/logs/download">Pobierz log</a>
+          </form>
+          <pre class="code-block">${logTail(st.id, activeFilter)}</pre>
+          <p class="small muted">Ostatnie 40 pasujących wpisów; pełny log dostępny przez pobranie.</p>`, {
+          actions: [h`<a class="link small" href="/admin/web-apps">Odśwież</a>`],
+        });
+      })}`;
+    return page(ctx, { title: 'Aplikacje WWW', subtitle: 'phpMyAdmin, Roundcube i ich środowisko PHP', body });
+  });
+
+  router.get('/admin/web-apps/:id/logs/download', (ctx) => {
+    const id = String(ctx.params.id || '');
+    if (!APPS[id]) return ctx.redirect('/admin/web-apps?flash=Nieznana aplikacja&type=error');
+    const raw = logs(id) || '';
+    ctx.res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    ctx.res.setHeader('Content-Disposition', `attachment; filename="${id}.log"`);
+    ctx.res.end(raw);
   });
 
   router.get('/admin/web-apps/roundcube/preflight', (ctx) => {
     const pf = roundcubePreflight();
     const items = [
-      ['PHP CLI', pf.php, pf.php ? 'available' : 'php not found in PATH'],
-      ['PHP imap extension', !pf.missingExtensions.includes('imap'), pf.missingExtensions.includes('imap') ? 'Install php-imap (Debian/Ubuntu: apt install php-imap)' : 'present'],
-      ['PDO SQLite', !pf.missingExtensions.includes('pdo_sqlite'), pf.missingExtensions.includes('pdo_sqlite') ? 'Install php-sqlite3' : 'present'],
-      ['IMAP server on ' + pf.imapHost, pf.imapReachable, pf.imapReachable ? 'TCP reachable' : 'No listener; the panel IMAP service binds 127.0.0.1:1143'],
-      ['Roundcube files', pf.installed, pf.installed ? 'installed' : 'Install from Web Apps'],
-      ['Roundcube config', pf.config, pf.config ? 'config/config.inc.php written' : 'missing'],
+      ['PHP CLI', pf.php, pf.php ? 'available' : 'PHP nie znaleziono w PATH'],
+      ['PHP imap extension', !pf.missingExtensions.includes('imap'), pf.missingExtensions.includes('imap') ? 'Zainstaluj php-imap (Debian/Ubuntu: apt install php-imap)' : 'present'],
+      ['PDO SQLite', !pf.missingExtensions.includes('pdo_sqlite'), pf.missingExtensions.includes('pdo_sqlite') ? 'Zainstaluj php-sqlite3' : 'present'],
+      ['IMAP server on ' + pf.imapHost, pf.imapReachable, pf.imapReachable ? 'TCP osiągalne' : 'Brak nasłuchu; usługa IMAP panelu nasłuchuje na 127.0.0.1:1143'],
+      ['Roundcube files', pf.installed, pf.installed ? 'installed' : 'Zainstaluj w Aplikacje WWW'],
+      ['Roundcube config', pf.config, pf.config ? 'config/config.inc.php zapisany' : 'missing'],
     ];
     const body = h`${card('Roundcube preflight', h`${table({
       columns: [

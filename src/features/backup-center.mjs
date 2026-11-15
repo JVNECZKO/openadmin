@@ -26,6 +26,23 @@ function tab(ctx) {
   return ['servers', 'jobs', 'runs', 'operations'].includes(value) ? value : 'servers';
 }
 
+function stageLabel(label) {
+  return ({
+    'Preflight (destination, disk, account)': 'Wstępna kontrola (cel, dysk, konto)',
+    'Create archive': 'Tworzenie archiwum', 'Upload to destination': 'Wysyłka do celu',
+    'Apply retention': 'Zastosowanie retencji', 'Record run history': 'Zapis historii',
+    'Preflight': 'Wstępna kontrola', 'Record backup metadata': 'Zapis metadanych backupu',
+  })[label] || label;
+}
+
+function statusLabel(status) {
+  return ({
+    queued: 'w kolejce', running: 'w toku', succeeded: 'zakończone', complete: 'zakończone',
+    failed: 'błąd', error: 'błąd', cancelled: 'anulowane', cancelling: 'anulowanie',
+    pending: 'oczekuje', ok: 'OK', skipped: 'pominięte',
+  })[String(status || '').toLowerCase()] || status || '—';
+}
+
 function statusTone(status) {
   if (status === 'complete' || status === 'succeeded' || status === 'ok') return 'ok';
   if (status === 'failed' || status === 'error') return 'danger';
@@ -49,8 +66,8 @@ async function waitForJob(jobId, timeoutMs = 300000) {
 
 function operationColumns() {
   return [
-    { label: 'Job', render: (r) => h`<a href="${A}/operations/${r.id}" class="cell-strong">#${r.id}</a><span class="cell-sub">${r.kind}</span>` },
-    { label: 'Status', render: (r) => h`${badge(r.status, statusTone(r.status))}<div class="small muted">${r.stageLabel || r.stage || ''}</div>` },
+    { label: 'Zadanie', render: (r) => h`<a href="${A}/operations/${r.id}" class="cell-strong">#${r.id}</a>` },
+    { label: 'Status', render: (r) => h`${badge(statusLabel(r.status), statusTone(r.status))}<div class="small muted">${stageLabel(r.stageLabel || r.stage || '')}</div>` },
     { label: 'Postęp', render: (r) => h`<div class="small">${r.progress}% (${r.stagesDone}/${r.stagesTotal})</div>` },
     { label: 'Cel', render: (r) => h`<span class="cell-mono small">${r.target || '—'}</span>` },
     { label: 'Aktualizacja', render: (r) => h`<span class="small muted">${formatDate(r.updated_at, { time: true })}</span>` },
@@ -62,7 +79,7 @@ function operationDetail(ctx, job) {
   return h`
     ${card(`Zadanie #${job.id}`, h`
       ${kvList([
-        ['Rodzaj', job.kind], ['Status', job.status], ['Etap', job.stageLabel || job.stage || '—'],
+        ['Rodzaj', job.kind], ['Status', statusLabel(job.status)], ['Etap', stageLabel(job.stageLabel || job.stage || '—')],
         ['Postęp', `${job.progress}% (${job.stagesDone}/${job.stagesTotal} etapów)`],
         ['Aktor', job.actor || '—'], ['Cel', job.target || '—'],
         ['Utworzono', formatDate(job.created_at, { time: true })],
@@ -72,8 +89,8 @@ function operationDetail(ctx, job) {
       ${job.cancellable ? h`<div class="row mt-18"><form method="post" action="${A}/operations/${job.id}/cancel" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger btn-sm" type="submit" data-confirm="Anulować zadanie? Zostanie zatrzymane w najbliższym bezpiecznym punkcie kontrolnym.">Anuluj</button></form></div>` : ''}
       ${job.retryable ? h`<div class="row mt-18"><form method="post" action="${A}/operations/${job.id}/retry" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary btn-sm" type="submit">Ponów</button></form>${job.resumable ? h`<form method="post" action="${A}/operations/${job.id}/resume" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-primary btn-sm" type="submit">Wznów</button></form>` : ''}</div>` : ''}
     `)}
-    ${card('Etapy', h`<div class="stack">${job.stages.map((stage) => h`<div class="service-row"><div style="flex:1"><strong>${stage.label}</strong><div class="small muted">${stage.detail || ''}</div></div>${badge(stage.status, stage.status === 'complete' ? 'ok' : stage.status === 'failed' ? 'danger' : stage.status === 'running' ? 'brand' : 'muted')}</div>`)}</div><div class="mt-18">${progress(job.stagesDone, job.stagesTotal || 1, { label: `${job.progress}%` })}</div>`)}
-    ${card('Log', job.events.length ? h`<pre class="code-block small">${job.events.map((event) => `[${event.created_at}] ${event.level}: ${event.message}`).join('\n')}</pre>` : '<p class="small muted">Brak wpisów.</p>')}
+    ${card('Etapy', h`<div class="stack">${job.stages.map((stage) => h`<div class="service-row"><div style="flex:1"><strong>${stageLabel(stage.label)}</strong><div class="small muted">${stage.detail || ''}</div></div>${badge(statusLabel(stage.status), stage.status === 'complete' || stage.status === 'succeeded' ? 'ok' : stage.status === 'failed' ? 'danger' : stage.status === 'running' ? 'brand' : 'muted')}</div>`)}</div><div class="mt-18">${progress(job.stagesDone, job.stagesTotal || 1, { label: `${job.progress}%` })}</div>`)}
+    ${card('Dziennik', job.events.length ? h`<pre class="code-block small">${job.events.map((event) => `[${event.created_at}] ${event.level}: ${event.message}`).join('\n')}</pre>` : '<p class="small muted">Brak wpisów.</p>')}
     ${Object.keys(result).length ? card('Raport per obiekt', h`<pre class="code-block small">${JSON.stringify(result, null, 2)}</pre>`) : ''}
     <div class="row mt-18"><a class="btn btn-primary" href="${A}?tab=operations">Wróć</a><a class="btn btn-ghost" href="${A}/operations/${job.id}/state">JSON</a></div>
     ${['queued', 'running'].includes(job.status) ? h`<meta http-equiv="refresh" content="3">` : ''}
@@ -116,8 +133,8 @@ export function register(router) {
     const body = h`
       ${tabs([
         { key: 'servers', label: 'Serwery backup', count: servers.length },
-        { key: 'jobs', label: 'Joby', count: jobs.length },
-        { key: 'runs', label: 'Historia i restore', count: runs.length },
+        { key: 'jobs', label: 'Zadania', count: jobs.length },
+        { key: 'runs', label: 'Historia i przywracanie', count: runs.length },
         { key: 'operations', label: 'Zadania', count: operations.length },
       ], current, { base: A })}
       ${flash ? alert(flash.message, flash.type) : ''}
@@ -192,7 +209,7 @@ export function register(router) {
             { label: 'Lokalizacja', render: (r) => r.server_name || 'lokalnie' },
             { label: 'Harmonogram', render: (r) => h`${r.schedule} ${r.schedule_time || '03:00'}<div class="small muted">${r.timezone || tz}</div>` },
             { label: 'Następny', render: (r) => r.next_run_at ? formatDate(r.next_run_at, { time: true }) : '—' },
-            { label: 'Ostatni', render: (r) => r.last_run_at ? h`${badge(r.last_status || '?', r.last_status === 'ok' ? 'ok' : 'danger')}<div class="small muted">${formatDate(r.last_run_at, { time: true })}</div>` : '—' },
+            { label: 'Ostatni', render: (r) => r.last_run_at ? h`${badge(statusLabel(r.last_status || '?'), r.last_status === 'ok' ? 'ok' : 'danger')}<div class="small muted">${formatDate(r.last_run_at, { time: true })}</div>` : '—' },
           ],
           rows: jobs,
           actions: [
@@ -200,15 +217,15 @@ export function register(router) {
             { label: 'Uruchom', form: (r) => `${A}/jobs/${r.id}/run`, icon: 'play' },
             { label: 'Usuń', form: (r) => `${A}/jobs/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć job?' },
           ],
-          empty: 'Brak jobów. Backup lokalny nadal działa codziennie.',
+          empty: 'Brak zadań. Backup lokalny nadal działa codziennie.',
         }), { padded: false })}
         ${alert('Kolejka jest trwała: nextRunAt, lease, catch-up i historia prób są w bazie. Restart panelu ani druga instancja nie resetują rytmu ani nie dublują uruchomień.', 'info')}
       ` : ''}
       ${current === 'runs' ? h`
         ${card('Historia', table({
           columns: [
-            { label: 'Job', render: (r) => r.job_name || '—' }, { label: 'Plik', render: (r) => h`<span class="cell-mono small">${r.filename}</span>` },
-            { label: 'Status', render: (r) => badge(r.status, statusTone(r.status)) },
+            { label: 'Zadanie', render: (r) => r.job_name || '—' }, { label: 'Plik', render: (r) => h`<span class="cell-mono small">${r.filename}</span>` },
+            { label: 'Status', render: (r) => badge(statusLabel(r.status), statusTone(r.status)) },
             { label: 'SHA-256', render: (r) => h`<span class="cell-mono small">${r.sha256 ? String(r.sha256).slice(0, 12) : '—'}</span>` },
             { label: 'Rozmiar', render: (r) => `${r.size_mb} MB` }, { label: 'Start', render: (r) => formatDate(r.started_at, { time: true }) },
             { label: 'Restore', render: (r) => r.restored_at ? formatDate(r.restored_at, { time: true }) : '—' },
@@ -218,7 +235,7 @@ export function register(router) {
         }), { padded: false })}
         ${card('Przywracanie', h`<p class="small muted">Najpierw <strong>dry-run</strong> — pokaże integralność, zakres i konflikty. Apply tworzy punkt powrotu, rozpakowuje archiwum do staging, weryfikuje manifest i pliki, przełącza katalogi atomowo (rollback przy błędzie) oraz odtwarza bazę panelu w jednej transakcji.</p>
           <div class="stack">${runs.filter((r) => r.status === 'complete').slice(0, 20).map((r) => h`<div class="service-row"><div style="flex:1"><strong>${r.job_name || r.filename}</strong><div class="small muted">${r.filename}${r.sha256 ? ` · sha256 ${String(r.sha256).slice(0, 12)}` : ''}</div></div>
-            <form method="post" action="${A}/runs/${r.id}/dry" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-ghost btn-sm" type="submit">Dry-run</button></form>
+            <form method="post" action="${A}/runs/${r.id}/dry" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-ghost btn-sm" type="submit">Próba</button></form>
             <form method="post" action="${A}/runs/${r.id}/restore" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-danger btn-sm" type="submit" data-confirm="Przywrócić ten backup transakcyjnie? Zostanie wykonany punkt powrotu i automatyczny rollback w razie błędu.">Przywróć</button></form>
           </div>`)}</div>`)}
       ` : ''}
@@ -230,7 +247,7 @@ export function register(router) {
         }), { padded: false })}
         ${alert('Każdy backup/restore to trwały job: status, etapy, realny postęp, log, lease, cancel/retry/resume i idempotency key. Odświeżenie strony nie przerywa zadania.', 'info')}
       ` : ''}`;
-    return page(ctx, { title: 'Backup Center', subtitle: 'Lokalizacje, trwałe joby, historia i transakcyjny restore', body, wide: true });
+    return page(ctx, { title: 'Centrum backupów', subtitle: 'Lokalizacje, trwałe zadania, historia i transakcyjne przywracanie', body, wide: true });
   });
 
   router.post(`${A}/servers`, async (ctx) => {
@@ -279,7 +296,7 @@ export function register(router) {
   router.get(`${A}/operations/:id`, (ctx) => {
     const job = jobView(ctx.params.id);
     if (!job) return ctx.redirect(`${A}?tab=operations&flash=${encodeURIComponent('Nie znaleziono zadania')}&type=error`);
-    return page(ctx, { title: `Zadanie #${job.id}`, subtitle: job.stageLabel || job.status, body: operationDetail(ctx, job), wide: true });
+    return page(ctx, { title: `Zadanie #${job.id}`, subtitle: stageLabel(job.stageLabel || job.status), body: operationDetail(ctx, job), wide: true });
   });
 
   router.get(`${A}/operations/:id/state`, (ctx) => {
@@ -308,7 +325,7 @@ export function register(router) {
   router.post(`${A}/runs/:id/dry`, (ctx) => {
     const preview = previewRestoreRun(ctx.params.id);
     if (!preview.ok) return ctx.redirect(`${A}?tab=runs&flash=${encodeURIComponent(preview.error)}&type=error`);
-    return page(ctx, { title: 'Dry-run restore', subtitle: 'Walidacja integralności, zakresu i konfliktów', body: dryRunPage(ctx, preview), wide: true });
+    return page(ctx, { title: 'Próbne przywracanie', subtitle: 'Walidacja integralności, zakresu i konfliktów', body: dryRunPage(ctx, preview), wide: true });
   });
 
   router.post(`${A}/runs/:id/restore`, async (ctx) => {

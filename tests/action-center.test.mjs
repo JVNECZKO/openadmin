@@ -163,7 +163,10 @@ test('Action Center aggregates real service, SSL, backup, mail, DNS, 2FA, automa
   assert.equal(dns.severity, 'P1');
   assert.deepEqual(dns.evidence.actual, ['198.51.100.9']);
 
-  assert.ok(itemByKey(snapshot, 'accounts:2fa:admin'), 'admin accounts without 2FA must be explicit');
+  const account2fa = itemByKey(snapshot, 'accounts:2fa:admin');
+  assert.ok(account2fa, 'admin accounts without 2FA must be explicit');
+  assert.match(account2fa.title, /^Zalecenie:/);
+  assert.equal(sourceById(snapshot, 'accounts').status, 'info');
   assert.ok(itemByKey(snapshot, 'automation-failed:disk.check'), 'automation failure must be explicit');
   assert.ok(itemByKey(snapshot, 'security:failed-logins'), 'repeated failed logins must be explicit');
   assert.ok(itemByKey(snapshot, 'backup:no-external-target'), 'absent external copy must be explicit');

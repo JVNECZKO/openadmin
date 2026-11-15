@@ -483,6 +483,14 @@ test('linux health path probes vhosts, PHP, DB, queue, mailboxes, DNS, TLS and a
     php: true,
     missingExtensions: [],
   };
+  const privateDomain = `qa-private-${Date.now()}.local`;
+  const owner = db.get("SELECT id, username FROM users WHERE level = 'user' LIMIT 1");
+  const domainInsert = db.run("INSERT INTO domains(user_id, username, name, docroot, created_at) VALUES(?,?,?,?,?)", owner.id, owner.username, privateDomain, path.join(dataDir, 'private'), db.nowIso());
+  const domainId = domainInsert.lastInsertRowid;
+  for (const [name, value] of [['@', 'v=spf1 a mx ~all'], ['_dmarc', 'v=DMARC1; p=quarantine'], ['default._domainkey', 'v=DKIM1; k=rsa; p=test']]) {
+    db.run('INSERT INTO dns_records(domain_id, name, type, value) VALUES(?,?,?,?)', domainId, name, 'TXT', value);
+  }
+  db.run('INSERT INTO email_accounts(domain_id, domain, local_part, password, created_at) VALUES(?,?,?,?,?)', domainId, privateDomain, 'info', 'x', db.nowIso());
   const report = await health.healthReport({
     probe: {
       provider: { id: 'linux', serviceStatus: () => ({ status: 'running', simulated: false }) },
@@ -516,6 +524,9 @@ test('linux health path probes vhosts, PHP, DB, queue, mailboxes, DNS, TLS and a
   assert.equal(byId['ssl-handshake'].status, 'ok');
   assert.equal(byId['app-phpmyadmin'].status, 'ok');
   assert.equal(byId['app-roundcube'].status, 'ok');
+  const privateMail = byId[`mailauth-${privateDomain}`];
+  assert.equal(privateMail?.status, 'ok');
+  assert.match(privateMail.detail, /Nie można potwierdzić publicznie — rekord istnieje lokalnie/);
   assert.equal(report.counts.fail, 0, `unexpected failures: ${report.checks.filter((c) => c.status === 'fail').map((c) => c.id).join(', ')}`);
   assert.equal(report.executionStatus, 'completed', 'linux probes are all executed');
 });

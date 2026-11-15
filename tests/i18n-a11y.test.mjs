@@ -759,4 +759,25 @@ test('admin navigation is translated in Polish, not mixed English labels', async
   const raw = ['Mail Operations', 'Live transfer', 'Panel Configuration', 'Show All Users', 'User Tools', 'Plans & Limits', 'User Statistics', 'Message System', 'Support Access', 'Audit Log', 'System Cron', 'Bulk actions'];
   for (const label of raw) assert.doesNotMatch(html, new RegExp(`>${label}<`), `raw nav label: ${label}`);
   assert.match(html, /Operacje poczty|Centrum uwagi|Automatyzacja/);
+  for (const path of ['/admin', '/admin/action-center', '/admin/security']) {
+    const rendered = (await page(path, cookie)).html;
+    assert.doesNotMatch(rendered, />P[0-2]<|P[0-2] —|P[0-2]: [0-9]/, `visible priority code on ${path}`);
+    assert.doesNotMatch(rendered, /Pokaż tylko P0/, `old P0 link on ${path}`);
+  }
+  const userCookie = await loginAs('demouser');
+  const twofa = (await page('/user/2fa', userCookie)).html;
+  assert.doesNotMatch(twofa, /Two-factor authentication|Protect your panel login|Recovery codes left|Current code/);
+  assert.match(twofa, /Weryfikacja dwuetapowa|Włącz weryfikację dwuetapową/);
+  assert.match(twofa, /Zmień hasło|Moje statystyki/);
+  const screens = [
+    ['/admin/dns', /All zones on the server|Zone files|Rebuild all zones|Deploy to DNS server/],
+    ['/admin/web-apps', /Web Apps|PHP runtime|Webmail sign-in|Install from Web Apps/],
+    ['/admin/backup-center', /Backup Center|Dry-run restore/],
+    ['/user/databases', /MySQL \/ MariaDB databases|Connection details|No databases yet/],
+  ];
+  for (const [path, forbidden] of screens) {
+    const rendered = (await page(path, path.startsWith('/user/') ? userCookie : cookie)).html;
+    const hit = rendered.match(forbidden);
+    assert.equal(hit, null, `untranslated text on ${path}: ${hit && hit[0]}`);
+  }
 });

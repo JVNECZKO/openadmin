@@ -66,57 +66,57 @@ export function register(router) {
     const body = h`
       ${pmaErrorNotice(ctx, rows)}
       ${mst.connected
-        ? alert(h`Connected to <strong>MariaDB ${mst.version}</strong> as <code>${mst.currentUser}</code>. Databases are created on the server immediately.`, 'ok')
-        : alert(h`MariaDB is not reachable from the panel, so new databases are recorded but not created on a server. Install it on the host (the installer supports <code>--with-mariadb</code>) or set <code>OA_MYSQL_ADMIN_USER</code> / <code>OA_MYSQL_ADMIN_PASSWORD</code>.`, 'warn')}
+        ? alert(h`Połączono z <strong>MariaDB ${mst.version}</strong> jako <code>${mst.currentUser}</code>. Bazy są tworzone na serwerze natychmiast.`, 'ok')
+        : alert(h`MariaDB nie jest osiągalna z panelu, więc nowe bazy są tylko zapisywane, a nie tworzone na serwerze. Zainstaluj ją na hoście (instalator obsługuje <code>--with-mariadb</code>) albo ustaw <code>OA_MYSQL_ADMIN_USER</code> / <code>OA_MYSQL_ADMIN_PASSWORD</code>.`, 'warn')}
       ${pma.installed && !pma.sso ? alert(h`${pma.reason} ${ctx.user.level === 'admin' ? h`<a class="link" href="/admin/web-apps">Przejdź do Admin → Web Apps</a>` : 'Poproś administratora o włączenie jednokrotnego logowania.'}`, 'info') : ''}
       ${!pma.installed ? alert(pma.reason, 'info') : ''}
       ${listCard({
-        title: 'Databases', sub: `${filtered.length} z ${lim.databases || '∞'} · ${formatBytes(total)} · ${mst.connected ? 'serwer live' : 'tylko metadane'}`, footer: h`<form method="get" action="/user/databases" class="row"><input name="q" value="${q}" placeholder="Szukaj bazy lub użytkownika" style="flex:1;max-width:320px"><button class="btn btn-secondary btn-sm" type="submit">Filtruj</button></form>`,
+        title: 'Bazy danych', sub: `${filtered.length} z ${lim.databases || '∞'} · ${formatBytes(total)} · ${mst.connected ? 'serwer live' : 'tylko metadane'}`, footer: h`<form method="get" action="/user/databases" class="row"><input name="q" value="${q}" placeholder="Szukaj bazy lub użytkownika" style="flex:1;max-width:320px"><button class="btn btn-secondary btn-sm" type="submit">Filtruj</button></form>`,
         columns: [
-          { label: 'Database', render: (r) => h`<span class="cell-strong">${r.db_name}</span><span class="cell-sub">user: ${r.db_user}</span>` },
-          { label: 'State', render: (r) => (mst.connected ? (r.live ? badge('on server', 'ok') : badge('missing', 'danger')) : badge('recorded', 'muted')) },
-          { label: 'Size', render: (r) => formatBytes(r.size), align: 'right' },
-          { label: 'Created', render: (r) => (r.created_at ? formatDate(r.created_at) : '—') },
+          { label: 'Baza danych', render: (r) => h`<span class="cell-strong">${r.db_name}</span><span class="cell-sub">user: ${r.db_user}</span>` },
+          { label: 'Stan', render: (r) => (mst.connected ? (r.live ? badge('na serwerze', 'ok') : badge('brak', 'danger')) : badge('zapisana', 'muted')) },
+          { label: 'Rozmiar', render: (r) => formatBytes(r.size), align: 'right' },
+          { label: 'Utworzono', render: (r) => (r.created_at ? formatDate(r.created_at) : '—') },
           { label: 'phpMyAdmin', render: (r) => pmaCell(ctx, r, pma) },
         ],
         rows: shown,
-        empty: q ? 'Brak baz pasujących do filtra.' : 'No databases yet.',
-        createHref: '/user/databases/create', createLabel: 'Create database',
+        empty: q ? 'Brak baz pasujących do filtra.' : 'Brak baz danych.',
+        createHref: '/user/databases/create', createLabel: 'Dodaj bazę',
         actions: [
           { label: 'Hasło', href: (r) => (r.id ? `/user/databases/${r.id}/password` : '#'), icon: 'key', show: (r) => !!r.id },
-          { label: 'Delete', form: (r) => `/user/databases/${r.id}/delete`, confirm: 'Delete this database and all its tables?', icon: 'trash', danger: true, show: (r) => !!r.id },
+          { label: 'Usuń', form: (r) => `/user/databases/${r.id}/delete`, confirm: 'Delete this database and all its tables?', icon: 'trash', danger: true, show: (r) => !!r.id },
         ],
       })}
       <div class="grid grid-2">
-        ${card('Connection details', h`${kvList([
+        ${card('Szczegóły połączenia', h`${kvList([
           ['Host', 'localhost'],
           ['Port', '3306'],
-          ['Server', mst.connected ? mst.version : 'not connected'],
-          ['Account prefix', ctx.user.username + '_'],
+          ['Serwer', mst.connected ? mst.version : 'niepołączony'],
+          ['Prefiks konta', ctx.user.username + '_'],
           ['phpMyAdmin', pma.sso && pma.running
             ? h`<span class="badge badge-ok">jednokrotne logowanie</span>`
             : h`<span class="small muted">niedostępne — ${pma.reason || 'brak zapisanego hasła bazy'}</span>`],
         ])}`)}
-        ${card('Client access', h`<pre class="code-block">mysql -h localhost -u ${ctx.user.username}_app -p
+        ${card('Dostęp klienta', h`<pre class="code-block">mysql -h localhost -u ${ctx.user.username}_app -p
 SHOW DATABASES;</pre>
-        <p class="small muted mt-12">Use the password set when the database was created. The phpMyAdmin button opens the database without a second login only when a credential is stored for it.</p>`)}
+        <p class="small muted mt-12">Użyj hasła ustawionego przy tworzeniu bazy. Przycisk phpMyAdmin otwiera bazę bez drugiego logowania tylko wtedy, gdy zapisano dla niej dane dostępowe.</p>`)}
       </div>`;
-    return page(ctx, { title: 'Databases', subtitle: 'MySQL / MariaDB databases', body });
+    return page(ctx, { title: 'Bazy danych', subtitle: 'Bazy MySQL / MariaDB', body });
   });
 
   router.get('/user/databases/create', (ctx) => {
     const q = quota(ctx.user, 'databases');
     const mst = detect();
-    const body = h`${card('Create database', h`<form method="post" action="/user/databases/create" class="oa-form">
+    const body = h`${card('Dodaj bazę danych', h`<form method="post" action="/user/databases/create" class="oa-form">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
-      ${!q.ok ? alert(`Database limit reached (${q.used}/${q.limit}).`, 'warn') : ''}
+      ${!q.ok ? alert(`Osiągnięto limit baz (${q.used}/${q.limit}).`, 'warn') : ''}
       ${!mst.connected ? alert('No MariaDB server is connected: the database will be recorded but not created on a server.', 'warn') : ''}
       <div class="form-grid">
-        <div class="field"><label class="field-label">Database name <span class="req">*</span></label>
+        <div class="field"><label class="field-label">Nazwa bazy <span class="req">*</span></label>
           <div class="field-control"><span class="field-suffix" style="left:11px;right:auto">${ctx.user.username}_</span>
             <input name="name" required pattern="[a-zA-Z0-9_]{1,32}" style="padding-left:${ctx.user.username.length + 2}ch" placeholder="app"></div>
           <p class="field-help">Letters, numbers and underscores only.</p></div>
-        <div class="field"><label class="field-label">Database user</label>
+        <div class="field"><label class="field-label">Użytkownik bazy</label>
           <div class="field-control"><span class="field-suffix" style="left:11px;right:auto">${ctx.user.username}_</span>
             <input name="db_user" pattern="[a-zA-Z0-9_]{1,32}" style="padding-left:${ctx.user.username.length + 2}ch" placeholder="app"></div></div>
         <div class="field"><label class="field-label">Password</label>
@@ -125,19 +125,19 @@ SHOW DATABASES;</pre>
           <p class="field-help">Jeśli pozostawisz puste, panel wygeneruje silne hasło i pokaże je tylko raz.</p></div>
         <div class="field"><label class="field-label">Character set</label><select name="charset"><option>utf8mb4</option><option>utf8</option><option>latin1</option></select></div>
       </div>
-      <div class="form-actions"><button class="btn btn-primary" type="submit" ${!q.ok ? 'disabled' : ''}>Create database</button><a class="btn btn-ghost" href="/user/databases">Cancel</a></div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit" ${!q.ok ? 'disabled' : ''}>Dodaj bazę</button><a class="btn btn-ghost" href="/user/databases">Anuluj</a></div>
     </form>`)}`;
-    return page(ctx, { title: 'Create Database', subtitle: 'Add a MariaDB database and user', body });
+    return page(ctx, { title: 'Dodaj bazę danych', subtitle: 'Utwórz bazę MariaDB i użytkownika', body });
   });
 
   router.post('/user/databases/create', (ctx) => {
     const q = quota(ctx.user, 'databases');
-    if (!q.ok) return ctx.redirect('/user/databases?flash=Database%20limit%20reached&type=error');
+    if (!q.ok) return ctx.redirect('/user/databases?flash=Osi%C4%85gni%C4%99to%20limit%20baz&type=error');
     const name = String(ctx.body.name || '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32);
     if (!name) return ctx.redirect('/user/databases?flash=Invalid%20database%20name&type=error');
     const dbName = `${ctx.user.username}_${name}`;
     const dbUser = `${ctx.user.username}_${String(ctx.body.db_user || name).replace(/[^a-zA-Z0-9_]/g, '').slice(0, 32)}`;
-    if (get('SELECT id FROM databases WHERE db_name = ?', dbName)) return ctx.redirect('/user/databases?flash=Database%20already%20exists&type=error');
+    if (get('SELECT id FROM databases WHERE db_name = ?', dbName)) return ctx.redirect('/user/databases?flash=Baza%20ju%C5%BC%20istnieje&type=error');
     const password = String(ctx.body.password || '') || randomPassword(20);
     const mst = detect();
     if (mst.connected) {
@@ -188,18 +188,18 @@ SHOW DATABASES;</pre><p class="small muted mt-12">Użyj powyższego hasła. phpM
 
   router.get('/user/databases/:id/password', (ctx) => {
     const db = get('SELECT * FROM databases WHERE id = ? AND user_id = ?', Number(ctx.params.id), ctx.user.id);
-    if (!db) return ctx.redirect('/user/databases?flash=Database%20not%20found&type=error');
+    if (!db) return ctx.redirect('/user/databases?flash=Nie%20znaleziono%20bazy&type=error');
     const body = h`${card(`Zmiana hasła · ${db.db_name}`, h`<form method="post" action="/user/databases/${db.id}/password" class="oa-form">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
       <div class="form-grid"><div class="field field-full"><label class="field-label">Nowe hasło</label><input name="password" type="password" minlength="8" required></div></div>
       <div class="form-actions"><button class="btn btn-primary" type="submit">Zmień hasło</button><a class="btn btn-ghost" href="/user/databases">Anuluj</a></div>
     </form>`)}`;
-    return page(ctx, { title: 'Database password', subtitle: db.db_name, body });
+    return page(ctx, { title: 'Hasło bazy danych', subtitle: db.db_name, body });
   });
 
   router.post('/user/databases/:id/password', (ctx) => {
     const db = get('SELECT * FROM databases WHERE id = ? AND user_id = ?', Number(ctx.params.id), ctx.user.id);
-    if (!db) return ctx.redirect('/user/databases?flash=Database%20not%20found&type=error');
+    if (!db) return ctx.redirect('/user/databases?flash=Nie%20znaleziono%20bazy&type=error');
     const password = String(ctx.body.password || '');
     if (password.length < 8) return ctx.redirect(`/user/databases/${db.id}/password?flash=Password%20must%20be%208%2B%20characters&type=error`);
     if (detect().connected) {
@@ -213,7 +213,7 @@ SHOW DATABASES;</pre><p class="small muted mt-12">Użyj powyższego hasła. phpM
 
   router.post('/user/databases/:id/delete', (ctx) => {
     const db = get('SELECT * FROM databases WHERE id = ? AND user_id = ?', Number(ctx.params.id), ctx.user.id);
-    if (!db) return ctx.redirect('/user/databases?flash=Database%20not%20found&type=error');
+    if (!db) return ctx.redirect('/user/databases?flash=Nie%20znaleziono%20bazy&type=error');
     let note = '';
     if (detect().connected) {
       const dropped = dropDatabase(db.db_name);

@@ -66,5 +66,6 @@ export function page(ctx, { title, subtitle = '', body, actions = [], wide = fal
 }
 
 export function notFound(ctx, message = '') {
-  return { status: 404, html: h`<div class="empty"><p>${message || 'Page not found'}</p><a class="btn btn-secondary" href="/${ctx.level}">Back to dashboard</a></div>` };
+  const pl = (ctx.user?.language || 'pl') !== 'en';
+  return { status: 404, html: h`<div class="empty"><p>${message || (pl ? 'Nie znaleziono strony' : 'Page not found')}</p><a class="btn btn-secondary" href="/${ctx.level}">${pl ? 'Wróć do pulpitu' : 'Back to dashboard'}</a></div>` };
 }

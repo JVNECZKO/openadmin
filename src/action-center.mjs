@@ -42,9 +42,9 @@ export const ACTION_CENTER_TYPES = Object.freeze({
 export const SEVERITY = Object.freeze(['P0', 'P1', 'P2']);
 
 export const SEVERITY_LABEL = Object.freeze({
-  P0: 'P0 — natychmiast',
-  P1: 'P1 — wysoki',
-  P2: 'P2 — średni',
+  P0: 'Krytyczne — działaj teraz',
+  P1: 'Ważne — zaplanuj naprawę',
+  P2: 'Zalecenie',
 });
 
 /**
@@ -931,7 +931,7 @@ export function collectActionCenter({
         dedupeKey: 'accounts:2fa:admin',
         type: 'accounts',
         severity: 'P1',
-        title: `${byLevel.admin.count} konto(a) administratora bez 2FA`,
+        title: `Zalecenie: ${byLevel.admin.count} konto(a) administratora bez 2FA`,
         impact: 'Przejęcie hasła administratora daje pełną kontrolę nad panelem i serwerem.',
         recommendation: 'Włącz 2FA dla kont administratorów i przechowuj kody odzyskiwania poza serwerem.',
         action: { label: 'Otwórz konta', href: '/admin/users' },
@@ -948,7 +948,7 @@ export function collectActionCenter({
         dedupeKey: `accounts:2fa:${level}`,
         type: 'accounts',
         severity: 'P2',
-        title: `${byLevel[level].count} kont (${level === 'reseller' ? 'resellerzy' : 'użytkownicy'}) bez 2FA`,
+        title: `Zalecenie: ${byLevel[level].count} kont (${level === 'reseller' ? 'resellerzy' : 'użytkownicy'}) bez 2FA`,
         impact: 'Konta klientów są chronione tylko hasłem; phishing lub wyciek hasła wystarczy do przejęcia.',
         recommendation: 'Zachęć lub wymuś 2FA w polityce kont i pokaż użytkownikom prostą instrukcję włączenia.',
         action: { label: 'Otwórz konta', href: '/admin/users' },
@@ -962,6 +962,7 @@ export function collectActionCenter({
     const total = Object.values(byLevel).reduce((sum, entry) => sum + entry.count, 0);
     return {
       items,
+      status: items.length ? 'info' : 'ok',
       detail: total
         ? `${total} kont bez 2FA (${Object.entries(byLevel).map(([level, entry]) => `${level}: ${entry.count}`).join(', ')})`
         : 'Wszystkie konta mają włączone 2FA',

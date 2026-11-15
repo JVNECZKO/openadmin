@@ -270,7 +270,7 @@ export async function handle(req, res) {
     if (!matched) {
       if (isApi) return sendJson(res, { error: 1, text: 'Unknown API command', details: '' }, 404);
       if (!user) return sendHtml(res, renderLogin({ csrf: '', error: '', serverName: setting('server_name', config.defaults.serverName), demo: config.demo || setting('demo_mode') === '1' }));
-      return sendHtml(res, renderError({ code: 404, title: 'Page not found', message: `No page exists at ${pathname}.`, user, level: levelFromPath }), 404);
+      return sendHtml(res, renderError({ code: 404, title: 'Page not found', message: `Nie ma strony pod adresem ${pathname}.`, user, level: levelFromPath }), 404);
     }
 
     ctx.params = matched.params;
@@ -303,7 +303,7 @@ export async function handle(req, res) {
       return sendJson(res, { error: 1, text: err.message, details: err.stack?.split('\n').slice(0, 3).join(' | ') || '' }, status);
     }
     if (!res.writableEnded) {
-      sendHtml(res, renderError({ code: status, title: 'Something went wrong', message: config.demo ? String(err.message) : 'The request could not be completed. Check the server log for details.' }), status);
+      sendHtml(res, renderError({ code: status, title: 'Something went wrong', message: config.demo ? String(err.message) : 'Nie udało się wykonać żądania. Sprawdź log serwera, aby poznać szczegóły.' }), status);
     }
   } finally {
     const ms = Date.now() - started;

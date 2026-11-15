@@ -176,6 +176,8 @@ function dashboardSeverityTone(severity) {
   return severity === 'P0' ? 'danger' : severity === 'P1' ? 'warn' : 'brand';
 }
 
+const DASHBOARD_PRIORITY = { P0: 'Krytyczne', P1: 'Ważne', P2: 'Zalecenia' };
+
 /** Compact Action Center summary card. The metric cards above are untouched. */
 function attentionCard(attention) {
   const top = Array.isArray(attention?.top) ? attention.top.slice(0, 5) : [];
@@ -186,9 +188,9 @@ function attentionCard(attention) {
   return card('Wymaga uwagi', h`
     <div class="spread mb-12">
       <div class="row" style="gap:6px">
-        ${badge(`P0: ${counts.P0 || 0}`, counts.P0 ? 'danger' : 'muted', { dot: Boolean(counts.P0) })}
-        ${badge(`P1: ${counts.P1 || 0}`, counts.P1 ? 'warn' : 'muted', { dot: Boolean(counts.P1) })}
-        ${badge(`P2: ${counts.P2 || 0}`, counts.P2 ? 'brand' : 'muted', { dot: Boolean(counts.P2) })}
+        ${badge(`Krytyczne: ${counts.P0 || 0}`, counts.P0 ? 'danger' : 'muted', { dot: Boolean(counts.P0) })}
+        ${badge(`Ważne: ${counts.P1 || 0}`, counts.P1 ? 'warn' : 'muted', { dot: Boolean(counts.P1) })}
+        ${badge(`Zalecenia: ${counts.P2 || 0}`, counts.P2 ? 'brand' : 'muted', { dot: Boolean(counts.P2) })}
         ${muted ? badge(`Wyciszone: ${muted}`, 'muted') : ''}
       </div>
       <span class="small muted">${total} aktywnych pozycji${unavailable ? ` · ${unavailable} źródeł niedostępnych` : ''}</span>
@@ -197,9 +199,9 @@ function attentionCard(attention) {
       <span class="service-dot ${item.severity === 'P0' ? 'off' : item.severity === 'P1' ? '' : 'on'}"></span>
       <strong><a class="link" href="${item.detailsHref || '/admin/action-center'}">${item.title}</a></strong>
       <span class="small muted" style="margin-left:8px; min-width:0; overflow-wrap:anywhere">${item.source}</span>
-      <span style="margin-left:auto">${badge(item.severity, dashboardSeverityTone(item.severity))}</span>
+      <span style="margin-left:auto">${badge(DASHBOARD_PRIORITY[item.severity] || item.severity, dashboardSeverityTone(item.severity))}</span>
     </div>`)}</div>` : h`<p class="small muted">Brak aktywnych pozycji wymagających uwagi${unavailable ? '; część źródeł jest niedostępna — sprawdź Action Center' : ''}.</p>`}
-    <div class="row mt-18"><a class="btn btn-secondary btn-sm" href="/admin/action-center">Otwórz Action Center</a><a class="link small" href="/admin/action-center?severity=P0">Pokaż tylko P0</a></div>
+    <div class="row mt-18"><a class="btn btn-secondary btn-sm" href="/admin/action-center">Otwórz Action Center</a><a class="link small" href="/admin/action-center?severity=P0">Pokaż krytyczne</a></div>
   `, {
     sub: 'Oczekiwane usługi, SSL, kopie, poczta, limity, DNS, 2FA, automatyzacja i logowania',
     actions: [h`<a class="link small" href="/admin/action-center">Wszystkie →</a>`],
@@ -817,46 +819,46 @@ export function registerAdminRoutes(router) {
     const records = d ? all('SELECT * FROM dns_records WHERE domain_id = ? ORDER BY type, name', d.id) : [];
     const editing = ctx.query.edit ? records.find((r) => String(r.id) === String(ctx.query.edit)) : null;
     const body = h`
-      ${domains.length ? domainSelect(domains, d?.name, { action: `${A}/dns`, label: 'Zone' }) : alert('No domains yet.', 'warn')}
-      ${card('Zone files', h`<div class="row">
+      ${domains.length ? domainSelect(domains, d?.name, { action: `${A}/dns`, label: 'Strefa' }) : alert('Brak domen.', 'warn')}
+      ${card('Pliki stref', h`<div class="row">
         <form method="post" action="${A}/dns/rebuild" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <button class="btn btn-secondary btn-sm" type="submit">${icon('refresh', { size: 14 })} Rebuild all zones</button></form>
+          <button class="btn btn-secondary btn-sm" type="submit">${icon('refresh', { size: 14 })} Przebuduj wszystkie strefy</button></form>
         <form method="post" action="${A}/dns/deploy" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <button class="btn btn-secondary btn-sm" type="submit">${icon('upload', { size: 14 })} Deploy to DNS server</button></form>
-        <span class="small muted">${d ? `Zone: ${zoneMeta(d.name)?.file || 'not generated'}` : ''}</span>
-      </div>`, { sub: 'BIND-format zones written to the data directory; deployment requires Linux + root' })}
-      ${d ? card(`Zone · ${d.name}`, h`<div class="table-wrap"><table class="data-table">
-        <thead><tr><th>Name</th><th>Type</th><th>Value</th><th>Priority</th><th>TTL</th><th></th></tr></thead>
+          <button class="btn btn-secondary btn-sm" type="submit">${icon('upload', { size: 14 })} Wdróż na serwer DNS</button></form>
+        <span class="small muted">${d ? `Strefa: ${zoneMeta(d.name)?.file || 'nie wygenerowano'}` : ''}</span>
+      </div>`, { sub: 'Strefy w formacie BIND zapisywane w katalogu danych; wdrożenie wymaga Linux + root' })}
+      ${d ? card(`Strefa · ${d.name}`, h`<div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Nazwa</th><th>Typ</th><th>Wartość</th><th>Priorytet</th><th>TTL</th><th></th></tr></thead>
         <tbody>${records.map((r) => h`<tr><td class="cell-mono">${r.name}</td><td>${badge(r.type, 'brand')}</td><td class="cell-mono">${r.value}</td>
           <td>${r.priority ?? '—'}</td><td>${r.ttl}</td>
           <td class="col-actions"><div class="row-actions">
-            <a class="icon-btn" href="${A}/dns?domain=${encodeURIComponent(d.name)}&edit=${r.id}" title="Edit">${icon('edit', { size: 16 })}</a>
+            <a class="icon-btn" href="${A}/dns?domain=${encodeURIComponent(d.name)}&edit=${r.id}" title="Edytuj">${icon('edit', { size: 16 })}</a>
             <form method="post" action="${A}/dns/${r.id}/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-            <button class="icon-btn danger" type="submit" data-confirm="Delete record?">${icon('trash', { size: 16 })}</button></form></div></td></tr>`)}</tbody>
+            <button class="icon-btn danger" type="submit" data-confirm="Usunąć rekord?">${icon('trash', { size: 16 })}</button></form></div></td></tr>`)}</tbody>
       </table></div>`, { padded: false }) : ''}
-      ${d && editing ? card(`Edit record · ${editing.type} ${editing.name}`, h`<form method="post" action="${A}/dns/${editing.id}/update" class="oa-form">
+      ${d && editing ? card(`Edytuj rekord · ${editing.type} ${editing.name}`, h`<form method="post" action="${A}/dns/${editing.id}/update" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <div class="form-grid">
-          <div class="field"><label class="field-label">Name</label><input name="name" value="${editing.name}" required></div>
-          <div class="field"><label class="field-label">Type</label><select name="type">
+          <div class="field"><label class="field-label">Nazwa</label><input name="name" value="${editing.name}" required></div>
+          <div class="field"><label class="field-label">Typ</label><select name="type">
             ${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((t) => h`<option ${t === editing.type ? 'selected' : ''}>${t}</option>`)}
           </select></div>
-          <div class="field field-full"><label class="field-label">Value</label><input name="value" value="${editing.value}" required></div>
-          <div class="field"><label class="field-label">Priority</label><input name="priority" type="number" value="${editing.priority ?? ''}"></div>
+          <div class="field field-full"><label class="field-label">Wartość</label><input name="value" value="${editing.value}" required></div>
+          <div class="field"><label class="field-label">Priorytet</label><input name="priority" type="number" value="${editing.priority ?? ''}"></div>
           <div class="field"><label class="field-label">TTL</label><input name="ttl" type="number" value="${editing.ttl}" min="60"></div>
         </div>
-        <div class="form-actions"><button class="btn btn-primary" type="submit">Save record</button><a class="btn btn-ghost" href="${A}/dns?domain=${encodeURIComponent(d.name)}">Cancel</a></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz rekord</button><a class="btn btn-ghost" href="${A}/dns?domain=${encodeURIComponent(d.name)}">Anuluj</a></div>
       </form>`) : ''}
-      ${d ? card('Add record', h`<form method="post" action="${A}/dns/add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+      ${d ? card('Dodaj rekord', h`<form method="post" action="${A}/dns/add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
         <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}">
-        <div class="field"><label class="field-label">Name</label><input name="name" value="@" style="width:130px"></div>
-        <div class="field"><label class="field-label">Type</label><select name="type" style="width:100px">${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((t) => h`<option>${t}</option>`)}</select></div>
-        <div class="field" style="flex:1;min-width:240px"><label class="field-label">Value</label><input name="value" required></div>
-        <div class="field"><label class="field-label">Priority</label><input name="priority" type="number" style="width:90px"></div>
+        <div class="field"><label class="field-label">Nazwa</label><input name="name" value="@" style="width:130px"></div>
+        <div class="field"><label class="field-label">Typ</label><select name="type" style="width:100px">${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((t) => h`<option>${t}</option>`)}</select></div>
+        <div class="field" style="flex:1;min-width:240px"><label class="field-label">Wartość</label><input name="value" required></div>
+        <div class="field"><label class="field-label">Priorytet</label><input name="priority" type="number" style="width:90px"></div>
         <div class="field"><label class="field-label">TTL</label><input name="ttl" type="number" value="3600" style="width:100px"></div>
-        <button class="btn btn-primary" type="submit">Add</button>
+        <button class="btn btn-primary" type="submit">Dodaj</button>
       </form>`) : ''}`;
-    return page(ctx, { title: 'DNS Administration', subtitle: 'All zones on the server', body });
+    return page(ctx, { title: 'Administracja DNS', subtitle: 'Wszystkie strefy na serwerze', body });
   });
   router.post('/admin/dns/rebuild', (ctx) => {
     const result = rebuildAll();

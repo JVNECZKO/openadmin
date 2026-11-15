@@ -57,8 +57,8 @@ export function register(router) {
         ${configSandbox(s.caps.provider) ? alert('Tryb sandbox: operacje są zapisywane w katalogu danych, nie na hoście.', 'info') : ''}
         ${card(`Postura bezpieczeństwa · ${s.score}%`, h`<div class="stack">
           <div class="spread"><strong>${s.passed}/${s.total} kontroli zaliczonych</strong>${badge(s.score >= 80 ? 'dobra' : s.score >= 50 ? 'wymaga uwagi' : 'krytyczna', s.score >= 80 ? 'ok' : s.score >= 50 ? 'warn' : 'danger', { dot: true })}</div>
-          ${s.posture.map((p) => h`<div class="spread small"><div><strong>${p.priority}</strong> · ${p.label} — ${p.evidence}</div><span>${p.ok ? badge('OK', 'ok') : h`<a class="link" href="${A}${p.action}">${p.fix} →</a>`}</span></div>`)}
-        </div>`, { sub: 'Priorytety P0/P1/P2; każda kontrola ma dowód i bezpieczną akcję naprawczą. Nie zmieniamy ustawień automatycznie.' })}
+          ${s.posture.map((p) => h`<div class="spread small"><div><strong>${p.priority === 'P0' ? 'Krytyczne — działaj teraz' : p.priority === 'P1' ? 'Ważne — zaplanuj naprawę' : 'Zalecenie'}</strong> · ${p.label} — ${p.evidence}</div><span>${p.ok ? badge('OK', 'ok') : h`<a class="link" href="${A}${p.action}">${p.fix} →</a>`}</span></div>`)}
+        </div>`, { sub: 'Każda kontrola ma dowód i bezpieczną akcję naprawczą; używamy nazw poziomów zamiast kodów. Nie zmieniamy ustawień automatycznie.' })}
         <div class="grid grid-3">
           ${card('Firewall', h`<div class="stack">${kvList([
             ['nftables', statusLine(s.caps.nft)],

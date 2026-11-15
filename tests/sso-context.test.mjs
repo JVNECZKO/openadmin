@@ -648,7 +648,7 @@ test('webmail still asks for the mailbox password (no hidden SSO hand-off)', asy
 test('admin web apps page states the webmail password requirement explicitly', async () => {
   const { res, html } = await getPage('/admin/web-apps', adminCookie);
   assert.equal(res.status, 200);
-  assert.match(html, /Webmail sign-in/);
+  assert.match(html, /Logowanie do webmaila|Webmail sign-in/);
   assert.match(html, /otwiera formularz logowania i wymaga hasła skrzynki/);
   assert.match(html, /nie obiecuje logowania bez hasła/);
   assert.match(html, /Roundcube również wymaga hasła skrzynki/);

@@ -32,7 +32,8 @@ const APP_PROBE_TTL_MS = 60000;
 let applicationCache = { at: 0, value: null };
 
 const SEVERITY_TONE = { P0: 'danger', P1: 'warn', P2: 'brand' };
-const SOURCE_TONE = { ok: 'ok', partial: 'warn', unavailable: 'danger' };
+const PRIORITY_SHORT = { P0: 'Krytyczne', P1: 'Ważne', P2: 'Zalecenia' };
+const SOURCE_TONE = { ok: 'ok', info: 'brand', partial: 'warn', unavailable: 'danger' };
 const MUTE_HOURS = [1, 24, 72, 168, 720];
 
 function sourceTone(status) {
@@ -136,9 +137,9 @@ function sourcesCard(snapshot) {
     <span class="service-dot ${source.status === 'ok' ? 'on' : source.status === 'partial' ? '' : 'off'}"></span>
     <strong>${source.label}</strong>
     <span class="small muted" style="margin-left:8px; min-width:0; overflow-wrap:anywhere">${source.detail || 'Brak dodatkowych informacji'}</span>
-    <span style="margin-left:auto">${badge(source.status === 'ok' ? 'OK' : source.status === 'partial' ? 'Częściowe' : 'Niedostępne', sourceTone(source.status), { dot: true })}</span>
+    <span style="margin-left:auto">${badge(source.status === 'ok' ? 'OK' : source.status === 'info' ? 'Zalecenie' : source.status === 'partial' ? 'Częściowe' : 'Niedostępne', sourceTone(source.status), { dot: true })}</span>
   </div>`);
-  const notable = snapshot.sources.filter((source) => source.status !== 'ok').length;
+  const notable = snapshot.sources.filter((source) => source.status !== 'ok' && source.status !== 'info').length;
   return card('Źródła danych', h`
     <p class="small muted">Każda pozycja ma jawne źródło i czas obserwacji. „Niedostępne” oznacza, że panel nie posiada danych — nie jest to zero ani sukces.</p>
     <div class="stack" style="gap:8px">${rows}</div>
@@ -159,9 +160,9 @@ function filterCard(filters, counts) {
       value: filters.severity,
       options: [
         { value: 'all', label: `Wszystkie (${counts.total})` },
-        { value: 'P0', label: `P0 — natychmiast (${counts.bySeverity.P0 || 0})` },
-        { value: 'P1', label: `P1 — wysoki (${counts.bySeverity.P1 || 0})` },
-        { value: 'P2', label: `P2 — średni (${counts.bySeverity.P2 || 0})` },
+        { value: 'P0', label: `Krytyczne — działaj teraz (${counts.bySeverity.P0 || 0})` },
+        { value: 'P1', label: `Ważne — zaplanuj naprawę (${counts.bySeverity.P1 || 0})` },
+        { value: 'P2', label: `Zalecenia (${counts.bySeverity.P2 || 0})` },
       ],
     }),
     field({
@@ -322,9 +323,9 @@ export function register(router) {
 
     const cards = h`
       <div class="stat-grid">
-        ${statCard({ label: 'P0 — natychmiast', value: String(snapshot.bySeverity.P0 || 0), sub: 'blokery wymagające reakcji', icon: 'alert', tone: 'danger', href: buildUrl(filters, { severity: 'P0', show: 'active' }) })}
-        ${statCard({ label: 'P1 — wysoki', value: String(snapshot.bySeverity.P1 || 0), sub: 'wpływ na usługi lub dane', icon: 'alertCircle', tone: 'warn', href: buildUrl(filters, { severity: 'P1', show: 'active' }) })}
-        ${statCard({ label: 'P2 — średni', value: String(snapshot.bySeverity.P2 || 0), sub: 'do uporządkowania', icon: 'info', tone: 'brand', href: buildUrl(filters, { severity: 'P2', show: 'active' }) })}
+        ${statCard({ label: 'Krytyczne — działaj teraz', value: String(snapshot.bySeverity.P0 || 0), sub: 'blokery wymagające reakcji', icon: 'alert', tone: 'danger', href: buildUrl(filters, { severity: 'P0', show: 'active' }) })}
+        ${statCard({ label: 'Ważne — zaplanuj naprawę', value: String(snapshot.bySeverity.P1 || 0), sub: 'wpływ na usługi lub dane', icon: 'alertCircle', tone: 'warn', href: buildUrl(filters, { severity: 'P1', show: 'active' }) })}
+        ${statCard({ label: 'Zalecenia', value: String(snapshot.bySeverity.P2 || 0), sub: 'do uporządkowania', icon: 'info', tone: 'brand', href: buildUrl(filters, { severity: 'P2', show: 'active' }) })}
         ${statCard({ label: 'Wyciszone', value: String(snapshot.muted || 0), sub: `${snapshot.sources.length} źródeł · ${snapshot.unavailableSources} niedostępnych`, icon: 'clock', tone: snapshot.unavailableSources ? 'warn' : 'muted', href: buildUrl(filters, { show: 'muted' }) })}
       </div>
       ${snapshot.unavailableSources ? alert(`Część źródeł jest niedostępna (${snapshot.unavailableSources}). Panel nie zgaduje ich stanu — powody znajdziesz w sekcji „Źródła danych”.`, 'warn') : ''}

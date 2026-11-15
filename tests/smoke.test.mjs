@@ -1625,7 +1625,7 @@ test('mail settings and blacklist persist', async () => {
 test('backup center creates a local server, runs a job and dry-runs restore', async () => {
   const cookie = await loginAs('demoadmin');
   const page = await (await fetch(base + '/admin/backup-center?tab=servers', { headers: { Cookie: cookie } })).text();
-  assert.match(page, /Backup Center/);
+  assert.match(page, /Centrum backupów|Backup Center/);
   const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
   const target = path.join(dataDir, 'remote-backups');
   const srv = await fetch(base + '/admin/backup-center/servers', {
@@ -2094,7 +2094,7 @@ test('admin DNS record has working edit and update', async () => {
   const rec = db.get("SELECT r.* FROM dns_records r JOIN domains d ON d.id=r.domain_id WHERE d.name='example.com' AND r.type='A' AND r.name='@'");
   assert.ok(rec);
   const page = await (await fetch(base + `/admin/dns?domain=example.com&edit=${rec.id}`, { headers: { Cookie: cookie } })).text();
-  assert.match(page, /Edit record/);
+  assert.match(page, /Edytuj rekord|Edit record/);
   assert.doesNotMatch(page, /value="&lt;div class="field/);
   const csrf = page.match(/name="_csrf" value="([^"]+)"/)[1];
   const r = await fetch(base + `/admin/dns/${rec.id}/update`, {

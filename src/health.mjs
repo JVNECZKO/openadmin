@@ -4,6 +4,8 @@
 //   executionStatus — did the probe run (ok / skipped / unavailable / failed)
 //   observedStatus  — what did it observe (ok / warn / critical / unknown)
 // A successfully executed probe can still observe a critical subsystem state.
+import fs from 'node:fs';
+import path from 'node:path';
 import net from 'node:net';
 import http from 'node:http';
 import https from 'node:https';
@@ -753,16 +755,35 @@ export async function healthReport({ probe = {} } = {}) {
       }
       const mailCountForDomain = Number(get('SELECT COUNT(*) AS n FROM email_accounts WHERE domain = ?', domain.name)?.n) || 0;
       if (mailCountForDomain > 0) {
-        const txt = digFn(domain.name, 'TXT') || [];
-        const spf = txt.some((value) => value.includes('v=spf1'));
-        const dmarc = (digFn(`_dmarc.${domain.name}`, 'TXT') || []).some((value) => value.includes('v=DMARC1'));
-        const dkim = (digFn(`default._domainkey.${domain.name}`, 'TXT') || []).length > 0;
-        const missing = [!spf && 'SPF', !dmarc && 'DMARC', !dkim && 'DKIM'].filter(Boolean);
+        const domainRow = get('SELECT id FROM domains WHERE name = ?', domain.name);
+        const records = domainRow ? all('SELECT type, name, value FROM dns_records WHERE domain_id = ?', domainRow.id) : [];
+        const hasRecord = (type, name, token) => records.some((row) => String(row.type).toUpperCase() === type && String(row.name).toLowerCase() === name && String(row.value).includes(token));
+        const spf = hasRecord('TXT', '@', 'v=spf1');
+        const dmarc = hasRecord('TXT', '_dmarc', 'v=DMARC1');
+        const dkim = hasRecord('TXT', 'default._domainkey', 'v=DKIM1');
+        const localMissing = [!spf && 'SPF', !dmarc && 'DMARC', !dkim && 'DKIM'].filter(Boolean);
+        const zoneFile = path.join(config.dataDir, 'dns', `${domain.name}.db`);
+        let zoneText = '';
+        try { zoneText = fs.readFileSync(zoneFile, 'utf8'); } catch { /* not deployed */ }
+        const zoneDeployed = ['v=spf1', 'v=DMARC1', 'v=DKIM1'].every((token) => zoneText.includes(token));
+        const privateDomain = /\.(local|localhost|test|example|invalid)$/i.test(domain.name);
+        const publicValues = privateDomain ? [] : (digPublicFn(domain.name, 'TXT') || []);
+        const publicOk = privateDomain ? null : (
+          publicValues.some((value) => value.includes('v=spf1'))
+          && (digPublicFn(`_dmarc.${domain.name}`, 'TXT') || []).some((value) => value.includes('v=DMARC1'))
+          && (digPublicFn(`default._domainkey.${domain.name}`, 'TXT') || []).length > 0
+        );
+        const localDetail = localMissing.length ? `Brak lokalnie: ${localMissing.join(', ')}` : 'Rekordy SPF, DKIM i DMARC istnieją lokalnie';
+        const zoneDetail = zoneDeployed ? 'strefa wdrożona do BIND' : 'strefa nie jest wdrożona do BIND';
+        const observed = localMissing.length ? 'warn' : (privateDomain || publicOk ? 'ok' : 'warn');
+        const publicDetail = privateDomain
+          ? 'Nie można potwierdzić publicznie — rekord istnieje lokalnie'
+          : publicOk ? 'widoczne z publicznego resolvera' : 'niepotwierdzone z publicznego resolvera';
         checks.push(item(
           `mailauth-${domain.name}`,
           `Poczta: ${domain.name}`,
-          missing.length ? 'warn' : 'ok',
-          missing.length ? `Brakuje: ${missing.join(', ')}` : 'SPF, DKIM i DMARC opublikowane',
+          observed,
+          `${localDetail} · ${zoneDetail} · ${publicDetail}`,
         ));
       }
     }

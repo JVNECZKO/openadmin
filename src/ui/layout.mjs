@@ -3,7 +3,7 @@ import { html, raw, e, formatBytes, humanLevel } from '../util.mjs';
 import { icon } from './icons.mjs';
 import { navFor, isActive, breadcrumbFor } from './nav.mjs';
 import { VERSION } from '../config.mjs';
-import { htmlLang } from '../i18n.mjs';
+import { htmlLang, t } from '../i18n.mjs';
 import { setting } from '../db.mjs';
 
 const LEVEL_LABEL = { admin: 'Admin', reseller: 'Reseller', user: 'User' };
@@ -128,8 +128,8 @@ function brandMark(size = 30) {
 
 /* Breadcrumbs are generated from the real route: every ancestor stays a link
    and the rendered page title is the final, non-interactive crumb. */
-function breadcrumbs({ level, path, title }) {
-  const base = breadcrumbFor(path || '/');
+function breadcrumbs({ level, path, title, lang = 'pl' }) {
+  const base = breadcrumbFor(path || '/').map((c) => ({ ...c, label: t(lang, c.label) }));
   const items = base.filter((c) => c.label && c.href).map((c) => ({ ...c }));
   if (!items.length) items.push({ label: LEVEL_LABEL[level] || 'Panel', href: `/${level}` });
   const label = String(title || '').trim();
@@ -228,10 +228,11 @@ function sidebar({ user, level, caps, path, counts, storage, version }) {
 
 function topbar({ user, level, path, csrf, notifications, title, notifyUrl = '' }) {
   const count = Number(notifications) || 0;
+  const pl = (user.language || 'pl') !== 'en';
   return html`<header class="topbar" data-topbar>
     <div class="topbar-left">
       <button class="icon-btn only-mobile" type="button" data-sidebar-open aria-label="Open menu" aria-controls="sidebar" aria-expanded="false">${icon('menu', { size: 20 })}</button>
-      ${breadcrumbs({ level, path, title })}
+      ${breadcrumbs({ level, path, title, lang: user.language || 'pl' })}
     </div>
     <div class="topbar-center">
       <button class="search-trigger" type="button" data-open-search aria-keyshortcuts="Control+K Meta+K">
@@ -265,15 +266,15 @@ function topbar({ user, level, path, csrf, notifications, title, notifyUrl = '' 
           <span class="avatar-meta"><strong>${user.username}</strong><em>${humanLevel(user.level)}</em></span>
           ${icon('chevronDown', { size: 14, cls: 'avatar-chev' })}
         </button>
-        <div class="menu-pop" id="user-menu" data-menu hidden role="menu" aria-label="Account menu">
+        <div class="menu-pop" id="user-menu" data-menu hidden role="menu" aria-label="${pl ? 'Menu konta' : 'Account menu'}">
           <div class="menu-head"><strong>${user.username}</strong><span>${user.email || ''}</span></div>
-          <a class="menu-item" role="menuitem" href="/user/password">${icon('key', { size: 16 })} Change password</a>
-          <a class="menu-item" role="menuitem" href="/user/login-keys">${icon('shield', { size: 16 })} Login keys</a>
-          <a class="menu-item" role="menuitem" href="/user/statistics">${icon('chart', { size: 16 })} My statistics</a>
+          <a class="menu-item" role="menuitem" href="/user/password">${icon('key', { size: 16 })} ${pl ? 'Zmień hasło' : 'Change password'}</a>
+          <a class="menu-item" role="menuitem" href="/user/login-keys">${icon('shield', { size: 16 })} ${pl ? 'Klucze logowania' : 'Login keys'}</a>
+          <a class="menu-item" role="menuitem" href="/user/statistics">${icon('chart', { size: 16 })} ${pl ? 'Moje statystyki' : 'My statistics'}</a>
           <div class="menu-sep" role="separator"></div>
           <form method="post" action="/logout" class="menu-form" style="margin:0">
             <input type="hidden" name="_csrf" value="${csrf}">
-            <button class="menu-item menu-item-danger" role="menuitem" type="submit" style="width:100%;border:0;background:none;text-align:left;font:inherit;cursor:pointer">${icon('logout', { size: 16 })} Sign out</button>
+            <button class="menu-item menu-item-danger" role="menuitem" type="submit" style="width:100%;border:0;background:none;text-align:left;font:inherit;cursor:pointer">${icon('logout', { size: 16 })} ${pl ? 'Wyloguj' : 'Sign out'}</button>
           </form>
         </div>
       </div>
@@ -462,11 +463,15 @@ export function renderLogin({ message = '', error = '', csrf = '', serverName = 
 }
 
 export function renderError({ code = 404, title = 'Not found', message = '', user = null, level = 'user' }) {
+  const pl = (user?.language || 'pl') !== 'en';
+  const labels = { 'Page not found': 'Nie znaleziono strony', 'Something went wrong': 'Coś poszło nie tak', 'Not found': 'Nie znaleziono' };
+  const shownTitle = pl ? (labels[title] || title) : title;
+  const shownMessage = message || (pl ? 'Nie znaleziono żądanej strony.' : 'The page you requested could not be found.');
   const body = html`<div class="error-page">
     <div class="error-code">${code}</div>
-    <h2>${title}</h2>
-    <p>${message || 'The page you requested could not be found.'}</p>
-    <a class="btn btn-primary" href="/${level}">${icon('home', { size: 16 })}<span>Back to dashboard</span></a>
+    <h2>${shownTitle}</h2>
+    <p>${shownMessage}</p>
+    <a class="btn btn-primary" href="/${level}">${icon('home', { size: 16 })}<span>${pl ? 'Wróć do pulpitu' : 'Back to dashboard'}</span></a>
   </div>`;
   if (!user) {
     return html`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${code} · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"></head><body class="login-body"><div class="login-wrap single">${body}</div></body></html>`;

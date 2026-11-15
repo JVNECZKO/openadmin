@@ -77,17 +77,20 @@ export function registerAuthRoutes(router) {
     return ctx.redirect(target);
   });
 
-  const twofaPage = (error = '') => h`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Two-factor authentication · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"><script src="/assets/i18n.js?v=${VERSION}" defer></script></head>
+  const twofaPage = (error = '', locale = 'pl') => {
+    const pl = locale === 'pl';
+    return h`<!DOCTYPE html><html lang="${pl ? 'pl' : 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${pl ? 'Weryfikacja dwuetapowa' : 'Two-factor authentication'} · OpenAdmin</title><link rel="stylesheet" href="/assets/app.css?v=${VERSION}"><script src="/assets/i18n.js?v=${VERSION}" defer></script></head>
 <body class="login-body"><div class="wm-login"><div class="wm-login-card">
-  <h1>Two-factor authentication</h1>
-  <p class="small muted">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
+  <h1>${pl ? 'Weryfikacja dwuetapowa' : 'Two-factor authentication'}</h1>
+  <p class="small muted">${pl ? 'Wpisz 6-cyfrowy kod z aplikacji authenticator lub kod odzyskiwania.' : 'Enter the 6-digit code from your authenticator app, or a recovery code.'}</p>
   ${error ? h`<div class="alert alert-danger">${error}</div>` : ''}
   <form method="post" action="/login/2fa" class="oa-form">
-    <div class="field"><label class="field-label">Authentication code</label><input name="code" autocomplete="one-time-code" inputmode="numeric" required autofocus placeholder="123456"></div>
-    <div class="form-actions"><button class="btn btn-primary btn-block" type="submit">Verify</button></div>
+    <div class="field"><label class="field-label">${pl ? 'Kod uwierzytelniający' : 'Authentication code'}</label><input name="code" autocomplete="one-time-code" inputmode="numeric" required autofocus placeholder="123456"></div>
+    <div class="form-actions"><button class="btn btn-primary btn-block" type="submit">${pl ? 'Zweryfikuj' : 'Verify'}</button></div>
   </form>
-  <p class="small muted mt-18"><a class="link" href="/login">Back to sign in</a></p>
+  <p class="small muted mt-18"><a class="link" href="/login">${pl ? 'Wróć do logowania' : 'Back to sign in'}</a></p>
 </div></div></body></html>`;
+  };
 
   router.get('/login/2fa', (ctx) => {
     run("DELETE FROM twofa_pending WHERE expires_at < ?", nowIso());
@@ -95,7 +98,7 @@ export function registerAuthRoutes(router) {
     const pendingHash = pending ? hashSessionToken(pending) : '';
     const row = pendingHash ? get('SELECT * FROM twofa_pending WHERE token = ?', pendingHash) : null;
     if (!row || new Date(row.expires_at) < new Date()) return ctx.redirect('/login?error=' + encodeURIComponent('Two-factor session expired'));
-    return { status: 200, html: twofaPage() };
+    return { status: 200, html: twofaPage('', requestedLocale(ctx)) };
   });
 
   router.post('/login/2fa', (ctx) => {
