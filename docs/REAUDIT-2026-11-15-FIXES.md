@@ -88,3 +88,12 @@ the database page, Roundcube health is HTTP 200, and the Exim queue is empty.
 - Public SPF/DKIM/DMARC for real mail domains and a pinned release-signing key.
 - ModSecurity/WAF (host lacks the module) and remaining mixed-language advanced
   feature pages outside navigation/automation.
+
+## Additional live controls
+
+- Pinned release key `release-2026` installed in the panel; the private key is kept
+  offline and documented in `docs/RELEASE-SIGNING.md`.
+- SPF, DMARC and DKIM records verified for all three hosted demo domains; BIND zones
+  reload with `named-checkzone` OK.
+- Security posture: 83% (5/6); only ModSecurity/WAF remains unavailable on this nginx
+  host.
