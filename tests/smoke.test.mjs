@@ -1472,7 +1472,7 @@ test('help page is available in simple mode', async () => {
 
 test('cPanel backup import restores DNS and website files', async () => {
   const { spawnSync } = await import('node:child_process');
-  const { importArchive, detectKind } = await import('../src/importer.mjs');
+  const { importArchive, detectKind, previewArchive } = await import('../src/importer.mjs');
   const domain = `import-${Date.now()}.example`;
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'cpimport-'));
   const root = path.join(work, 'cpmove-tester');
@@ -1489,6 +1489,11 @@ test('cPanel backup import restores DNS and website files', async () => {
   const tar = spawnSync('tar', ['-czf', archive, '-C', work, 'cpmove-tester']);
   assert.equal(tar.status, 0);
   assert.equal(detectKind(archive).kind, 'cpanel');
+  const preview = previewArchive(archive);
+  assert.equal(preview.ok, true, preview.error);
+  assert.equal(preview.counts.webroots, 1);
+  assert.ok(preview.domains.includes(domain));
+  assert.equal(db.get('SELECT id FROM domains WHERE name = ?', domain), null, 'preview must not create domains');
   const result = importArchive({ filePath: archive, targetUsername: 'demouser', skipDb: true });
   assert.equal(result.ok, true, result.error);
   assert.ok(result.domains.some((d) => d.domain === domain));

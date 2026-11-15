@@ -66,6 +66,29 @@ function walk(dir, depth = 0, out = []) {
   return out;
 }
 
+
+/** Read-only import plan: extract/analyze/clean up without creating users or DNS. */
+export function previewArchive(filePath) {
+  const extracted = extractArchive(filePath);
+  if (!extracted.ok) return extracted;
+  try {
+    const analysis = analyze(extracted.dir);
+    return {
+      ok: true,
+      kind: detectKind(filePath),
+      counts: analysis.counts,
+      domains: analysis.domains,
+      zones: analysis.zones.map((z) => z.domain),
+      sqlFiles: analysis.sqlFiles.map((f) => f.name),
+      webroots: analysis.webroots,
+      sampleFiles: analysis.files.slice(0, 20).map((f) => path.relative(extracted.dir, f.path)),
+      home: analysis.home ? path.basename(analysis.home) : '',
+    };
+  } finally {
+    fs.rmSync(extracted.dir, { recursive: true, force: true });
+  }
+}
+
 export function analyze(dir) {
   const all = walk(dir);
   const dirs = all.filter((entry) => entry.dir);

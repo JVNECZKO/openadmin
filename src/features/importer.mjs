@@ -7,7 +7,7 @@ import { all, setting } from '../db.mjs';
 import { html as h } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, alert, kvList, table, badge } from '../ui/components.mjs';
-import { detectKind, importArchive } from '../importer.mjs';
+import { detectKind, importArchive, previewArchive } from '../importer.mjs';
 
 const MAX_UPLOAD = 7 * 1024 * 1024;
 
@@ -19,13 +19,14 @@ export function register(router) {
       ${card('Import backupu', h`<form method="post" action="/admin/import" class="oa-form" id="importForm">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <input type="hidden" name="data" id="importData">
+        <input type="hidden" name="mode" id="importMode" value="import">
         <div class="form-grid">
           <div class="field"><label class="field-label">Konto docelowe</label><select name="target">${users.map((u) => h`<option value="${u.username}">${u.username} (${u.level})</option>`)}</select></div>
           <div class="field"><label class="field-label">Archiwum (do 7 MB przez przeglądarkę)</label><input type="file" id="importFile" accept=".gz,.tar.gz,.tgz"></div>
           <div class="field field-full"><label class="field-label">…albo ścieżka na serwerze (dla dużych plików)</label><input name="path" placeholder="/root/cpmove-user.tar.gz"></div>
         </div>
         <p class="small muted">Dla większych backupów wgraj plik przez SFTP do <code>${path.join(config.dataDir, 'imports')}</code> i podaj ścieżkę. Import nie nadpisuje istniejących domen — dopisuje rekordy DNS i pliki.</p>
-        <div class="form-actions"><button class="btn btn-primary" type="submit">Analizuj i importuj</button></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit" onclick="document.getElementById('importMode').value='import'">Analizuj i importuj</button> <button class="btn btn-secondary" type="submit" onclick="document.getElementById('importMode').value='preview'">Podgląd bez zmian</button></div>
       </form>`, { sub: 'Bezpieczne rozpakowanie, raport co zostało zaimportowane' })}
       ${card('Co jest importowane', h`<ul class="small" style="line-height:1.9;padding-left:18px">
         <li><strong>Pliki:</strong> katalogi <code>public_html</code> trafiają do odpowiednich domen.</li>
@@ -73,6 +74,33 @@ export function register(router) {
     let detected;
     try { detected = detectKind(file); } catch (e) { detected = { ok: false, error: e.message }; }
     if (!detected.ok) { try { fs.rmSync(temp, { force: true }); } catch {} return ctx.redirect('/admin/import?flash=' + encodeURIComponent(detected.error) + '&type=error'); }
+    if (String(ctx.body.mode || 'import') === 'preview') {
+      let plan;
+      try { plan = previewArchive(file); } catch (e) { plan = { ok: false, error: e.message }; }
+      try { fs.rmSync(temp, { force: true }); } catch { /* ignore */ }
+      if (!plan.ok) return ctx.redirect('/admin/import?flash=' + encodeURIComponent(plan.error || 'Nie udało się przeanalizować archiwum') + '&type=error');
+      const body = h`${card('Plan importu — bez zmian', h`
+        ${alert('To tylko podgląd. Nie utworzono kont, domen, rekordów DNS ani baz.', 'info')}
+        ${kvList([
+          ['Konto docelowe', target],
+          ['Wykryty typ', plan.kind?.kind || 'generic'],
+          ['Pliki w archiwum', String(plan.counts.files)],
+          ['Strony / webrooty', String(plan.counts.webroots)],
+          ['Domeny', plan.domains.join(', ') || 'brak'],
+          ['Strefy DNS', plan.zones.join(', ') || 'brak'],
+          ['Dumpy MySQL', plan.sqlFiles.join(', ') || 'brak'],
+          ['Przykładowe pliki', plan.sampleFiles.slice(0, 8).join(', ') || 'brak'],
+        ])}
+      `)}
+      ${card('Co zostanie zrobione po imporcie', h`<ul class="small" style="line-height:1.9;padding-left:18px">
+        <li>Pliki trafią do katalogu użytkownika <strong>${target}</strong>.</li>
+        <li>Domeny: <strong>${plan.domains.length}</strong>; rekordy DNS zostaną dopisane, bez kasowania istniejących.</li>
+        <li>Bazy: <strong>${plan.counts.databases}</strong>; nazwy zostaną poprzedzone nazwą konta.</li>
+        <li>Hasła e-mail, PHP i cron nie są przenoszone.</li>
+      </ul>`)}
+      <p><a class="btn btn-secondary" href="/admin/import">Wróć</a></p>`;
+      return page(ctx, { title: 'Podgląd importu', subtitle: `Plan dla ${target}`, body, wide: true });
+    }
     const pre = await runPreflight('import', { source: file, targetUsername: target });
     if (pre.blocked) { try { fs.rmSync(temp, { force: true }); } catch {} return ctx.redirect('/admin/import?flash=' + encodeURIComponent(`Preflight zablokował import: ${pre.checks.filter((c) => !c.ok && c.blocking).map((c) => c.label).join(', ')}`) + '&type=error'); }
     let result;
