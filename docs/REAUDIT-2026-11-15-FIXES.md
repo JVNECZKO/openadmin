@@ -130,3 +130,12 @@ detects nginx ModSecurity and reports **100% (6/6)**.
 - Live build: `1.0.0+645e3c0b051a`; Security Center: **100% (6/6)**.
 - Remaining hard external dependency: a publicly trusted certificate for the panel
   hostname. The panel IP is private, so public ACME cannot validate it.
+
+## Operator decision — TLS exception
+
+On 2026-11-15 the operator accepted the self-signed panel certificate as a known
+exception for the private-IP deployment. The certificate is not publicly trusted;
+this is an explicit risk acceptance, not a claim that the CA criterion was met.
+The audit's P1 code/operational findings are otherwise closed and re-verified:
+305/305 tests, QA 54/54, 100% Security Center, 2FA login, SSO phpMyAdmin, empty
+Exim queue, pinned build SHA and external backup with restore preview.
