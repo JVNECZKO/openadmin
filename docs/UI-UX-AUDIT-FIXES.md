@@ -63,3 +63,12 @@ Residual: the historical CSS file still contains some older duplicate component
 blocks (the newest responsive/action/table rules are authoritative and passed QA);
 advanced feature screens outside the audited core may still contain technical
 English labels. These are not hidden by the UI changes.
+
+## Final width sweep
+
+- QA run at **390 / 768 / 1024 / 1280 / 1440 px**: 54/54 checks, **395
+  route/width combinations**, 0 route issues, 0 overflow, 0 clipped key-page
+  text, 0 mobile touch targets below 44 px, 14/14 security, 27 axe pages,
+  65 screenshots.
+- Login is Polish by default; dashboard onboarding owns the only primary CTA on
+  a new user account; `.quick-grid` no longer has contradictory mobile rules.

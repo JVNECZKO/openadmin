@@ -2154,7 +2154,7 @@ body.overlay-open, body.palette-open { overflow: hidden; }
   .stat-value { font-size: 19px; }
   .stat-label { font-size: 11px; }
   .stat-sub { font-size: 10.5px; }
-  .quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quick-grid { grid-template-columns: 1fr; }
   .quick-tile { padding: 11px; gap: 5px; }
   .quick-tile span { font-size: 10.5px; }
   .page-head-text h1 { font-size: 21px; }
@@ -2799,3 +2799,10 @@ form.oa-form[data-wizard] { max-width: 1100px; margin: 0 auto; }
   .technical-details { margin-top: 12px; color: var(--muted); font-size: var(--fs-xs); }
 }
 .login-foot { gap: 8px; }
+
+@media (max-width: 760px) {
+  .app-tile-grid { gap: 10px; }
+  .app-tile { padding: 14px !important; }
+  .app-tile-sub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .app-meta { gap: 5px; }
+}
