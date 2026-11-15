@@ -97,3 +97,10 @@ the database page, Roundcube health is HTTP 200, and the Exim queue is empty.
   reload with `named-checkzone` OK.
 - Security posture: 83% (5/6); only ModSecurity/WAF remains unavailable on this nginx
   host.
+
+## Admin 2FA enabled
+
+Admin TOTP enrolment was completed and the login flow was exercised end-to-end
+(`/login` → `/login/2fa` → `/admin` with 200). The one-time enrolment file with the
+secret and recovery codes is local, mode 0600, and gitignored:
+`ADMIN-2FA-SETUP.txt`. Store it in the authenticator and remove the plaintext file.
