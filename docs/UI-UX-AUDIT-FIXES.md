@@ -72,3 +72,15 @@ English labels. These are not hidden by the UI changes.
   65 screenshots.
 - Login is Polish by default; dashboard onboarding owns the only primary CTA on
   a new user account; `.quick-grid` no longer has contradictory mobile rules.
+
+## CSS consolidation
+
+- Consolidated all duplicate top-level component selectors into one declaration
+  per selector (card, card head/body, stat grid/card/icon/value/label/sub, quick
+  grid/tile, table wrap/data table, buttons and variants, shell/nav, forms and
+  remaining exact duplicates). The audit's duplicate list is now resolved at the
+  top level; media-query overrides remain intentionally responsive.
+- Restored `.only-mobile.icon-btn` specificity so the sidebar close control is
+  hidden on desktop and visible only at mobile widths.
+- Ran the full QA at 390/768/1024/1280/1440 px after consolidation: 0 route
+  issues, no overflow, no clipped text, no undersized touch targets.
