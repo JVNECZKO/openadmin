@@ -332,7 +332,7 @@ export function userDashboard(ctx) {
         <h2>${pl ? `Dzień dobry, ${u.username}` : greeting(u)}</h2>
         <p>${L('Your account is hosted on', 'Twoje konto jest na serwerze')} <strong>${serverName}</strong>. ${L('Everything below is included — no add-ons, no per-domain fees.', 'Wszystko poniżej jest w cenie — bez dodatkowych opłat za domeny.')}</p>
         <div class="row mt-18">
-          ${btn(L('Launch site wizard', 'Postaw stronę'), { href: '/user/websites/new', icon: 'rocket' })}
+          ${stepsDone >= steps.length ? btn(L('Launch site wizard', 'Postaw stronę'), { href: '/user/websites/new', icon: 'rocket' }) : ''}
         </div>
       </div>
       <div class="hero-actions">
