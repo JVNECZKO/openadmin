@@ -3,12 +3,13 @@
 import http from 'node:http';
 import https from 'node:https';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config, ROOT, ensureDataDir, VERSION } from './config.mjs';
 import { getDb, seedBase, seedDemo, setting, closeDb } from './db.mjs';
 import { Router } from './router.mjs';
-import { getSession, serializeCookie, clearCookie, cookieName, capabilities, requireLevel } from './auth.mjs';
+import { getSession, serializeCookie, clearCookie, cookieName, capabilities, requireLevel, apiLogin, rateLimited } from './auth.mjs';
 import { parseCookies, parseForm, LEVELS } from './util.mjs';
 import { sendHtml, sendJson, redirect } from './ui/respond.mjs';
 import { renderLogin, renderError } from './ui/layout.mjs';
@@ -80,6 +81,7 @@ export function clientIp(req) {
 }
 
 const JSON_UPLOAD_BODY_LIMIT = Math.ceil(config.limits.maxUploadMb * 1024 * 1024 * 4 / 3) + 256 * 1024;
+const bodyInFlight = new Map();
 const BODY_LIMIT = Math.max(12 * 1024 * 1024, JSON_UPLOAD_BODY_LIMIT);
 
 function readBody(req, limit = BODY_LIMIT) {
@@ -91,6 +93,11 @@ function readBody(req, limit = BODY_LIMIT) {
       return;
     }
     let size = 0; const chunks = [];
+    const timer = setTimeout(() => {
+      req.destroy();
+      reject(Object.assign(new Error('Request body timed out'), { status: 408, code: 'request_timeout' }));
+    }, 30000);
+    if (typeof timer.unref === 'function') timer.unref();
     req.on('data', (c) => {
       size += c.length;
       if (size > limit) {
@@ -100,8 +107,8 @@ function readBody(req, limit = BODY_LIMIT) {
       }
       chunks.push(c);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    req.on('end', () => { clearTimeout(timer); resolve(Buffer.concat(chunks)); });
+    req.on('error', (error) => { clearTimeout(timer); reject(error); });
   });
 }
 
@@ -198,12 +205,48 @@ export async function handle(req, res) {
       if (APPS[proxyAppId] && appStatus(proxyAppId).running) return proxyApp(req, res, proxyAppId);
     }
 
+    const levelFromPath = pathname.startsWith('/admin') ? 'admin' : pathname.startsWith('/reseller') ? 'reseller' : 'user';
+    const isApi = pathname.startsWith('/api/') || pathname.startsWith('/CMD_') || pathname === '/webdisk' || pathname.startsWith('/webdisk/');
+    const matchedEarly = router.match(req.method, pathname);
+    if (!matchedEarly) {
+      req.resume();
+      if (isApi) return sendJson(res, { error: 1, code: 'not_found', text: 'Unknown API command' }, 404);
+      if (!user) return sendHtml(res, renderLogin({ csrf: '', error: '', serverName: setting('server_name', config.defaults.serverName), demo: config.demo || setting('demo_mode') === '1' }));
+      return sendHtml(res, renderError({ code: 404, title: 'Page not found', message: `Nie ma strony pod adresem ${pathname}.`, user, level: levelFromPath }), 404);
+    }
+
     let body = {};
     let rawBody = null;
     const isRawUpload = pathname === '/user/files/upload-stream' && req.method === 'POST'
       && String(req.headers['content-type'] || '').startsWith('application/octet-stream');
+    const writeMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
+    const publicWrite = new Set(['/login', '/login/2fa', '/lost-password', '/reset-password']).has(pathname) || pathname === '/webmail' || pathname.startsWith('/webmail/') || pathname === '/autodiscover/autodiscover.xml' || pathname.startsWith('/mail/');
+    const apiWrite = pathname.startsWith('/api/') || pathname.startsWith('/CMD_') || pathname === '/mcp' || pathname === '/webdisk' || pathname.startsWith('/webdisk/');
+    if (writeMethod && !user && !publicWrite && !apiWrite) {
+      req.resume();
+      return sendHtml(res, renderError({ code: 401, title: 'Authentication required', message: 'Zaloguj się ponownie.' }), 401);
+    }
+    let earlyApiUser = null;
+    if (!user && apiWrite && !pathname.startsWith('/webdisk') && String(req.headers.authorization || '').toLowerCase().startsWith('basic ')) {
+      try {
+        const decoded = Buffer.from(String(req.headers.authorization).slice(6), 'base64').toString('utf8');
+        const idx = decoded.indexOf(':');
+        if (idx > 0) {
+          const usernamePart = decoded.slice(0, idx);
+          if (!rateLimited(usernamePart, ip)) earlyApiUser = apiLogin(usernamePart, decoded.slice(idx + 1), ip);
+        }
+      } catch { /* invalid Basic is handled after body by the API */ }
+    }
+    if (writeMethod && !user) {
+      const key = String(ip || 'unknown');
+      const active = bodyInFlight.get(key) || 0;
+      if (active >= 8) { req.resume(); return sendJson(res, { error: 1, code: 'too_many_body_reads', text: 'Too many concurrent uploads' }, 429); }
+      bodyInFlight.set(key, active + 1);
+    }
+    try {
     if (!isRawUpload && (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE')) {
-      rawBody = await readBody(req);
+      const bodyLimit = !user && !earlyApiUser ? (pathname === '/webdisk' || pathname.startsWith('/webdisk/') ? 16 * 1024 * 1024 : 1024 * 1024) : BODY_LIMIT;
+      rawBody = await readBody(req, bodyLimit);
       const ct = String(req.headers['content-type'] || '');
       if (ct.includes('application/json')) {
         try { body = JSON.parse(rawBody.toString('utf8') || '{}'); } catch { body = {}; }
@@ -215,14 +258,18 @@ export async function handle(req, res) {
         body = parseForm(rawBody.toString('utf8'));
       }
     }
-
-    const levelFromPath = pathname.startsWith('/admin') ? 'admin' : pathname.startsWith('/reseller') ? 'reseller' : 'user';
-    const isApi = pathname.startsWith('/api/') || pathname.startsWith('/CMD_') || pathname === '/webdisk' || pathname.startsWith('/webdisk/');
+    } finally {
+      if (writeMethod && !user) {
+        const key = String(ip || 'unknown');
+        const active = (bodyInFlight.get(key) || 1) - 1;
+        if (active <= 0) bodyInFlight.delete(key); else bodyInFlight.set(key, active);
+      }
+    }
 
     const ctx = {
       req, res, url, path: pathname, query, params: {}, body, rawBody,
       session, user, csrf: session?.csrf || '',
-      ip, started, level: levelFromPath, isApi, cookies,
+      ip, started, level: levelFromPath, isApi, cookies, secure: isSecureRequest(req),
       caps: user ? capabilities(user) : {},
       flash: (msg, type = 'ok') => redirect(res, pathname, { flash: msg, type }),
       json: (data, status = 200) => sendJson(res, data, status),
@@ -266,13 +313,7 @@ export async function handle(req, res) {
       if (!user) return redirect(res, `/login?next=${encodeURIComponent(pathname)}`);
     }
 
-    const matched = router.match(req.method, pathname);
-    if (!matched) {
-      if (isApi) return sendJson(res, { error: 1, text: 'Unknown API command', details: '' }, 404);
-      if (!user) return sendHtml(res, renderLogin({ csrf: '', error: '', serverName: setting('server_name', config.defaults.serverName), demo: config.demo || setting('demo_mode') === '1' }));
-      return sendHtml(res, renderError({ code: 404, title: 'Page not found', message: `Nie ma strony pod adresem ${pathname}.`, user, level: levelFromPath }), 404);
-    }
-
+    const matched = matchedEarly;
     ctx.params = matched.params;
     const out = await matched.route.handler(ctx);
 
@@ -297,10 +338,13 @@ export async function handle(req, res) {
     if (!res.writableEnded) sendHtml(res, 'OK');
   } catch (err) {
     const status = err.status || 500;
-    console.error(`[openadmin] ${req.method} ${pathname} -> ${status}:`, err.message);
+    const eventId = crypto.randomBytes(8).toString('hex');
+    console.error(`[openadmin] ${req.method} ${pathname} -> ${status} event=${eventId}:`, err.message);
     if (process.env.OA_DEBUG) console.error(err.stack);
     if (String(req.url).startsWith('/api/') || String(req.url).startsWith('/CMD_')) {
-      return sendJson(res, { error: 1, text: err.message, details: err.stack?.split('\n').slice(0, 3).join(' | ') || '' }, status);
+      const debug = process.env.OA_DEBUG === '1';
+      const text = status < 500 || err.expose ? String(err.message || 'Request failed') : 'Internal server error';
+      return sendJson(res, { error: 1, code: String(err.code || (status < 500 ? 'request_failed' : 'internal_error')), text, event_id: eventId, details: debug ? String(err.stack || '').split('\n').slice(0, 3).join(' | ') : undefined }, status);
     }
     if (!res.writableEnded) {
       sendHtml(res, renderError({ code: status, title: 'Something went wrong', message: config.demo ? String(err.message) : 'Nie udało się wykonać żądania. Sprawdź log serwera, aby poznać szczegóły.' }), status);

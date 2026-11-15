@@ -2,7 +2,7 @@
 import { config, VERSION } from '../config.mjs';
 import crypto from 'node:crypto';
 import { setting, run, audit, get, all, verifyPassword, hashPassword, nowIso } from '../db.mjs';
-import { requestPasswordReset, verifyResetToken, consumeResetToken } from '../passwordreset.mjs';
+import { requestPasswordReset, verifyResetToken, consumeResetToken, resetRequestLimited, recordResetAttempt } from '../passwordreset.mjs';
 import { verifyTotp } from '../twofa.mjs';
 import { login, createSession, destroySession, findUser, checkCsrf } from '../auth.mjs';
 import { serializeCookie, clearCookie, hashSessionToken } from '../auth.mjs';
@@ -26,6 +26,25 @@ function requestedLocale(ctx) {
   return setting('default_language', 'pl') === 'en' ? 'en' : 'pl';
 }
 
+
+function safeInternalNext(value, fallback) {
+  const fallbackPath = fallback || '/';
+  let candidate = String(value || '');
+  if (!candidate || /[\\\x00-\x1f\x7f]/.test(candidate) || /%(?:2f|5c|00)/i.test(candidate)) return fallbackPath;
+  for (let i = 0; i < 3; i++) {
+    let next;
+    try { next = decodeURIComponent(candidate); } catch { return fallbackPath; }
+    if (next === candidate) break;
+    if (/[\\\x00-\x1f\x7f]/.test(next) || /%(?:2f|5c|00)/i.test(next)) return fallbackPath;
+    candidate = next;
+  }
+  let parsed;
+  try { parsed = new URL(candidate, 'https://panel.invalid'); } catch { return fallbackPath; }
+  if (parsed.origin !== 'https://panel.invalid') return fallbackPath;
+  if (!parsed.pathname.startsWith('/') || parsed.pathname.startsWith('//')) return fallbackPath;
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
 export function registerAuthRoutes(router) {
   router.get('/', (ctx) => {
     if (!ctx.user) return ctx.redirect('/login');
@@ -36,7 +55,7 @@ export function registerAuthRoutes(router) {
     if (ctx.user) return ctx.redirect('/' + ctx.user.level);
     const next = ctx.query.next ? decodeURIComponent(ctx.query.next) : '';
     const locale = requestedLocale(ctx);
-    if (ctx.query.lang || ctx.query.hl) ctx.res.setHeader('Set-Cookie', `oa_lang=${locale}; Path=/; Max-Age=31536000; SameSite=Lax${config.https ? '; Secure' : ''}`);
+    if (ctx.query.lang || ctx.query.hl) ctx.res.setHeader('Set-Cookie', `oa_lang=${locale}; Path=/; Max-Age=31536000; SameSite=Lax${ctx.secure ? '; Secure' : ''}`);
     const markup = renderLogin({
       locale,
       csrf: ctx.session?.csrf || '',
@@ -64,14 +83,14 @@ export function registerAuthRoutes(router) {
       const pending = crypto.randomBytes(24).toString('hex');
       run('INSERT INTO twofa_pending(token, user_id, expires_at) VALUES(?,?,?)', hashSessionToken(pending), result.user.id,
         new Date(Date.now() + 5 * 60 * 1000).toISOString());
-      ctx.res.setHeader('Set-Cookie', `OA_2FA=${pending}; Path=/; HttpOnly; SameSite=Strict; Max-Age=300${config.https ? '; Secure' : ''}`);
+      ctx.res.setHeader('Set-Cookie', `OA_2FA=${pending}; Path=/; HttpOnly; SameSite=Strict; Max-Age=300${ctx.secure ? '; Secure' : ''}`);
       return ctx.redirect('/login/2fa');
     }
     const s = createSession(result.user, { ip: ctx.ip, ua: ctx.req.headers['user-agent'] });
     audit(result.user.username, result.user.level, 'login', '', ctx.ip);
-    ctx.res.setHeader('Set-Cookie', serializeCookie(s.token, { secure: config.https }));
+    ctx.res.setHeader('Set-Cookie', serializeCookie(s.token, { secure: ctx.secure }));
     let target = '/' + result.user.level;
-    if (next && String(next).startsWith('/') && !String(next).startsWith('//')) target = String(next);
+    if (next) target = safeInternalNext(next, target);
     if (result.user.level === 'admin' && config.provider === 'linux' && setting('setup_complete', '0') !== '1') target = '/admin/setup';
     else if (result.user.must_change_password) target = '/user/password?force=1';
     return ctx.redirect(target);
@@ -125,7 +144,7 @@ export function registerAuthRoutes(router) {
       const after = get('SELECT * FROM twofa_pending WHERE token = ?', pendingHash);
       if (!after || after.attempts >= 5) {
         run('DELETE FROM twofa_pending WHERE token = ?', pendingHash);
-        ctx.res.setHeader('Set-Cookie', `OA_2FA=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${config.https ? '; Secure' : ''}`);
+        ctx.res.setHeader('Set-Cookie', `OA_2FA=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${ctx.secure ? '; Secure' : ''}`);
         return ctx.redirect('/login?error=' + encodeURIComponent('Too many invalid codes. Sign in again.'));
       }
       return { status: 401, html: twofaPage('Invalid authentication code.') };
@@ -133,7 +152,7 @@ export function registerAuthRoutes(router) {
     run('DELETE FROM twofa_pending WHERE token = ?', pendingHash);
     const s = createSession(user, { ip: ctx.ip, ua: ctx.req.headers['user-agent'] });
     audit(user.username, user.level, 'login.2fa', '', ctx.ip);
-    ctx.res.setHeader('Set-Cookie', [serializeCookie(s.token, { secure: config.https }), `OA_2FA=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${config.https ? '; Secure' : ''}`]);
+    ctx.res.setHeader('Set-Cookie', [serializeCookie(s.token, { secure: ctx.secure }), `OA_2FA=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${ctx.secure ? '; Secure' : ''}`]);
     return ctx.redirect('/' + user.level);
   });
 
@@ -160,13 +179,13 @@ export function registerAuthRoutes(router) {
         const actor = resolvePreviewActor(ctx.cookies['OA_PREVIEW_ACTOR'], stopped.actorId);
         if (actor) {
           ctx.res.setHeader('Set-Cookie', [
-            serializeCookie(actor.token, { secure: config.https }),
-            clearPreviewActorCookie({ secure: config.https }),
+            serializeCookie(actor.token, { secure: ctx.secure }),
+            clearPreviewActorCookie({ secure: ctx.secure }),
           ]);
           return ctx.redirect(`/admin?flash=${encodeURIComponent(`Zakończono podgląd konta ${stopped.subject}`)}`);
         }
         destroySession(token);
-        ctx.res.setHeader('Set-Cookie', [clearCookie(), clearPreviewActorCookie({ secure: config.https })]);
+        ctx.res.setHeader('Set-Cookie', [clearCookie(), clearPreviewActorCookie({ secure: ctx.secure })]);
         return ctx.redirect('/login?expired=1');
       }
       destroySession(token);
@@ -225,7 +244,7 @@ export function registerAuthRoutes(router) {
     </form>
   </div></div></body></html>`;
 
-  const resetCookie = (value, maxAge = 3600) => `OA_RESET=${encodeURIComponent(value)}; Path=/reset-password; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${config.https ? '; Secure' : ''}`;
+  const resetCookie = (value, maxAge = 3600, secure = false) => `OA_RESET=${encodeURIComponent(value)}; Path=/reset-password; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
 
   router.get('/reset-password', (ctx) => {
     const queryToken = String(ctx.query.token || '');
@@ -234,7 +253,7 @@ export function registerAuthRoutes(router) {
       if (!row) return { status: 400, html: resetPage('', 'Link wygasł lub jest nieprawidłowy. Poproś o nowy.') };
       // Exchange the URL token for a scoped HttpOnly cookie and remove it from
       // the address bar/history before rendering any content.
-      ctx.res.setHeader('Set-Cookie', resetCookie(queryToken));
+      ctx.res.setHeader('Set-Cookie', resetCookie(queryToken, 3600, ctx.secure));
       ctx.res.setHeader('Referrer-Policy', 'no-referrer');
       return ctx.redirect('/reset-password');
     }
@@ -258,19 +277,24 @@ export function registerAuthRoutes(router) {
     consumeResetToken(row);
     run('DELETE FROM sessions WHERE user_id = ?', user.id);
     audit(user.username, user.level, 'password.reset.email', '', ctx.ip);
-    ctx.res.setHeader('Set-Cookie', resetCookie('', 0));
+    ctx.res.setHeader('Set-Cookie', resetCookie('', 0, ctx.secure));
     return ctx.redirect('/login?error=' + encodeURIComponent('Hasło zostało zmienione. Zaloguj się.'));
   });
 
   router.post('/lost-password', (ctx) => {
     const account = String(ctx.body.account || '').trim();
     const user = findUser(account) || get('SELECT * FROM users WHERE email = ?', account);
-    if (user) {
-      const sent = requestPasswordReset(user);
-      if (!sent.ok) {
-        run(`INSERT INTO tickets(user_id, username, subject, department, priority, status, created_at, updated_at)
-             VALUES(?,?,?,?,?,?,?,?)`, user.id, user.username, 'Password reset requested', 'support', 'high', 'open', nowIso(), nowIso());
-      } else {
+    const limited = resetRequestLimited(ctx.ip, user?.id || 0);
+    if (!limited) recordResetAttempt(ctx.ip);
+    if (user && !limited) {
+      const sent = requestPasswordReset(user, { ip: ctx.ip });
+      if (!sent.ok && sent.reason === 'no-mta') {
+        const existing = get("SELECT id FROM tickets WHERE user_id = ? AND subject = 'Password reset requested' AND status = 'open'", user.id);
+        if (!existing) {
+          run(`INSERT INTO tickets(user_id, username, subject, department, priority, status, created_at, updated_at)
+               VALUES(?,?,?,?,?,?,?,?)`, user.id, user.username, 'Password reset requested', 'support', 'high', 'open', nowIso(), nowIso());
+        }
+      } else if (sent.ok) {
         audit(user.username, user.level, 'password.reset.request', '', ctx.ip);
       }
     }

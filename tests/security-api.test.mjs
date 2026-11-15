@@ -327,9 +327,9 @@ test('SEC-009: Basic Auth shares the login rate limiter and keeps attempts bound
   const recorded = db.get("SELECT COUNT(*) n FROM login_attempts WHERE lower(username) = lower(?)", rateUser.username).n;
   assert.ok(recorded <= 8, `attempt rows are bounded by the configured limit (got ${recorded})`);
 
-  db.run("INSERT INTO login_attempts(username, ip, created_at) VALUES(?,?,?)", rateUser.username, '203.0.113.98', '2000-01-01T00:00:00.000Z');
+  const oldAttempt = db.run("INSERT INTO login_attempts(username, ip, created_at) VALUES(?,?,?)", rateUser.username, '203.0.113.98', '2000-01-01T00:00:00.000Z');
   await api('/api/v1/me', { headers: { Authorization: basic(rateUser.username, 'wrong'), 'X-Forwarded-For': '203.0.113.98' } });
-  assert.equal(db.get("SELECT id FROM login_attempts WHERE ip = '203.0.113.98'"), null, 'attempts older than the window are pruned');
+  assert.equal(db.get('SELECT id FROM login_attempts WHERE id = ?', oldAttempt.lastInsertRowid), null, 'attempts older than the window are pruned');
   db.run("DELETE FROM login_attempts WHERE lower(username) = lower(?)", rateUser.username);
 });
 
@@ -674,4 +674,62 @@ test('SEC-018: logout and switch-skin are POST+CSRF and reject GET', async () =>
   assert.equal(logout.status, 302);
   assert.equal((await fetch(base + '/user', { headers: { Cookie: cookie }, redirect: 'manual' })).status, 302);
   assert.equal(db.get('SELECT token FROM sessions WHERE token_hash = ?', tokenHash(sessionToken(cookie))), null);
+});
+
+test('SEC-030: login redirect rejects backslash and encoded off-origin next values', async () => {
+  for (const next of ['/\\evil.example/phish', '/%5cevil.example/phish', '//evil.example/phish', 'https://evil.example/']) {
+    const res = await form('/login', { username: 'admin', password: 'admin-test-pass', redirect: next });
+    assert.equal(res.status, 302);
+    const location = res.headers.get('location') || '';
+    assert.doesNotMatch(location, /evil\.example/, `unsafe redirect for ${next}`);
+  }
+});
+
+test('SEC-031: cookies are Secure when TLS terminates at the trusted proxy', async () => {
+  const res = await fetch(base + '/login', {
+    method: 'POST', redirect: 'manual',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Forwarded-Proto': 'https' },
+    body: new URLSearchParams({ username: 'admin', password: 'admin-test-pass' }).toString(),
+  });
+  const cookies = res.headers.getSetCookie ? res.headers.getSetCookie() : [res.headers.get('set-cookie')];
+  assert.ok(cookies.some((cookie) => /OA_SESSION=.*;\s*Secure/i.test(cookie || '')), cookies.join(' | '));
+});
+
+test('SEC-032: unauthenticated large writes are rejected before body buffering', async () => {
+  const res = await fetch(base + '/admin/settings', {
+    method: 'POST', redirect: 'manual',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': String(2 * 1024 * 1024) },
+    body: 'x'.repeat(2 * 1024 * 1024),
+  });
+  assert.equal(res.status, 401);
+});
+
+test('SEC-033: the dev API playground never executes a Host-based request or forwards the session', async () => {
+  const login = await form('/login', { username: 'admin', password: 'admin-test-pass' });
+  const cookie = cookieFrom(login);
+  const res = await fetch(base + '/compat/playground?path=/api/v1/me', { headers: { Cookie: cookie, Host: 'evil.example' } });
+  const html = await res.text();
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(html, /Runs a real GET request|OA_SESSION=|evil\.example/);
+  assert.match(html, /wyłączony|disabled/i);
+});
+
+test('SEC-034: outbound HTTP rejects private, metadata, credentials and non-http targets', async () => {
+  const outbound = await import('../src/outbound.mjs');
+  for (const url of ['http://127.0.0.1:8080/x', 'http://169.254.169.254/latest/meta-data', 'file:///etc/passwd', 'http://user:pass@example.com/', 'http://example.com:8080/']) {
+    await assert.rejects(() => outbound.assertOutboundUrl(url), (error) => error instanceof outbound.OutboundError, url);
+  }
+});
+
+test('SEC-035: password reset has an IP cooldown and never duplicates an open ticket', async () => {
+  const db = await import('../src/db.mjs');
+  db.run('DELETE FROM password_reset_attempts');
+  db.run("DELETE FROM tickets WHERE subject = 'Password reset requested'");
+  for (let i = 0; i < 7; i += 1) {
+    await form('/lost-password', { account: rateUser.email || rateUser.username });
+  }
+  const attempts = db.get('SELECT COUNT(*) n FROM password_reset_attempts').n;
+  assert.ok(attempts <= 5, `reset attempts are limited (got ${attempts})`);
+  const tickets = db.get("SELECT COUNT(*) n FROM tickets WHERE user_id = ? AND subject = 'Password reset requested' AND status = 'open'", rateUser.id).n;
+  assert.ok(tickets <= 1, `open reset ticket is deduplicated (got ${tickets})`);
 });

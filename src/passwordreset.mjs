@@ -1,7 +1,7 @@
 // Self-service password reset by email.
 import crypto from 'node:crypto';
 import { config } from './config.mjs';
-import { get, run, nowIso, setting } from './db.mjs';
+import { get, all, run, nowIso, setting } from './db.mjs';
 import { sendMail, mtaStatus } from './mta.mjs';
 
 const TTL_MS = 60 * 60 * 1000;
@@ -28,9 +28,30 @@ export function resetLink(token) {
   return `${panelBaseUrl()}/reset-password?token=${encodeURIComponent(token)}`;
 }
 
+
+/** Cooldown and per-IP/per-account limits for reset requests. */
+export function resetRequestLimited(ip, userId) {
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const byIp = Number(get('SELECT COUNT(*) AS n FROM password_reset_attempts WHERE created_at > ? AND ip = ?', hourAgo, String(ip || ''))?.n) || 0;
+  if (byIp >= 5) return 'ip';
+  const pending = Number(get('SELECT COUNT(*) AS n FROM password_resets WHERE user_id = ? AND used_at IS NULL AND expires_at > ? AND created_at > ?', userId, nowIso(), tenMinAgo)?.n) || 0;
+  if (pending > 0) return 'cooldown';
+  const byUser = Number(get('SELECT COUNT(*) AS n FROM password_resets WHERE user_id = ? AND created_at > ?', userId, hourAgo)?.n) || 0;
+  if (byUser >= 3) return 'account';
+  return '';
+}
+
+export function recordResetAttempt(ip) {
+  run('INSERT INTO password_reset_attempts(ip, created_at) VALUES(?,?)', String(ip || ''), nowIso());
+  run('DELETE FROM password_reset_attempts WHERE created_at < ?', new Date(Date.now() - 7 * 86400000).toISOString());
+}
+
 /** Send the reset mail. Returns ok plus a reason for the UI/log. */
-export function requestPasswordReset(user) {
+export function requestPasswordReset(user, { ip = '' } = {}) {
   if (!user?.email) return { ok: false, reason: 'no-email' };
+  const limited = resetRequestLimited(ip, user.id);
+  if (limited) return { ok: false, reason: `rate-limited:${limited}` };
   if (!mtaStatus().available) return { ok: false, reason: 'no-mta' };
   const token = createResetToken(user.id);
   const body = [

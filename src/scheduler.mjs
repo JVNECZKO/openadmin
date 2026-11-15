@@ -177,6 +177,7 @@ export async function schedulerTick({ now = Date.now(), limit = 2 } = {}) {
   ensureSchedulerSchema();
   ensureJobSchema();
   const started = Date.now();
+  run('DELETE FROM login_attempts WHERE created_at < ?', new Date(Date.now() - 30 * 86400000).toISOString());
   const autoUnsuspended = autoUnsuspendExpired({ now });
   const recoveredJobs = recoverInterruptedJobs({ now });
   const recoveredAutomation = recoverInterruptedRuns();

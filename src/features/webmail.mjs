@@ -47,8 +47,8 @@ function createSession(mailbox) {
   return token;
 }
 
-function cookieFor(token) {
-  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${TTL_HOURS * 3600}${config.https ? '; Secure' : ''}`;
+function cookieFor(token, secure = false) {
+  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${TTL_HOURS * 3600}${secure ? '; Secure' : ''}`;
 }
 
 function attachmentDir() {
@@ -364,7 +364,7 @@ export function register(router) {
     }
     if (account.suspended) return { status: 403, html: loginPage({ error: 'This mailbox is suspended.', email }) };
     const token = createSession(email);
-    ctx.res.setHeader('Set-Cookie', cookieFor(token));
+    ctx.res.setHeader('Set-Cookie', cookieFor(token, ctx.secure));
     return ctx.redirect('/webmail');
   });
 

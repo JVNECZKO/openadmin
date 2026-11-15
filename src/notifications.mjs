@@ -6,8 +6,10 @@
 // in-app notification publishes one typed event to in-process subscribers.
 import { EventEmitter } from 'node:events';
 import { all, get, run, nowIso, setting } from './db.mjs';
+import { config } from './config.mjs';
 import { encryptSecret, decryptSecret } from './secrets.mjs';
 import { sendMail, mtaStatus } from './mta.mjs';
+import { safeFetch } from './outbound.mjs';
 
 const NOTIFICATION_LEVELS = ['info', 'ok', 'warn', 'danger'];
 const LEVEL_SET = new Set(NOTIFICATION_LEVELS);
@@ -307,7 +309,7 @@ export async function sendChannel(channel, title, body) {
     payload = { chat_id: cfg.chat_id, text: `${title}\n${body}` };
   }
   try {
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(10000) });
+    const res = await safeFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), maxBytes: 64 * 1024, allowPrivate: config.demo || setting('notifications_allow_private', '0') === '1', allowAnyPort: config.demo });
     return { ok: res.ok, error: res.ok ? '' : `HTTP ${res.status}` };
   } catch (e) { return { ok: false, error: e.message }; }
 }

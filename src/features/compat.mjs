@@ -947,34 +947,15 @@ export function register(router) {
     return titled(ctx, 'API Documentation', 'REST and DirectAdmin-compatible endpoints', body);
   });
 
-  router.get('/compat/playground', async (ctx) => {
-    let output = '';
-    if (ctx.query.path) {
-      const target = String(ctx.query.path);
-      if (!target.startsWith('/api/')) {
-        output = 'Only /api/ paths can be called from the playground.';
-      } else {
-        try {
-          const res = await fetch(`http://${ctx.req.headers.host}${target}`, {
-            headers: { Cookie: `OA_SESSION=${ctx.cookies.OA_SESSION || ''}` },
-          });
-          const text = await res.text();
-          output = `${res.status} ${res.headers.get('content-type')}\n\n${text.slice(0, 4000)}`;
-        } catch (e) {
-          output = `Request failed: ${e.message}`;
-        }
-      }
-    }
-    const body = h`${card('API playground', h`
-      <p class="small muted mb-12">Runs a real GET request against this panel with your session.</p>
-      <form method="get" action="/compat/playground" class="oa-form">
-        <div class="form-grid">
-          <div class="field field-full"><label class="field-label">Path</label><input name="path" value="${ctx.query.path || '/api/v1/me'}" required></div>
-        </div>
-        <div class="form-actions"><button class="btn btn-primary" type="submit">Send request</button></div>
-      </form>
-      ${output ? h`<pre class="code-block mt-18">${output}</pre>` : ''}`)}`;
-    return titled(ctx, 'DEV Playground', 'Interactive API scratchpad', body);
+  router.get('/compat/playground', (ctx) => {
+    // The old playground built an internal URL from the untrusted Host header
+    // and forwarded the raw session cookie. Network execution is disabled; use
+    // curl/OpenAPI against loopback with a scoped API key instead.
+    const body = h`${card('API playground wyłączony', h`
+      ${alert('Wykonywanie żądań z przeglądarki zostało wyłączone ze względów bezpieczeństwa. Użyj dokumentacji OpenAPI i klucza API o minimalnym zakresie.', 'warn')}
+      <p class="small muted">Dokumentacja: <a class="link" href="/compat/api-docs">/compat/api-docs</a> · OpenAPI: <a class="link" href="/api/v1/openapi.json">/api/v1/openapi.json</a></p>
+    `)}`;
+    return titled(ctx, 'API playground', 'Wyłączony w tej wersji', body);
   });
 }
 

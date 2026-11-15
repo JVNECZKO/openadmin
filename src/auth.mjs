@@ -1,7 +1,7 @@
 // Authentication, sessions, CSRF and capability resolution.
 import crypto from 'node:crypto';
 import { config } from './config.mjs';
-import { get, run, all, nowIso, setting, verifyPassword } from './db.mjs';
+import { get, run, all, nowIso, setting, verifyPassword, hashPassword, passwordNeedsRehash } from './db.mjs';
 import { safeJson, LEVELS } from './util.mjs';
 import { impersonationForSession } from './secrets.mjs';
 
@@ -33,19 +33,25 @@ export function isSuspended(user) {
 
 export function rateLimited(username, ip) {
   const since = new Date(Date.now() - config.limits.loginWindowMinutes * 60000).toISOString();
-  const row = get(
-    `SELECT COUNT(*) AS n FROM login_attempts WHERE created_at > ? AND (ip = ? OR lower(username) = lower(?))`,
-    since, ip, username,
-  );
-  return (row?.n || 0) >= config.limits.maxLoginAttempts;
+  const max = Math.max(1, Number(config.limits.maxLoginAttempts) || 8);
+  const byIp = get('SELECT COUNT(*) AS n FROM login_attempts WHERE created_at > ? AND ip = ?', since, ip)?.n || 0;
+  const byAccount = get('SELECT COUNT(*) AS n FROM login_attempts WHERE created_at > ? AND lower(username) = lower(?)', since, username)?.n || 0;
+  // A single source cannot renew an account lockout indefinitely. The account
+  // threshold is deliberately higher than the per-IP threshold.
+  return byIp >= max || byAccount >= Math.max(max * 3, 24);
 }
 
 export function recordFailure(username, ip) {
   run('INSERT INTO login_attempts(username, ip, created_at) VALUES(?,?,?)', username, ip, nowIso());
+  // Bound the table even when no scheduler is running.
+  if (Math.random() < 0.02) {
+    run('DELETE FROM login_attempts WHERE created_at < ?', new Date(Date.now() - 30 * 86400000).toISOString());
+  }
 }
 
-export function clearFailures(username, ip) {
-  run('DELETE FROM login_attempts WHERE lower(username) = lower(?) OR ip = ?', username, ip);
+export function clearFailures(username, ip, { clearIp = true } = {}) {
+  if (clearIp) run('DELETE FROM login_attempts WHERE lower(username) = lower(?) OR ip = ?', username, ip);
+  else run('DELETE FROM login_attempts WHERE lower(username) = lower(?)', username);
 }
 
 export function login(username, password, { ip = '', ua = '' } = {}) {
@@ -60,6 +66,7 @@ export function login(username, password, { ip = '', ua = '' } = {}) {
   if (isSuspended(user)) {
     return { ok: false, error: 'This account is suspended. Contact your reseller or administrator.' };
   }
+  if (passwordNeedsRehash(user.password)) run('UPDATE users SET password = ? WHERE id = ?', hashPassword(password), user.id);
   clearFailures(username, ip);
   run('UPDATE users SET last_login = ?, last_ip = ?, login_count = login_count + 1 WHERE id = ?', nowIso(), ip, user.id);
   return { ok: true, user: { ...user, last_login: nowIso() } };
@@ -171,7 +178,7 @@ export function rotateSession(rawToken, { ip = '', ua = '' } = {}) {
 export function reissueSession(ctx) {
   const rotated = rotateSession(ctx.cookies?.[COOKIE], { ip: ctx.ip, ua: ctx.req?.headers?.['user-agent'] || '' });
   if (rotated && !rotated.unchanged) {
-    ctx.res.setHeader('Set-Cookie', serializeCookie(rotated.token, { secure: config.https }));
+    ctx.res.setHeader('Set-Cookie', serializeCookie(rotated.token, { secure: ctx.secure ?? config.https }));
     ctx.session = { ...(ctx.session || {}), csrf: rotated.csrf };
   }
   return rotated;
@@ -277,6 +284,7 @@ export function apiLogin(username, password, ip = '') {
   }
   if (isSuspended(user)) return null;
   if (!user.api_enabled) return null;
+  if (passwordNeedsRehash(user.password)) run('UPDATE users SET password = ? WHERE id = ?', hashPassword(password), user.id);
   clearFailures(username, ip);
   return user;
 }

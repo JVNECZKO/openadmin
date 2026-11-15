@@ -43,7 +43,7 @@ export function register(router) {
   router.get('/support/:token', (ctx) => {
     const r = redeemSupport(ctx.params.token, { ip: ctx.ip, ua: ctx.req.headers['user-agent'] || '' });
     if (!r.ok) return page(ctx, { title: 'Support Access', subtitle: 'Link nieaktywny', body: h`${alert(r.error, 'danger')}` });
-    ctx.res.setHeader('Set-Cookie', serializeCookie(r.session.token, { secure: config.https }));
+    ctx.res.setHeader('Set-Cookie', serializeCookie(r.session.token, { secure: ctx.secure }));
     return ctx.redirect('/admin');
   });
 

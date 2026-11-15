@@ -676,8 +676,8 @@ export function registerAdminRoutes(router) {
     });
     if (!result.ok) return ctx.redirect(`${A}/users?flash=${encodeURIComponent(result.error)}&type=error`);
     ctx.res.setHeader('Set-Cookie', [
-      serializeCookie(result.token, { secure: config.https }),
-      previewActorCookie(actor, { secure: config.https }),
+      serializeCookie(result.token, { secure: ctx.secure }),
+      previewActorCookie(actor, { secure: ctx.secure }),
     ]);
     return ctx.redirect(`/${u.level}?flash=${encodeURIComponent(`Podglądasz konto ${u.username} (tylko do odczytu)`)}`);
   });

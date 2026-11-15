@@ -382,6 +382,12 @@ CREATE TABLE IF NOT EXISTS password_resets (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS password_reset_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ip TEXT,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS twofa_pending (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -796,6 +802,7 @@ CREATE TABLE IF NOT EXISTS webdisks (
   domain TEXT NOT NULL,
   path TEXT NOT NULL,
   password_enc TEXT,
+  password_hash TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL
 );
@@ -850,6 +857,8 @@ export function getDb() {
     if (!userCols.some((c) => c.name === 'reseller_plan')) db.exec('ALTER TABLE users ADD COLUMN reseller_plan TEXT');
     if (!userCols.some((c) => c.name === 'home_path')) db.exec('ALTER TABLE users ADD COLUMN home_path TEXT');
     if (!userCols.some((c) => c.name === 'webdisk_enabled')) db.exec('ALTER TABLE users ADD COLUMN webdisk_enabled INTEGER NOT NULL DEFAULT 0');
+    const webdiskCols = db.prepare('PRAGMA table_info(webdisks)').all();
+    if (!webdiskCols.some((c) => c.name === 'password_hash')) db.exec('ALTER TABLE webdisks ADD COLUMN password_hash TEXT');
     const pkgCols = db.prepare('PRAGMA table_info(packages)').all();
     if (!pkgCols.some((c) => c.name === 'features')) db.exec("ALTER TABLE packages ADD COLUMN features TEXT NOT NULL DEFAULT '{}'");
     if (!pkgCols.some((c) => c.name === 'resources')) db.exec("ALTER TABLE packages ADD COLUMN resources TEXT NOT NULL DEFAULT '{}'");
@@ -933,10 +942,16 @@ export function setSetting(key, value) {
 
 /* ------------------------------ passwords ------------------------------ */
 
+const SCRYPT_N = 32768;
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16);
-  const hash = crypto.scryptSync(String(password), salt, 64, { N: 16384, r: 8, p: 1 });
-  return `scrypt$16384$8$1$${salt.toString('hex')}$${hash.toString('hex')}`;
+  const hash = crypto.scryptSync(String(password), salt, 64, { N: SCRYPT_N, r: 8, p: 1, maxmem: 96 * 1024 * 1024 });
+  return `scrypt$${SCRYPT_N}$8$1$${salt.toString('hex')}$${hash.toString('hex')}`;
+}
+
+export function passwordNeedsRehash(stored) {
+  const parts = String(stored || '').split('$');
+  return parts[0] === 'scrypt' && parts.length === 6 && Number(parts[1]) < SCRYPT_N;
 }
 
 export function verifyPassword(password, stored) {
@@ -945,7 +960,7 @@ export function verifyPassword(password, stored) {
     if (parts[0] !== 'scrypt' || parts.length !== 6) return false;
     const [, N, r, p, saltHex, hashHex] = parts;
     const hash = crypto.scryptSync(String(password), Buffer.from(saltHex, 'hex'), 64, {
-      N: Number(N), r: Number(r), p: Number(p),
+      N: Number(N), r: Number(r), p: Number(p), maxmem: 96 * 1024 * 1024,
     });
     const expected = Buffer.from(hashHex, 'hex');
     return hash.length === expected.length && crypto.timingSafeEqual(hash, expected);

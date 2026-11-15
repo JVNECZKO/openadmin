@@ -2020,6 +2020,44 @@ test('WebDisk account supports WebDAV PUT/GET/PROPFIND/DELETE', async () => {
   const del = await fetch(base + '/webdisk/hello.txt', { method: 'DELETE', headers: { Authorization: auth } });
   assert.equal(del.status, 204);
   const w = db.get("SELECT * FROM webdisks WHERE username = ?", login);
+  assert.ok(w.password_hash, 'WebDisk password stored as a hash');
+  assert.equal(w.password_enc, null, 'legacy reversible password cleared');
+  // Path traversal cannot move the WebDisk outside docroot/home.
+  const { createWebdisk } = await import('../src/webdisk.mjs');
+  const owner = db.get("SELECT * FROM users WHERE username = 'demouser'");
+  for (const subpath of ['../../escape', '/etc', '..\\escape', '%2e%2e/escape']) {
+    const bad = createWebdisk(owner, { domain: 'example.com', subpath, password: 'WebdavPass123!' }, 'test');
+    assert.equal(bad.ok, false, `unsafe subpath accepted: ${subpath}`);
+  }
+  // External symlink and hardlink are not readable through WebDAV.
+  const fs = await import('node:fs');
+  const outside = path.join(dataDir, 'webdav-outside.txt');
+  fs.writeFileSync(outside, 'outside secret');
+  fs.symlinkSync('/etc/passwd', path.join(w.path, 'etc-link'));
+  fs.linkSync(outside, path.join(w.path, 'hard-link'));
+  for (const method of ['GET', 'PROPFIND']) {
+    const res = await fetch(base + '/webdisk/etc-link', { method, headers: { Authorization: auth, Depth: '0' } });
+    assert.equal(res.status, 403, `${method} must not follow external symlink`);
+  }
+  assert.equal((await fetch(base + '/webdisk/hard-link', { headers: { Authorization: auth } })).status, 403);
+  assert.equal((await fetch(base + '/webdisk/etc-link', { method: 'PUT', headers: { Authorization: auth }, body: 'x' })).status, 403);
+  assert.equal((await fetch(base + '/webdisk/etc-link', { method: 'DELETE', headers: { Authorization: auth } })).status, 403);
+  assert.doesNotMatch(await (await fetch(base + '/webdisk/', { method: 'PROPFIND', headers: { Authorization: auth, Depth: '1' } })).text(), /hard-link|etc-link/);
+  // Internal symlink is still a symlink: never followed by WebDAV.
+  fs.writeFileSync(path.join(w.path, 'inside.txt'), 'inside');
+  fs.symlinkSync('inside.txt', path.join(w.path, 'inside-link'));
+  for (const method of ['GET', 'PUT', 'DELETE']) {
+    assert.equal((await fetch(base + '/webdisk/inside-link', { method, headers: { Authorization: auth }, body: method === 'PUT' ? 'x' : undefined })).status, 403, `${method} internal symlink`);
+  }
+  const move = await fetch(base + '/webdisk/inside-link', { method: 'MOVE', headers: { Authorization: auth, Destination: '/webdisk/moved.txt' } });
+  assert.equal(move.status, 403);
+  assert.doesNotMatch(await (await fetch(base + '/webdisk/', { method: 'PROPFIND', headers: { Authorization: auth, Depth: '1' } })).text(), /inside-link/);
+  // Basic Auth failures are rate-limited and never reveal account existence.
+  for (let i = 0; i < 9; i++) await fetch(base + '/webdisk/nope', { headers: { Authorization: 'Basic ' + Buffer.from(`${login}:wrong-pass`).toString('base64') } });
+  const limited = await fetch(base + '/webdisk/nope', { headers: { Authorization: 'Basic ' + Buffer.from(`${login}:wrong-pass`).toString('base64') } });
+  assert.equal(limited.status, 429);
+  db.run('DELETE FROM login_attempts');
+  fs.rmSync(w.path, { recursive: true, force: true });
   db.run('DELETE FROM webdisks WHERE id = ?', w.id);
 });
 

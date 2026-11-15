@@ -1,6 +1,8 @@
 // Multi-server registry and health checks against remote OpenAdmin nodes.
-import { all, get, run, nowIso, audit } from './db.mjs';
+import { all, get, run, nowIso, audit, setting } from './db.mjs';
+import { safeFetch } from './outbound.mjs';
 import { encryptSecret, decryptSecret } from './secrets.mjs';
+import { config } from './config.mjs';
 
 export function nodes() { return all('SELECT * FROM servers ORDER BY name'); }
 
@@ -29,8 +31,15 @@ export function deleteNode(id, actor = 'admin') {
 export async function checkNode(node) {
   try {
     const headers = node.token_enc ? { Authorization: `Bearer ${decryptSecret(node.token_enc)}` } : {};
-    const ping = await fetch(`${node.url}/api/v1/ping`, { headers, signal: AbortSignal.timeout(8000) });
-    const json = await ping.json().catch(() => ({}));
+    const ping = await safeFetch(`${node.url}/api/v1/ping`, {
+      headers,
+      allowPrivate: config.demo || setting('multiserver_allow_private', '0') === '1',
+      allowAnyPort: true,
+      maxBytes: 64 * 1024,
+      timeoutMs: 8000,
+    });
+    let json = {};
+    try { json = JSON.parse(ping.body.toString('utf8') || '{}'); } catch { json = {}; }
     return { ok: ping.ok && json.ok !== false, status: ping.status, product: json.product || '', version: json.version || '' };
   } catch (e) { return { ok: false, error: e.message }; }
 }

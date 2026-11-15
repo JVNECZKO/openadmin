@@ -1140,8 +1140,8 @@ export function registerResellerRoutes(router) {
     });
     if (!result.ok) return ctx.redirect(`${R}/users/${user.id}?flash=${encodeURIComponent(result.error)}&type=error`);
     ctx.res.setHeader('Set-Cookie', [
-      serializeCookie(result.token, { secure: config.https }),
-      previewActorCookie(actor, { secure: config.https }),
+      serializeCookie(result.token, { secure: ctx.secure }),
+      previewActorCookie(actor, { secure: ctx.secure }),
     ]);
     return ctx.redirect(`/user?flash=${encodeURIComponent(`Podglądasz konto ${user.username} (tylko do odczytu)`)}`);
   });
