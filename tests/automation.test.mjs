@@ -251,6 +251,11 @@ test('admin automation page renders and status endpoint returns JSON', async () 
   assert.match(html, /backup\.daily/);
   assert.match(html, /health\.check/);
   assert.match(html, /Ostatnie uruchomienia|Recent runs/);
+  for (const raw of ['Due now', 'Scheduled jobs', 'Failures', 'Save settings', 'Recent runs', 'Automation settings']) {
+    assert.doesNotMatch(html, new RegExp(`>${raw}<`), `raw automation label: ${raw}`);
+  }
+  assert.match(html, /Ustawienia automatyzacji|Zaplanowane zadania|Krytyczne obserwacje/);
+
 
   const status = await fetch(base + '/admin/automation/status', { headers: { Cookie: cookie } });
   assert.equal(status.status, 200);
