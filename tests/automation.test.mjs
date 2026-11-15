@@ -250,7 +250,7 @@ test('admin automation page renders and status endpoint returns JSON', async () 
   assert.match(html, /Automatyzacja|Automation/);
   assert.match(html, /backup\.daily/);
   assert.match(html, /health\.check/);
-  assert.match(html, /Recent runs/);
+  assert.match(html, /Ostatnie uruchomienia|Recent runs/);
 
   const status = await fetch(base + '/admin/automation/status', { headers: { Cookie: cookie } });
   assert.equal(status.status, 200);
