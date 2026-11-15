@@ -99,7 +99,7 @@ export function register(router) {
       ${status.enabled && status.totals.critical ? alert(`${status.totals.critical} kontrola(-e) wykazała stan krytyczny mimo technicznego sukcesu wykonania. Otwórz szczegóły i napraw obserwowany problem.`, 'danger') : ''}
       ${status.enabled && !status.totals.critical && status.totals.failures ? alert(`${status.totals.failures} nieudanych prób zadań. Sprawdź historię, usuń przyczynę i uruchom zadanie ponownie.`, 'warn') : ''}
       <div class="stat-grid">
-        ${statCard({ label: L(ctx, 'Automation'), value: status.enabled ? 'ON' : 'OFF', sub: status.enabled ? 'global scheduler active' : L(ctx, 'paused globally'), icon: 'refresh', tone: status.enabled ? 'ok' : 'warn' })}
+        ${statCard({ label: L(ctx, 'Automation'), value: status.enabled ? 'ON' : 'OFF', sub: status.enabled ? L(ctx, 'global scheduler active') : L(ctx, 'paused globally'), icon: 'refresh', tone: status.enabled ? 'ok' : 'warn' })}
         ${statCard({ label: L(ctx, 'Due now'), value: String(status.due), sub: L(ctx, 'jobs waiting for the next tick'), icon: 'clock', tone: status.due ? 'warn' : 'ok' })}
         ${statCard({ label: L(ctx, 'Scheduled jobs'), value: `${status.totals.enabled}/${status.totals.jobs}`, sub: L(ctx, 'enabled / total'), icon: 'list' })}
         ${statCard({ label: L(ctx, 'Krytyczne obserwacje'), value: String(status.totals.critical), sub: L(ctx, 'wynik kontroli, nie tylko wykonanie'), icon: 'alert', tone: status.totals.critical ? 'danger' : 'ok' })}
