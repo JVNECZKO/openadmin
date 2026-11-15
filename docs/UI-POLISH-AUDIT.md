@@ -400,7 +400,7 @@ provisioning fixes:
   **0** JavaScript exceptions, **0** failed assets, **0** page-level horizontal
   overflow, **0** duplicate IDs, **0** POST forms without a CSRF token after shell initialization,
   **0** escaped form markup.
-- **302/302 tests** pass locally and on the Debian container.
+- **305/305 tests** pass locally and on the Debian container.
 - P1-01: alerts now render safe inline fragments; no literal `<strong>`/`<code>`
   text in browser output.
 - P1-02: all 28 table actions render buttons without a confirm string.

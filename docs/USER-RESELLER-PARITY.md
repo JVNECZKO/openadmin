@@ -68,7 +68,7 @@ domain; credentials are shown once.
 
 ## Verification
 
-`node --test tests/*.test.mjs` — **302/302 passing** (local and Debian). Browser checks:
+`node --test tests/*.test.mjs` — **305/305 passing** (local and Debian). Browser checks:
 user dashboard, application catalogue, reseller dashboard, reseller apps, all
 without raw escaped HTML; tile layouts responsive at 1440 and mobile widths.
 

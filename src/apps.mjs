@@ -65,10 +65,11 @@ function alive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-function portOpen(port) {
+function portOpen(port, { path = '/' } = {}) {
   const safePort = Number(port);
   if (!Number.isInteger(safePort) || safePort < 1 || safePort > 65535) return false;
-  const r = spawnSync('curl', ['-s', '-o', '/dev/null', '-m', '1', `http://127.0.0.1:${safePort}`], { encoding: 'utf8' });
+  const safePath = String(path).startsWith('/') ? String(path) : '/';
+  const r = spawnSync('curl', ['-s', '-o', '/dev/null', '-m', '1', `http://127.0.0.1:${safePort}${safePath}`], { encoding: 'utf8' });
   return r.status === 0;
 }
 
@@ -104,7 +105,7 @@ export function status(id) {
   const missing = app.requires.filter((ext) => !extensions.list.includes(ext));
   return {
     ...app, installed, version, dir, pid: alive(pid) ? pid : 0,
-    running: alive(pid) && portOpen(app.port),
+    running: alive(pid) && portOpen(app.port, { path: `/${id}/` }),
     url: `/${id}/`,
     missingExtensions: missing,
     php: extensions.ok,
@@ -324,7 +325,7 @@ export function start(id) {
   setSetting(`app_pid:${id}`, String(child.pid));
   const started = Date.now();
   while (Date.now() - started < 4000) {
-    if (portOpen(app.port)) return { ok: true, pid: child.pid };
+    if (portOpen(app.port, { path: `/${id}/` })) return { ok: true, pid: child.pid };
     spawnSync('sleep', ['0.15']);
   }
   return { ok: false, error: `${app.name} did not start; see ${path.join(appsRoot(), `${id}.log`)}` };
