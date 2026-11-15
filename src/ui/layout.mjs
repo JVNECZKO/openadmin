@@ -376,7 +376,7 @@ export function renderLogin({ message = '', error = '', csrf = '', serverName = 
   const t = (en, plText) => (pl ? plText : en);
   const demoAccounts = demo
     ? html`<div class="demo-strip">
-        <div class="demo-title">${icon('sparkles', { size: 16 })} ${t('Live demo accounts', 'Konta demonstracyjne')}</div>
+        <div class="demo-title">${icon('sparkles', { size: 16 })} ${t('Live demo accounts', 'Konta demonstracyjne')} <span class="demo-dev">${t('development only', 'tylko środowisko deweloperskie')}</span></div>
         <div class="demo-grid">
           <button type="button" class="demo-chip" data-demo-user="demouser" data-demo-pass="demo"><strong>User</strong><span>demouser / demo</span></button>
           <button type="button" class="demo-chip" data-demo-user="demoreseller" data-demo-pass="demo"><strong>Reseller</strong><span>demoreseller / demo</span></button>

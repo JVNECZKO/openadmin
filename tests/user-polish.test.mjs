@@ -78,15 +78,15 @@ test('user dashboard is a live overview without duplicate sections', async () =>
   assert.match(html, /data-live-url="\/user"/);
   assert.match(html, /data-live-scope="dashboard"/);
 
-  // Six real app tiles, the complete tool grid, quick actions and onboarding.
-  assert.equal((html.match(/data-dashboard-app="/g) || []).length, 6);
+  // Three recommendations and compact onboarding; no duplicate tool grid.
+  assert.equal((html.match(/data-dashboard-app="/g) || []).length, 3);
   assert.match(html, /data-dashboard-app="wordpress"/);
-  assert.match(html, /data-dashboard-app="moodle"/);
-  assert.equal((html.match(/data-quick-action>/g) || []).length, 4);
-  assert.equal((html.match(/data-all-tool>/g) || []).length, 16);
+  assert.match(html, /data-dashboard-app="nextcloud"/);
+  assert.equal((html.match(/data-quick-action>/g) || []).length, 0);
+  assert.equal((html.match(/data-all-tool>/g) || []).length, 0);
   assert.equal((html.match(/data-onboarding-step="/g) || []).length, 6);
-  assert.equal((html.match(/Szybkie akcje/g) || []).length, 1);
-  assert.equal((html.match(/Wszystkie narzędzia/g) || []).length, 1);
+  assert.equal((html.match(/Szybkie akcje/g) || []).length, 0);
+  assert.equal((html.match(/Wszystkie narzędzia/g) || []).length, 0);
 
   // Resource meters expose a real state instead of a decorative 0% bar.
   assert.equal((html.match(/data-resource-meter="/g) || []).length, 6);
@@ -116,7 +116,7 @@ test('fresh account onboarding links to all six real actions', async () => {
   for (const href of hrefs) assert.ok(html.includes(`href="${href}"`), `onboarding must link to ${href}`);
   assert.match(html, /0 z 6 gotowe/);
   assert.match(html, /Brak domen/);
-  assert.equal((html.match(/data-dashboard-app="/g) || []).length, 6);
+  assert.equal((html.match(/data-dashboard-app="/g) || []).length, 3);
 });
 
 test('app catalogue exposes six searchable tiles with honest installed states', async () => {

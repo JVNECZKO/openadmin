@@ -206,9 +206,9 @@ test('locale resolution follows the requested locale, cookie, account and browse
     [{ search: '', cookie: 'oa_lang=pl', htmlLang: 'en', isLogin: true, languages: ['en-US'] }, 'pl'],
     [{ search: '', htmlLang: 'en', isLogin: false, languages: ['pl-PL'] }, 'en'],
     [{ search: '', htmlLang: 'pl', isLogin: false, languages: ['en-US'] }, 'pl'],
-    [{ search: '', htmlLang: 'en', isLogin: true, languages: ['pl-PL'] }, 'pl'],
+    [{ search: '', htmlLang: 'en', isLogin: true, languages: ['pl-PL'] }, 'en'],
     [{ search: '?lang=de', htmlLang: 'en', isLogin: true, languages: ['en-US'] }, 'en'],
-    [{ search: '', htmlLang: 'en', isLogin: true, acceptLanguage: 'pl-PL,pl;q=0.9,en;q=0.8' }, 'pl'],
+    [{ search: '', htmlLang: 'en', isLogin: true, acceptLanguage: 'pl-PL,pl;q=0.9,en;q=0.8' }, 'en'],
     [{ search: '', htmlLang: 'en', isLogin: true, storage: { oa_lang: 'pl' }, languages: ['en-US'] }, 'pl'],
   ];
   for (const [hints, expected] of cases) {
@@ -374,7 +374,7 @@ test('EN locale renders dashboard, catalogue and help in English', async () => {
     const dashboard = await page('/user', cookie);
     assert.equal(dashboard.res.status, 200);
     const dashText = mainText(dashboard.html);
-    for (const label of ['First steps', 'Your domains', 'Applications — one click', 'Quick actions']) {
+    for (const label of ['First steps', 'Your domains', 'Applications — one click', 'Recent activity']) {
       assert.ok(dashText.includes(label), `dashboard misses EN label: ${label}`);
     }
     assert.equal(dashText.includes('Pierwsze kroki'), false, 'dashboard still renders PL headings in EN locale');

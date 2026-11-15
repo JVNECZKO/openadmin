@@ -57,7 +57,7 @@ function durationLabel(run) {
 }
 
 function lastRunCell(job, ctx) {
-  if (!job.last_run_at) return h`<span class="small muted">never</span>`;
+  if (!job.last_run_at) return h`<span class="small muted">${(ctx?.user?.language || 'pl') === 'en' ? 'never' : 'nigdy'}</span>`;
   const pl = (ctx?.user?.language || 'pl') !== 'en';
   return h`<div class="small muted">wykonanie: ${statusBadge(job.last_status, pl)}</div><div class="small muted">stan: ${statusBadge(job.observation?.observedStatus || 'unknown', pl)}</div><div class="small muted">${formatDate(job.last_run_at, { time: true })} · ${timeAgo(job.last_run_at)}</div>`;
 }
@@ -72,15 +72,20 @@ function nextRunCell(job, ctx) {
 
 function jobActions(ctx, job) {
   return h`<div class="row-actions">
-    <a class="btn btn-ghost btn-sm" href="${A}?edit=${encodeURIComponent(job.key)}">${L(ctx, 'Edit')}</a>
     <form method="post" action="${A}/jobs/${encodeURIComponent(job.key)}/run" class="inline">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
-      ${btn(L(ctx, 'Run now'), { variant: 'secondary', size: 'sm', icon: 'play', submit: true })}
+      ${btn(L(ctx, 'Run now'), { variant: 'primary', size: 'sm', icon: 'play', submit: true })}
     </form>
-    <form method="post" action="${A}/jobs/${encodeURIComponent(job.key)}/toggle" class="inline">
-      <input type="hidden" name="_csrf" value="${ctx.csrf}">
-      ${btn(job.enabled ? L(ctx, 'Disable') : L(ctx, 'Enable'), { variant: 'ghost', size: 'sm', icon: job.enabled ? 'x' : 'check', submit: true })}
-    </form>
+    <details class="more-menu">
+      <summary class="btn btn-ghost btn-sm" role="button" aria-label="Więcej akcji">Więcej</summary>
+      <div class="more-menu-list">
+        <a class="menu-item" href="${A}?edit=${encodeURIComponent(job.key)}">${L(ctx, 'Edit')}</a>
+        <form method="post" action="${A}/jobs/${encodeURIComponent(job.key)}/toggle">
+          <input type="hidden" name="_csrf" value="${ctx.csrf}">
+          <button class="menu-item" type="submit">${job.enabled ? L(ctx, 'Disable') : L(ctx, 'Enable')}</button>
+        </form>
+      </div>
+    </details>
   </div>`;
 }
 
@@ -116,30 +121,32 @@ export function register(router) {
         field({ name: 'enabled', label: L(ctx, 'Enabled'), type: 'checkbox', value: editing.enabled, help: L(ctx, 'Disabled jobs stay in the list and keep their history.') }),
       ], { action: `${A}/jobs/${encodeURIComponent(editing.key)}`, csrf: ctx.csrf, submit: L(ctx, 'Save job'), cancel: A })) : ''}
       ${card(L(ctx, 'Jobs'), table({
+        cls: 'responsive-table',
         columns: [
-          { label: L(ctx, 'Job'), render: (job) => h`<strong>${ctx.user?.language === 'pl' ? (JOB_LABEL_PL[job.key] || job.label) : job.label}</strong><div class="small muted">${ctx.user?.language === 'pl' ? (JOB_PL[job.key] || job.description) : job.description}</div>` },
-          { label: L(ctx, 'Status'), render: (job) => lastRunCell(job, ctx) },
-          { label: L(ctx, 'Interval'), render: (job) => h`<span>${formatInterval(job.interval_seconds)}</span>` },
-          { label: L(ctx, 'Next run'), render: (job) => nextRunCell(job, ctx) },
-          { label: L(ctx, 'Runs / failures'), render: (job) => h`<span>${job.run_count}</span> <span class="small muted">/ ${job.fail_count}</span>` },
-          { label: L(ctx, 'Actions'), cls: 'col-actions', render: (job) => jobActions(ctx, job) },
+          { label: L(ctx, 'Job'), dataLabel: 'Zadanie', render: (job) => h`<strong>${ctx.user?.language === 'pl' ? (JOB_LABEL_PL[job.key] || job.label) : job.label}</strong><div class="small muted">${ctx.user?.language === 'pl' ? (JOB_PL[job.key] || job.description) : job.description}</div>` },
+          { label: L(ctx, 'Status'), dataLabel: 'Status', render: (job) => lastRunCell(job, ctx) },
+          { label: L(ctx, 'Interval'), dataLabel: 'Interwał', render: (job) => h`<span>${formatInterval(job.interval_seconds)}</span>` },
+          { label: L(ctx, 'Next run'), dataLabel: 'Następne uruchomienie', render: (job) => nextRunCell(job, ctx) },
+          { label: L(ctx, 'Runs / failures'), dataLabel: 'Uruchomienia / błędy', render: (job) => h`<span>${job.run_count}</span> <span class="small muted">/ ${job.fail_count}</span>` },
+          { label: L(ctx, 'Actions'), cls: 'col-actions', dataLabel: 'Akcje', render: (job) => jobActions(ctx, job) },
         ],
         rows: status.jobs,
         empty: L(ctx, 'No automation jobs are seeded yet.'),
       }), { padded: false, sub: L(ctx, 'Every action is a normal POST form with a CSRF token and works without client JavaScript.') })}
       ${card(L(ctx, 'Recent runs'), table({
+        cls: 'responsive-table',
         columns: [
-          { label: L(ctx, 'Job'), render: (run) => h`${JOB_LABEL_PL[run.job_key] || run.job_key}` },
-          { label: L(ctx, 'Started'), render: (run) => h`<div>${formatDate(run.started_at, { time: true })}</div><div class="small muted">${timeAgo(run.started_at)}</div>` },
-          { label: L(ctx, 'Duration'), render: (run) => durationLabel(run) },
-          { label: 'Wykonanie', render: (run) => statusBadge(run.status, (ctx.user?.language || 'pl') !== 'en') },
-          { label: 'Stan kontroli', render: (run) => statusBadge(run.observation?.observedStatus || 'unknown', (ctx.user?.language || 'pl') !== 'en') },
-          { label: L(ctx, 'Output / error'), render: (run) => h`<span class="small ${run.error ? 'danger' : 'muted'}">${clip(run.error || run.output || '—')}</span>` },
+          { label: L(ctx, 'Job'), dataLabel: 'Zadanie', render: (run) => h`${JOB_LABEL_PL[run.job_key] || run.job_key}` },
+          { label: L(ctx, 'Started'), dataLabel: 'Start', render: (run) => h`<div>${formatDate(run.started_at, { time: true })}</div><div class="small muted">${timeAgo(run.started_at)}</div>` },
+          { label: L(ctx, 'Duration'), dataLabel: 'Czas', render: (run) => durationLabel(run) },
+          { label: 'Wykonanie', dataLabel: 'Wykonanie', render: (run) => statusBadge(run.status, (ctx.user?.language || 'pl') !== 'en') },
+          { label: 'Stan kontroli', dataLabel: 'Stan kontroli', render: (run) => statusBadge(run.observation?.observedStatus || 'unknown', (ctx.user?.language || 'pl') !== 'en') },
+          { label: L(ctx, 'Output / error'), dataLabel: 'Wynik / błąd', render: (run) => h`<span class="small ${run.error ? 'danger' : 'muted'}">${clip(run.error || run.output || '—')}</span>` },
         ],
         rows: status.lastRuns,
         empty: L(ctx, 'No automation runs recorded yet.'),
       }), { padded: false, actions: [clearForm] })}
-      <p class="small muted">${L(ctx, 'Scheduler tick source: src/scheduler.mjs. Job definitions and run history are stored in automation_jobs and automation_runs.')}</p>`;
+      <details class="technical-details"><summary>Informacje techniczne</summary><p class="small muted">${L(ctx, 'Scheduler tick source: src/scheduler.mjs. Job definitions and run history are stored in automation_jobs and automation_runs.')}</p></details>`;
     return page(ctx, { title: L(ctx, 'Automation'), subtitle: L(ctx, 'Scheduled jobs, run history and global controls'), body, wide: true });
   });
 

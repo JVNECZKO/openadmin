@@ -110,20 +110,18 @@ SHOW DATABASES;</pre>
     const body = h`${card('Dodaj bazę danych', h`<form method="post" action="/user/databases/create" class="oa-form">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
       ${!q.ok ? alert(`Osiągnięto limit baz (${q.used}/${q.limit}).`, 'warn') : ''}
-      ${!mst.connected ? alert('No MariaDB server is connected: the database will be recorded but not created on a server.', 'warn') : ''}
+      ${!mst.connected ? alert('Brak połączenia z MariaDB: baza zostanie zapisana, ale nie utworzona na serwerze.', 'warn') : ''}
       <div class="form-grid">
         <div class="field"><label class="field-label">Nazwa bazy <span class="req">*</span></label>
-          <div class="field-control"><span class="field-suffix" style="left:11px;right:auto">${ctx.user.username}_</span>
-            <input name="name" required pattern="[a-zA-Z0-9_]{1,32}" style="padding-left:${ctx.user.username.length + 2}ch" placeholder="app"></div>
-          <p class="field-help">Letters, numbers and underscores only.</p></div>
+          <div class="input-group"><span class="input-prefix">${ctx.user.username}_</span><input name="name" required pattern="[a-zA-Z0-9_]{1,32}" placeholder="app"></div>
+          <p class="field-help">Tylko litery, cyfry i podkreślenia.</p></div>
         <div class="field"><label class="field-label">Użytkownik bazy</label>
-          <div class="field-control"><span class="field-suffix" style="left:11px;right:auto">${ctx.user.username}_</span>
-            <input name="db_user" pattern="[a-zA-Z0-9_]{1,32}" style="padding-left:${ctx.user.username.length + 2}ch" placeholder="app"></div></div>
-        <div class="field"><label class="field-label">Password</label>
+          <div class="input-group"><span class="input-prefix">${ctx.user.username}_</span><input name="db_user" pattern="[a-zA-Z0-9_]{1,32}" placeholder="app"></div></div>
+        <div class="field"><label class="field-label">Hasło</label>
           <div class="field-control"><input id="dbpass" name="password" type="password" minlength="8" placeholder="Pozostaw puste, aby wygenerować" autocomplete="new-password">
-            <button class="btn btn-secondary btn-sm" type="button" data-genpass="#dbpass" style="margin-left:8px">Generate</button></div>
+            <button class="btn btn-secondary btn-sm" type="button" data-genpass="#dbpass" style="margin-left:8px">Wygeneruj</button></div>
           <p class="field-help">Jeśli pozostawisz puste, panel wygeneruje silne hasło i pokaże je tylko raz.</p></div>
-        <div class="field"><label class="field-label">Character set</label><select name="charset"><option>utf8mb4</option><option>utf8</option><option>latin1</option></select></div>
+        <div class="field"><label class="field-label">Kodowanie znaków</label><select name="charset"><option>utf8mb4</option><option>utf8</option><option>latin1</option></select></div>
       </div>
       <div class="form-actions"><button class="btn btn-primary" type="submit" ${!q.ok ? 'disabled' : ''}>Dodaj bazę</button><a class="btn btn-ghost" href="/user/databases">Anuluj</a></div>
     </form>`)}`;

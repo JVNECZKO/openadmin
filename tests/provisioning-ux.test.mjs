@@ -132,6 +132,9 @@ test('account wizard renders the guided steps, legacy fields and package summary
 test('admin creates a customer atomically with activation link, mailbox, DNS and backup', async () => {
   const admin = await loginAs('demoadmin');
   const page = await getPage('/admin/users/create', admin);
+  assert.match(page.html, /Krok 1 z 5/);
+  assert.doesNotMatch(page.html, /Krok 1 z 6/);
+  assert.equal((page.html.match(/data-wizard-step="[^"]+"/g) || []).length, 5);
   const csrf = csrfOf(page.html);
   const username = unique('uxclient');
   const domain = uniqueDomain('ux');

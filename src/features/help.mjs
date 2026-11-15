@@ -24,8 +24,8 @@ export function register(router) {
       <div class="grid grid-2">
         ${card(L(locale, 'How do I publish a website?', 'Jak postawić stronę?'), h`<ol class="small" style="line-height:1.9;padding-left:18px">
           <li>${L(locale, 'Click', 'Kliknij')} <strong>${L(locale, 'Add site', 'Dodaj stronę')}</strong> ${L(locale, 'and enter a domain (e.g.', 'i wpisz domenę (np.')} <code>mycompany.com</code>).</li>
-          <li>${L(locale, 'Choose a web engine: Nginx, Apache, OpenLiteSpeed or LiteSpeed Enterprise. The tiles show what is actually detected on the server.', 'Wybierz silnik WWW: Nginx, Apache, OpenLiteSpeed albo LiteSpeed Enterprise. Kafelki pokazują, co jest realnie wykryte na serwerze.')}</li>
-          <li>${L(locale, 'Choose PHP and an SSL certificate — self-signed works immediately, Let’s Encrypt requires public DNS.', 'Wybierz PHP i certyfikat SSL — self-signed działa od razu, Let’s Encrypt wymaga publicznego DNS.')}</li>
+          <li>${L(locale, 'Keep the recommended configuration and click Next. Engine changes are only in Advanced options.', 'Zostaw zalecaną konfigurację i kliknij Dalej. Zmiana silnika jest tylko w opcjach zaawansowanych.')}</li>
+          <li>${L(locale, 'The default certificate works immediately. Public DNS is needed only for a publicly trusted certificate.', 'Domyślny certyfikat działa od razu. Publiczny DNS jest potrzebny tylko dla zaufanego certyfikatu.')}</li>
           <li>${L(locale, 'Add subdomains (e.g.', 'Dodaj subdomeny (np.')} <code>blog</code>, <code>shop</code>) ${L(locale, '— each gets its own vhost and DNS record.', '— każda dostanie własny vhost i rekord DNS.')}</li>
           <li>${L(locale, 'Optionally choose WordPress or Nextcloud; the installer creates the database and shows credentials once.', 'Opcjonalnie wybierz WordPress lub Nextcloud; instalator utworzy bazę i pokaże dane tylko raz.')}</li>
           <li>${L(locale, 'At your domain registrar, set the DNS records shown after the site is created.', 'U registrar domeny ustaw rekordy DNS pokazane po utworzeniu strony.')}</li>
@@ -39,7 +39,6 @@ export function register(router) {
           <li>${L(locale, 'The login is the full email address; the password is the webmail password.', 'Login to pełny adres e-mail, hasło takie jak do webmaila.')}</li>
         </ol>`)}
         ${card(L(locale, 'The site is not working', 'Strona nie działa?'), h`<ol class="small" style="line-height:1.9;padding-left:18px">
-          <li>${L(locale, 'Open', 'Otwórz')} <a class="link" href="/admin/health">${L(locale, 'Server health', 'Stan serwera')}</a> ${L(locale, '(admin) — red items have a repair button.', '(admin) — czerwone elementy mają przycisk naprawy.')}</li>
           <li>${L(locale, 'Check', 'Sprawdź')} <a class="link" href="/user/domains">${L(locale, 'domains', 'domeny')}</a> → <strong>${L(locale, 'Logs', 'Logi')}</strong> ${L(locale, 'to see whether the browser gets a 404/500 error.', 'czy przeglądarka nie dostaje błędu 404/500.')}</li>
           <li>${L(locale, 'Make sure the domain points to the right IP address (A record) and that DNS propagation is complete.', 'Upewnij się, że domena wskazuje na właściwy adres IP (rekord A) i że minęła propagacja DNS.')}</li>
           <li>${L(locale, 'If you just added the domain, wait up to 24 hours for DNS at your registrar.', 'Jeśli dopiero dodałeś domenę, odczekaj do 24 h na DNS u registrar.')}</li>

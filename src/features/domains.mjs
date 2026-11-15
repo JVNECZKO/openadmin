@@ -69,6 +69,7 @@ export function userDomains(ctx) {
         { label: 'Delete', href: '#', icon: 'trash', danger: true, form: (r) => `/user/domains/${r.id}/delete`, confirm: 'Delete this domain and its DNS zone, mail and databases?', icon: 'trash' },
       ],
       empty: 'No domains yet. Add your first domain to get started.',
+      responsive: true,
     })}`;
   return page(ctx, { title: 'Domeny', subtitle: 'Zarządzaj domenami na swoim koncie', body });
 }
@@ -109,17 +110,21 @@ export function domainCreatePage(ctx, error = '', values = {}) {
       <div data-wizard-step="1" data-wizard-title="Domena i silnik">
         ${card('Krok 1 z 5 · Domena i silnik WWW', h`
           <div class="form-grid">
-            <div class="field field-full"><label class="field-label" for="dname">Domain name <span class="req">*</span></label>
+            <div class="field field-full"><label class="field-label" for="dname">Nazwa domeny <span class="req">*</span></label>
               <input id="dname" name="domain" type="text" required placeholder="example.com" value="${values.domain || ctx.body?.domain || ''}" ${!q.ok ? 'disabled' : ''}>
-              <p class="field-help">Bez http:// i końcowego ukośnika. Istniejąca domena na Twoim koncie zostanie bezpiecznie zrekoncyliowana (idempotentnie).</p></div>
-            <div class="field field-full"><label class="field-label">Web engine</label>
-              ${enginePicker({ selected: selectedEngine, name: 'engine' })}
-              <p class="field-help">${chosen ? `Selected: ${chosen.label}. ` : ''}The choice is stored per domain as web_server:&lt;domain&gt; and used for vhost generation.</p></div>
-            <div class="field"><label class="field-label" for="php">PHP version</label>
-              <select id="php" name="php_version">${phpList.map((v) => h`<option value="${v}" ${v === selectedPhp ? 'selected' : ''}>PHP ${v}</option>`)}</select></div>
-            <div class="field"><label class="field-label" for="domain-ssl">SSL mode</label>
-              ${sslModeSelect({ selected: selectedSsl, name: 'ssl_mode', id: 'domain-ssl' })}
-              <p class="field-help">Let's Encrypt needs public DNS; the panel falls back to self-signed and can retry ACME after DNS propagation.</p></div>
+              <p class="field-help">Bez http:// i końcowego ukośnika. Istniejąca domena na Twoim koncie zostanie bezpiecznie zrekoncyliowana.</p></div>
+            <details class="advanced-options field-full">
+              <summary>Opcje zaawansowane: silnik WWW, PHP i certyfikat</summary>
+              <p class="field-help">Domyślnie używamy zalecanej konfiguracji serwera. Zmień ją tylko, jeśli wiesz, czego potrzebujesz.</p>
+              <div class="field"><label class="field-label">Silnik WWW</label>
+                ${enginePicker({ selected: selectedEngine, name: 'engine' })}
+                <p class="field-help">${chosen ? `Wybrano: ${chosen.label}. ` : ''}Wybór jest zapisywany dla tej domeny i używany do generowania vhosta.</p></div>
+              <div class="field"><label class="field-label" for="php">Wersja PHP</label>
+                <select id="php" name="php_version">${phpList.map((v) => h`<option value="${v}" ${v === selectedPhp ? 'selected' : ''}>PHP ${v}</option>`)}</select></div>
+              <div class="field"><label class="field-label" for="domain-ssl">Tryb SSL</label>
+                ${sslModeSelect({ selected: selectedSsl, name: 'ssl_mode', id: 'domain-ssl' })}
+                <p class="field-help">Let's Encrypt wymaga publicznego DNS. Panel użyje certyfikatu self-signed i ponowi ACME po propagacji.</p></div>
+            </details>
           </div>`)}
         <div class="wizard-actions"><button type="button" class="btn btn-primary" data-wizard-next>Dalej: katalog i DNS →</button></div>
       </div>
@@ -189,8 +194,11 @@ export function domainCreatePage(ctx, error = '', values = {}) {
           <div class="wizard-actions"><button type="button" class="btn btn-ghost" data-wizard-back>← Wstecz</button><button type="button" class="btn btn-primary" data-wizard-submit>Create domain</button></div>
       </div>
     </form>
-    ${card('Existing domains', h`${domains.length ? kvList(domains.map((d) => [d.name, d.docroot || '—']), { cols: 1 }) : emptyState('None yet')}`)}`;
-  return page(ctx, { title: 'Add domain', subtitle: 'Jeden przepływ: document root → DNS → vhost → PHP → SSL → poczta → aplikacja → backup', body, wide: true });
+    ${card('Istniejące domeny', h`${domains.length ? h`<div class="stack" style="gap:10px">${domains.map((d) => h`<div class="existing-domain">
+      <strong>${d.name}</strong>
+      <code class="existing-domain-path">${d.docroot || '—'}</code>
+    </div>`)}</div>` : emptyState('Brak domen.')}`)}`;
+  return page(ctx, { title: 'Dodaj domenę', subtitle: 'Utwórz stronę, pocztę i certyfikat w jednym kroku', body, wide: true });
 }
 
 export function registerDomainsPost(router) {

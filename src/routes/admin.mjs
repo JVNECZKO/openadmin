@@ -108,14 +108,11 @@ function adminDashboard(ctx) {
   const body = h`<div data-auto-refresh="45" data-auto-refresh-label="Odświeżanie pulpitu">
     <div class="hero">
       <div>
-        <h2>Pulpit administratora</h2>
-        <p><strong>${users.length}</strong> użytkowników · <strong>${resellers.length}</strong> resellerów · <strong>${domains.length}</strong> domen · ${running}/${expectedServices} oczekiwanych usług działa.</p>
+        <p class="hero-summary"><strong>${users.length}</strong> użytkowników · <strong>${resellers.length}</strong> resellerów · <strong>${domains.length}</strong> domen · ${running}/${expectedServices} oczekiwanych usług działa.</p>
         <div class="row mt-18">${badge('OpenAdmin ' + VERSION, 'brand')}${badge('Licencja unlimited', 'ok')}${badge('Darmowy i open source', 'ok')}</div>
       </div>
       <div class="hero-actions">
         ${btn('Dodaj użytkownika', { href: '/admin/users/create', icon: 'plus' })}
-        ${btn('Dodaj resellera', { href: '/admin/resellers/create', variant: 'secondary', icon: 'users' })}
-        ${btn('Ustawienia serwera', { href: '/admin/settings', variant: 'secondary', icon: 'settings' })}
       </div>
     </div>
     ${setting('setup_complete', '0') !== '1' ? alert(h`<strong>Dokończ konfigurację panelu.</strong> Ustaw IP, serwery nazw i wdróż strony, DNS oraz pocztę. <a class="link" href="/admin/setup">Otwórz kreator →</a>`, 'warn') : ''}
@@ -130,11 +127,11 @@ function adminDashboard(ctx) {
     ${attentionCard(attention)}
     <div class="grid grid-2-1">
       ${usageChartCard(series.map((r) => ({ ...r, bandwidth_mb: r.bandwidth_mb })), { title: 'Transfer serwera', sub: 'Wszystkie konta, ostatnie 30 dni' })}
-      ${card('Usługi', h`${serviceRows.slice(0, 7).map((s) => h`<div class="service-row">
-        <span class="service-dot ${s.state === 'running' ? 'on' : s.state === 'failed' ? 'off' : ''}"></span><strong>${s.name}</strong>
-        <span class="small muted" style="margin-left:8px">${s.detail}</span>
-        <span style="margin-left:auto">${badge(s.label, serviceTone(s.state), { dot: true })}</span>
-      </div>`)}`, { sub: `${running}/${expectedServices} oczekiwanych usług działa · ${serviceSummary.inactiveByDesign} nieaktywnych zgodnie z konfiguracją`, actions: [h`<a class="link small" href="/admin/services">Zarządzaj</a>`] })}
+      ${card('Usługi', h`<div class="service-summary">
+        <div><strong>${running}/${expectedServices}</strong><span>oczekiwanych usług działa</span></div>
+        <div><strong>${serviceRows.filter((s) => s.state === 'failed').length}</strong><span>wymaga naprawy</span></div>
+        <div><strong>${serviceSummary.inactiveByDesign}</strong><span>nieaktywnych zgodnie z konfiguracją</span></div>
+      </div>`, { sub: 'Pełna lista i diagnostyka są na dedykowanym ekranie', actions: [h`<a class="link small" href="/admin/services">Zarządzaj usługami</a>`] })}
     </div>
     <div class="grid grid-2">
       ${card('Automatyzacja', h`
@@ -147,22 +144,12 @@ function adminDashboard(ctx) {
       </div>`, { sub: 'Nginx / Apache / OpenLiteSpeed / LiteSpeed', actions: [h`<a class="link small" href="/admin/web-server">Zarządzaj serwerem WWW</a>`] })}
     </div>
     <div class="grid grid-2">
-      ${card('Ostatnia aktywność', h`${auditRows.length ? h`<div class="timeline">${auditRows.map((a) => h`<div class="timeline-item">
+      ${card('Ostatnia aktywność', h`${auditRows.length ? h`<div class="timeline">${auditRows.slice(0, 5).map((a) => h`<div class="timeline-item">
         <div class="timeline-dot">${icon('check', { size: 15 })}</div>
         <div class="timeline-body"><div class="spread"><span><strong>${a.actor}</strong> ${a.action.replace('.', ' ')} ${a.target || ''}</span><span class="small muted">${timeAgo(a.created_at)}</span></div>
         <small>${a.level} · ${a.ip || 'local'}</small></div></div>`)}</div>` : emptyState('Brak wpisów.')}`, { actions: [h`<a class="link small" href="/admin/audit-log">Audit log</a>`] })}
       ${card('Otwarte zgłoszenia', h`${tickets.length ? h`<div class="timeline">${tickets.map((t) => h`<div class="timeline-item"><div class="timeline-dot">${icon('ticket', { size: 15 })}</div>
         <div class="timeline-body"><div class="spread"><a class="link" href="/admin/tickets/${t.id}">${t.subject}</a><span class="small muted">${timeAgo(t.created_at)}</span></div><small>${t.username} · ${t.priority}</small></div></div>`)}</div>` : emptyState('Brak otwartych zgłoszeń')}`, { actions: [h`<a class="link small" href="/admin/tickets">Wszystkie zgłoszenia</a>`] })}
-    </div>
-    <div class="grid grid-4">
-      ${quick('/admin/health', 'check', 'Stan serwera', 'Co działa, co naprawić')}
-      ${quick('/admin/automation', 'refresh', 'Automatyzacja', 'Joby, harmonogram, logi')}
-      ${quick('/admin/web-server', 'globe', 'Silniki WWW', 'Nginx, Apache, OLS, LiteSpeed')}
-      ${quick('/admin/backups', 'archive', 'Kopie zapasowe', 'Snapshoty serwera')}
-      ${quick('/admin/security', 'shield', 'Bezpieczeństwo', 'Firewall, SSH, WAF')}
-      ${quick('/admin/panel-config', 'settings', 'Konfiguracja panelu', 'Branding, ACL, porty')}
-      ${quick('/admin/plugins', 'plug', 'Pluginy', 'Rozszerzenia panelu')}
-      ${quick('/admin/audit-log', 'list', 'Audit log', 'Każda akcja')}
     </div>
   </div>`;
   return page(ctx, { title: 'Pulpit administratora', subtitle: 'Serwer, klienci i automatyzacja w jednym miejscu', body, counts: countForNav(ctx.user, 'admin') });
@@ -195,7 +182,7 @@ function attentionCard(attention) {
       </div>
       <span class="small muted">${total} aktywnych pozycji${unavailable ? ` · ${unavailable} źródeł niedostępnych` : ''}</span>
     </div>
-    ${top.length ? h`<div class="stack" style="gap:8px">${top.map((item) => h`<div class="service-row">
+    ${top.length ? h`<div class="stack" style="gap:8px">${top.map((item) => h`<div class="service-row attention-row">
       <span class="service-dot ${item.severity === 'P0' ? 'off' : item.severity === 'P1' ? '' : 'on'}"></span>
       <strong><a class="link" href="${item.detailsHref || '/admin/action-center'}">${item.title}</a></strong>
       <span class="small muted" style="margin-left:8px; min-width:0; overflow-wrap:anywhere">${item.source}</span>
@@ -318,7 +305,7 @@ export function registerAdminRoutes(router) {
     });
     const summary = summarizeServiceStates(services);
     const body = h`${provider.id === 'sandbox' ? alert('Sandbox provider: service state is simulated and stored by the panel. Run with <code>OA_PROVIDER=linux</code> as root to read systemd.', 'info') : ''}
-      ${card('Service monitor', h`${services.map((s) => h`<div class="service-row">
+      ${card('Service monitor', h`${services.map((s) => h`<div class="service-row attention-row">
       <span class="service-dot ${s.state === 'running' ? 'on' : s.state === 'failed' ? 'off' : ''}"></span>
       <strong>${s.name}</strong><span class="small muted">${serviceMeta(s.name)} · ${s.detail}</span>
       <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
@@ -446,32 +433,32 @@ export function registerAdminRoutes(router) {
 
   /* -------------------------------------------------------------- settings */
   router.get('/admin/settings', (ctx) => {
-    const body = h`${card('Server settings', h`<form method="post" action="/admin/settings" class="oa-form">
+    const body = h`${card('Ustawienia serwera', h`<form method="post" action="/admin/settings" class="oa-form">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
       <div class="form-grid">
-        <div class="field"><label class="field-label">Server hostname</label><input name="server_name" value="${setting('server_name', '')}"></div>
-        <div class="field"><label class="field-label">Server IP</label><input name="server_ip" value="${setting('server_ip', '')}"></div>
-        <div class="field"><label class="field-label">Primary nameserver</label><input name="ns1" value="${setting('ns1', '')}"></div>
-        <div class="field"><label class="field-label">Secondary nameserver</label><input name="ns2" value="${setting('ns2', '')}"></div>
-        <div class="field"><label class="field-label">Default PHP version</label><select name="php_default">${['8.4', '8.3', '8.2', '8.1', '7.4'].map((v) => h`<option ${v === setting('php_default') ? 'selected' : ''}>${v}</option>`)}</select></div>
-        <div class="field"><label class="field-label">Default user package</label><select name="default_package">${all("SELECT * FROM packages WHERE type='user'").map((p) => h`<option ${p.name === setting('default_package') ? 'selected' : ''}>${p.name}</option>`)}</select></div>
-        <div class="field"><label class="field-label">Webmail URL</label><input name="webmail_url" value="${setting('webmail_url', '/roundcube/')}"></div>
-        <div class="field"><label class="field-label">Panel port</label><input value="${config.port}" disabled></div>
-        <div class="field field-full"><label class="field-label">Login page message</label><textarea name="login_page_message" rows="2">${setting('login_page_message', '')}</textarea></div>
-        <div class="field"><label class="field-label">Demo mode</label><select name="demo_mode"><option value="0" ${setting('demo_mode') !== '1' ? 'selected' : ''}>Disabled</option><option value="1" ${setting('demo_mode') === '1' ? 'selected' : ''}>Enabled</option></select></div>
-        <div class="field"><label class="field-label">TLS mode</label><select name="tls_mode"><option value="modern" ${setting('tls_mode') === 'modern' ? 'selected' : ''}>Modern (TLS 1.2+)</option><option value="intermediate">Intermediate</option><option value="old">Legacy</option></select></div>
+        <div class="field"><label class="field-label">Nazwa serwera</label><input name="server_name" value="${setting('server_name', '')}"></div>
+        <div class="field"><label class="field-label">Adres IP serwera</label><input name="server_ip" value="${setting('server_ip', '')}"></div>
+        <div class="field"><label class="field-label">Podstawowy serwer nazw</label><input name="ns1" value="${setting('ns1', '')}"></div>
+        <div class="field"><label class="field-label">Zapasowy serwer nazw</label><input name="ns2" value="${setting('ns2', '')}"></div>
+        <div class="field"><label class="field-label">Domyślna wersja PHP</label><select name="php_default">${['8.4', '8.3', '8.2', '8.1', '7.4'].map((v) => h`<option ${v === setting('php_default') ? 'selected' : ''}>${v}</option>`)}</select></div>
+        <div class="field"><label class="field-label">Domyślny pakiet użytkownika</label><select name="default_package">${all("SELECT * FROM packages WHERE type='user'").map((p) => h`<option ${p.name === setting('default_package') ? 'selected' : ''}>${p.name}</option>`)}</select></div>
+        <div class="field"><label class="field-label">Adres webmaila</label><input name="webmail_url" value="${setting('webmail_url', '/roundcube/')}"></div>
+        <div class="field"><label class="field-label">Port panelu</label><div class="readonly-value">${config.port}</div></div>
+        <div class="field field-full"><label class="field-label">Komunikat na stronie logowania</label><textarea name="login_page_message" rows="2">${setting('login_page_message', '')}</textarea></div>
+        <div class="field"><label class="field-label">Tryb demo</label><select name="demo_mode"><option value="0" ${setting('demo_mode') !== '1' ? 'selected' : ''}>Wyłączony</option><option value="1" ${setting('demo_mode') === '1' ? 'selected' : ''}>Włączony</option></select></div>
+        <div class="field"><label class="field-label">Tryb TLS</label><select name="tls_mode"><option value="modern" ${setting('tls_mode') === 'modern' ? 'selected' : ''}>Nowoczesny (TLS 1.2+)</option><option value="intermediate">Pośredni</option><option value="old">Zgodność wsteczna</option></select></div>
       </div>
-      <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('save', { size: 16 })} Save settings</button></div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('save', { size: 16 })} Zapisz ustawienia</button></div>
     </form>`)}
-    ${card('Security', h`${kvList([
-      ['Panel login', `http://${setting('server_name', 'localhost')}:${config.port}`],
-      ['Session lifetime', `${config.sessionTtlHours} hours`],
-      ['Login throttling', `${config.limits.maxLoginAttempts} attempts / ${config.limits.loginWindowMinutes} min`],
-      ['Two-factor authentication', 'Optional per account'],
-      ['CSRF protection', 'Enabled'],
+    ${card('Bezpieczeństwo', h`${kvList([
+      ['Logowanie do panelu', `http://${setting('server_name', 'localhost')}:${config.port}`],
+      ['Czas sesji', `${config.sessionTtlHours} godzin`],
+      ['Limit logowań', `${config.limits.maxLoginAttempts} prób / ${config.limits.loginWindowMinutes} min`],
+      ['Weryfikacja dwuetapowa', 'Opcjonalna dla konta'],
+      ['Ochrona CSRF', 'Włączona'],
       ['API', 'HTTP Basic · CMD_API compatible'],
     ])}`)}`;
-    return page(ctx, { title: 'Server Settings', subtitle: 'Panel-wide configuration', body });
+    return page(ctx, { title: 'Ustawienia serwera', subtitle: 'Konfiguracja panelu i bezpieczeństwa', body });
   });
 
   router.post('/admin/settings', (ctx) => {
@@ -910,8 +897,8 @@ export function registerAdminRoutes(router) {
     const body = h`${card('Nameservers', h`<form method="post" action="${A}/nameservers" class="oa-form">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
       <div class="form-grid">
-        <div class="field"><label class="field-label">Primary nameserver</label><input name="ns1" value="${setting('ns1', '')}"></div>
-        <div class="field"><label class="field-label">Secondary nameserver</label><input name="ns2" value="${setting('ns2', '')}"></div>
+        <div class="field"><label class="field-label">Podstawowy serwer nazw</label><input name="ns1" value="${setting('ns1', '')}"></div>
+        <div class="field"><label class="field-label">Zapasowy serwer nazw</label><input name="ns2" value="${setting('ns2', '')}"></div>
         <div class="field"><label class="field-label">Third nameserver (optional)</label><input name="ns3" value="${setting('ns3', '')}"></div>
         <div class="field"><label class="field-label">Default TTL</label><input name="ttl" value="${setting('dns_ttl', '3600')}"></div>
       </div>
@@ -967,7 +954,7 @@ ${setting('ns2', 'ns2')}.   3600  IN  A  ${setting('server_ip', '127.0.0.1')}</p
           <option value="enhanced" ${ctx.user.skin === 'enhanced' ? 'selected' : ''}>Enhanced (classic)</option>
         </select></div>
         <div class="field"><label class="field-label">Accent colour</label><input type="color" name="accent" value="#0a6daa" style="height:38px"></div>
-        <div class="field"><label class="field-label">Login page message</label><input name="login_message" value="${setting('login_page_message', '')}"></div>
+        <div class="field"><label class="field-label">Komunikat na stronie logowania</label><input name="login_message" value="${setting('login_page_message', '')}"></div>
       </div>
       <div class="form-actions"><button class="btn btn-primary" type="submit">Save appearance</button></div>
     </form>`)}

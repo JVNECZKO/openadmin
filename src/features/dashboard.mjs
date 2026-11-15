@@ -181,7 +181,7 @@ function recentActivity(ctx, { appInstalls, wpRows, backups, tickets }, L, local
       return true;
     })
     .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-    .slice(0, 6);
+    .slice(0, 5);
 
   return card(L('Recent activity', 'Ostatnia aktywność'), latest.length
     ? h`<div class="timeline" data-recent-activity>${latest.map((item) => h`<div class="timeline-item">
@@ -333,8 +333,6 @@ export function userDashboard(ctx) {
         <p>${L('Your account is hosted on', 'Twoje konto jest na serwerze')} <strong>${serverName}</strong>. ${L('Everything below is included — no add-ons, no per-domain fees.', 'Wszystko poniżej jest w cenie — bez dodatkowych opłat za domeny.')}</p>
         <div class="row mt-18">
           ${btn(L('Launch site wizard', 'Postaw stronę'), { href: '/user/websites/new', icon: 'rocket' })}
-          ${btn(L('Add mailbox', 'Dodaj pocztę'), { href: '/user/email/new', icon: 'mail', variant: 'secondary' })}
-          ${btn(L('Applications', 'Aplikacje'), { href: '/user/app-catalog', icon: 'cart', variant: 'secondary' })}
         </div>
       </div>
       <div class="hero-actions">
@@ -359,7 +357,7 @@ export function userDashboard(ctx) {
       ${statCard({ label: L('Bandwidth (30d)', 'Transfer (30 dni)'), value: formatBytes(bw30), sub: limits.bandwidth_mb ? `${L('of', 'z')} ${formatBytes(limits.bandwidth_mb)} · ${Math.round((bw30 / limits.bandwidth_mb) * 100)}%` : L('unlimited', 'bez limitu'), icon: 'chart', tone: percentTone(bw30, limits.bandwidth_mb), href: '/user/statistics' })}
     </div>
 
-    ${card(L('First steps', 'Pierwsze kroki'), h`
+    ${stepsDone < steps.length ? card(L('First steps', 'Pierwsze kroki'), h`
       <div class="spread mb-12">
         <strong>${stepsDone} z ${steps.length} ${L('done', 'gotowe')}</strong>
         <span class="small muted">${nextStep === -1 ? L('Everything is ready', 'Wszystko gotowe — konto pracuje') : `${L('Next', 'Następny krok')}: ${steps[nextStep].label}`}</span>
@@ -375,11 +373,11 @@ export function userDashboard(ctx) {
               <span class="row" style="gap:8px">${badge(index === nextStep ? L('next', 'następny krok') : L('to do', 'do zrobienia'), index === nextStep ? 'brand' : 'muted')}<span>${step.label}</span></span>
               <span class="btn btn-ghost btn-sm">${L('Open', 'Otwórz')} ${icon('arrowRight', { size: 14 })}</span>
             </a>`)}
-      </div>`, { sub: L('Domain → site → SSL → mailbox → backup → 2FA', 'Domena → strona → SSL → poczta → kopia → 2FA') })}
+      </div>`, { sub: L('Domain → site → SSL → mailbox → backup → 2FA', 'Domena → strona → SSL → poczta → kopia → 2FA') }) : ''}
 
     ${card(L('Applications — one click', 'Aplikacje — jeden klik'), h`
       <div class="app-tile-grid">
-        ${APPS.map((app) => {
+        ${APPS.slice(0, 3).map((app) => {
           const count = appCounts[app.key] || 0;
           return h`<a class="app-tile" href="/user/app-catalog#app-${app.key}" data-dashboard-app="${app.key}" aria-label="${app.name} — ${count ? count + L(' installed', ' zainstalowanych') : L('available to install', 'gotowa do instalacji')}">
             <div class="app-tile-head">
@@ -435,37 +433,12 @@ export function userDashboard(ctx) {
         </div>`)}</div>` : emptyState(L('No mailboxes yet', 'Brak skrzynek'), { icon: 'mail', action: btn(L('Create mailbox', 'Utwórz skrzynkę'), { href: '/user/email/new', icon: 'plus' }) })}`, { sub: L('Storage used by mailbox', 'Miejsce zajęte przez skrzynki'), actions: [h`<a class="link small" href="/user/email/new">${L('New mailbox', 'Nowa skrzynka')}</a>`, h`<a class="link small" href="/user/email">${L('Manage', 'Zarządzaj')}</a>`] })}
     </div>
 
-    <div class="grid grid-3">
-      ${card(L('Quick actions', 'Szybkie akcje'), h`<div class="quick-grid" style="grid-template-columns:repeat(2,1fr)" data-quick-actions>
-        ${quickAction('/user/websites/new', 'rocket', L('Launch site', 'Postaw stronę'), L('Domain + SSL + WordPress', 'Domena + SSL + WordPress'))}
-        ${quickAction('/user/email/new', 'mail', L('New mailbox', 'Nowa skrzynka'), L('Create an e-mail account', 'Utwórz konto e-mail'))}
-        ${quickAction('/user/databases/create', 'database', L('New database', 'Nowa baza'), 'MySQL / MariaDB')}
-        ${quickAction('/user/ftp/create', 'upload', 'FTP', L('File transfer user', 'Konto do plików'))}
-      </div>`)}
-
+    <div class="grid grid-2">
       ${recent}
 
       ${automationCard(u, L, locale)}
     </div>
 
-    ${card(L('All tools', 'Wszystkie narzędzia'), h`<div class="quick-grid" data-all-tools>
-      ${toolTile('/user/domains', 'globe', L('Domains', 'Domeny'), L('Add, edit, delete', 'Dodaj, edytuj, usuń'))}
-      ${toolTile('/user/subdomains', 'network', L('Subdomains', 'Subdomeny'), L('blog, shop, api', 'blog, sklep, api'))}
-      ${toolTile('/user/dns', 'dns', L('DNS records', 'Strefy DNS'), L('A, MX, TXT, CNAME', 'A, MX, TXT, CNAME'))}
-      ${toolTile('/user/redirects', 'arrowRight', L('Redirects', 'Przekierowania'), L('301 / 302', '301 / 302'))}
-      ${toolTile('/user/ssl', 'lock', L('SSL certificates', 'Certyfikaty SSL'), L('Let’s Encrypt', 'Let’s Encrypt'))}
-      ${toolTile('/user/email', 'mail', L('Mailboxes', 'Skrzynki e-mail'), L('IMAP / POP3 / SMTP', 'IMAP / POP3 / SMTP'))}
-      ${toolTile('/user/email/forwarders', 'arrowRight', L('Forwarders', 'Przekierowania poczty'), L('Aliases', 'Aliasy'))}
-      ${toolTile('/user/email/spam', 'shield', L('Spam filters', 'Filtry spamu'), L('Rules and blocklists', 'Reguły i blocklisty'))}
-      ${toolTile('/user/files', 'folder', L('File manager', 'Menedżer plików'), L('Upload, edit, zip', 'Wgraj, edytuj, zip'))}
-      ${toolTile('/user/ftp', 'upload', L('FTP accounts', 'Konta FTP'), L('Transfer files', 'Transfer plików'))}
-      ${toolTile('/user/databases', 'database', L('Databases', 'Bazy danych'), L('MariaDB + phpMyAdmin', 'MariaDB + phpMyAdmin'))}
-      ${toolTile('/user/cron', 'clock', L('Cron jobs', 'Zadania cron'), L('Scheduled tasks', 'Zaplanowane zadania'))}
-      ${toolTile('/user/webdisk', 'cloud', 'WebDisk', L('WebDAV access', 'Dostęp WebDAV'))}
-      ${toolTile('/user/backups', 'archive', L('Backups', 'Kopie zapasowe'), L('Download and restore', 'Pobierz i przywróć'))}
-      ${toolTile('/user/php', 'php', L('PHP settings', 'Ustawienia PHP'), L('Version and INI', 'Wersja i INI'))}
-      ${toolTile('/user/statistics', 'chart', L('Statistics', 'Statystyki'), L('Disk and bandwidth', 'Dysk i transfer'))}
-    </div>`, { sub: L('Everything your hosting account can do', 'Wszystko, co może Twoje konto hostingowe') })}
   `;
 
   return page(ctx, {

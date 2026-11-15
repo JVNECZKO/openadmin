@@ -71,36 +71,39 @@ export function register(router) {
       ${bwPct >= 80 ? alert(`Transfer zajęty w ${bwPct}% limitu.${bwPct >= 90 ? ' Stan krytyczny.' : ''}`, bwPct >= 90 ? 'danger' : 'warn') : ''}
       ${!series.length ? alert('Brak danych pomiarowych. Admin może uruchomić zbieranie w Administracja → Statystyki.', 'info') : ''}
       <div class="stat-grid">
-        <div class="stat-card"><div class="stat-icon">${icon('chart', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Bandwidth (30d)</span><strong class="stat-value">${formatBytes(bw)}</strong><span class="stat-sub">${lim.bandwidth_mb ? 'of ' + formatBytes(lim.bandwidth_mb) : 'unlimited'}</span></div></div>
-        <div class="stat-card"><div class="stat-icon tone-ok">${icon('database', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Disk used</span><strong class="stat-value">${formatBytes(storage.used)}</strong><span class="stat-sub">${storage.files} inodes</span></div></div>
-        <div class="stat-card"><div class="stat-icon tone-warn">${icon('mail', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Email sent/received</span><strong class="stat-value">${emails.toLocaleString()}</strong><span class="stat-sub">last 30 days</span></div></div>
-        <div class="stat-card"><div class="stat-icon">${icon('globe', { size: 20 })}</div><div class="stat-body"><span class="stat-label">HTTP requests</span><strong class="stat-value">${series.reduce((a, r) => a + (r.requests || 0), 0).toLocaleString()}</strong><span class="stat-sub">across ${domains.length} domain(s)</span></div></div>
+        <div class="stat-card"><div class="stat-icon">${icon('chart', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Transfer (30 dni)</span><strong class="stat-value">${formatBytes(bw)}</strong><span class="stat-sub">${lim.bandwidth_mb ? 'of ' + formatBytes(lim.bandwidth_mb) : 'unlimited'}</span></div></div>
+        <div class="stat-card"><div class="stat-icon tone-ok">${icon('database', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Zajęty dysk</span><strong class="stat-value">${formatBytes(storage.used)}</strong><span class="stat-sub">${storage.files} inodes</span></div></div>
+        <div class="stat-card"><div class="stat-icon tone-warn">${icon('mail', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Poczta wysłana/odebrana</span><strong class="stat-value">${emails.toLocaleString()}</strong><span class="stat-sub">last 30 days</span></div></div>
+        <div class="stat-card"><div class="stat-icon">${icon('globe', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Żądania HTTP</span><strong class="stat-value">${series.reduce((a, r) => a + (r.requests || 0), 0).toLocaleString()}</strong><span class="stat-sub">across ${domains.length} domain(s)</span></div></div>
       </div>
       ${usageChartCard(series, { title: 'Bandwidth', sub: 'Daily transfer, last 30 days' })}
       <div class="grid grid-2">
-        ${card('Usage by domain', h`${table({
+        ${card('Zużycie według domeny', h`${table({
+          cls: 'responsive-table',
           columns: [
-            { label: 'Domain', render: (d) => h`<span class="cell-strong">${d.name}</span>` },
-            { label: 'Bandwidth', render: (d) => formatBytes(d.bandwidth_mb), align: 'right' },
-            { label: 'Disk', render: (d) => formatBytes(d.disk_mb), align: 'right' },
-            { label: 'Share', render: (d) => h`<div style="min-width:110px">${progress(d.bandwidth_mb, Math.max(...domains.map((x) => x.bandwidth_mb), 1), { showText: false })}</div>` },
+            { label: 'Domena', dataLabel: 'Domena', render: (d) => h`<span class="cell-strong">${d.name}</span>` },
+            { label: 'Transfer', dataLabel: 'Transfer', render: (d) => formatBytes(d.bandwidth_mb), align: 'right' },
+            { label: 'Dysk', dataLabel: 'Dysk', render: (d) => formatBytes(d.disk_mb), align: 'right' },
+            { label: 'Udział', dataLabel: 'Udział', render: (d) => h`<div style="min-width:110px">${progress(d.bandwidth_mb, Math.max(...domains.map((x) => x.bandwidth_mb), 1), { showText: false })}</div>` },
           ],
-          rows: domains, empty: 'No domains yet.',
+          rows: domains, empty: 'Brak domen.',
         })}`)}
-        ${card('Daily log', h`${table({
+        ${card('Dziennik dzienny', h`${table({
+          cls: 'responsive-table',
           columns: [
-            { label: 'Day', key: 'day' },
-            { label: 'Bandwidth', render: (r) => formatBytes(r.bandwidth_mb), align: 'right' },
-            { label: 'Requests', render: (r) => Number(r.requests || 0).toLocaleString(), align: 'right' },
+            { label: 'Dzień', dataLabel: 'Dzień', key: 'day' },
+            { label: 'Transfer', dataLabel: 'Transfer', render: (r) => formatBytes(r.bandwidth_mb), align: 'right' },
+            { label: 'Żądania', dataLabel: 'Żądania', render: (r) => Number(r.requests || 0).toLocaleString(), align: 'right' },
           ],
           rows: series.slice(-12).reverse(),
-        })}`, { sub: 'Most recent 12 days' })}
+        })}`, { sub: 'Ostatnie 12 dni' })}
       </div>
       ${card('Zużycie dysku według typu', h`${table({
+        cls: 'responsive-table',
         columns: [
-          { label: 'Typ', key: 'type' },
-          { label: 'Rozmiar', render: (r) => formatBytes(r.size), align: 'right' },
-          { label: 'Udział', render: (r) => h`<div style="min-width:120px">${progress(r.size, Math.max(storage.used, 1), { showText: false })}</div>` },
+          { label: 'Typ', dataLabel: 'Typ', key: 'type' },
+          { label: 'Rozmiar', dataLabel: 'Rozmiar', render: (r) => formatBytes(r.size), align: 'right' },
+          { label: 'Udział', dataLabel: 'Udział', render: (r) => h`<div style="min-width:120px">${progress(r.size, Math.max(storage.used, 1), { showText: false })}</div>` },
         ],
         rows: [
           { type: 'Pliki i strony', size: fileUsed },

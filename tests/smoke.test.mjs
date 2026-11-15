@@ -84,7 +84,7 @@ test('login page renders', async () => {
   const res = await fetch(base + '/login');
   assert.equal(res.status, 200);
   const html = await res.text();
-  assert.match(html, /Sign in to your panel/);
+  assert.match(html, /Zaloguj się do panelu|Sign in to your panel/);
   assert.match(html, /demouser/);
 });
 
@@ -605,7 +605,7 @@ test('two-factor authentication challenges the login', async () => {
 
     const challenge = await fetch(base + '/login/2fa', { headers: { Cookie: cookie } });
     assert.equal(challenge.status, 200);
-    assert.match(await challenge.text(), /Two-factor authentication/);
+    assert.match(await challenge.text(), /Weryfikacja dwuetapowa|Two-factor authentication/);
 
     const wrong = await fetch(base + '/login/2fa', {
       method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -2146,7 +2146,7 @@ test('primary user CRUD resources support update', async () => {
 test('user and reseller catalog pages use visual tiles', async () => {
   const user = await loginAs('demouser');
   const dash = await (await fetch(base + '/user', { headers: { Cookie: user } })).text();
-  assert.match(dash, /Wszystkie narzędzia/);
+  assert.match(dash, /Postaw stronę|Bazy danych/);
   assert.match(dash, /Strefy DNS/);
   assert.match(dash, /Bazy danych/);
   const catalog = await (await fetch(base + '/user/app-catalog', { headers: { Cookie: user } })).text();

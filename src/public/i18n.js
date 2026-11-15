@@ -1150,7 +1150,7 @@
     if (hints.isLogin && stored) return stored;
 
     var htmlLang = normalizeLocale(hints.htmlLang);
-    if (!hints.isLogin && htmlLang) return htmlLang;
+    if (htmlLang && !fromCookie && !stored) return htmlLang;
     if (!hints.isLogin && fromCookie) return fromCookie;
     if (!hints.isLogin && stored) return stored;
 

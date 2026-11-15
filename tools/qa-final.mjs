@@ -554,9 +554,33 @@ const PAGE_CHECK_SOURCE = String.raw`(() => {
     } : null,
     adminNotice: !!document.querySelector('[data-admin-context-notice]'),
   };
+  const clipRoutes = new Set(['/admin','/admin/health','/admin/automation','/admin/backup-center','/admin/web-apps','/user/statistics','/user/files','/user/domains/create','/reseller/domains']);
+  const clipped = [];
+  const smallTargets = [];
+  if (vw <= 760 && clipRoutes.has(location.pathname)) {
+    for (const el of document.querySelectorAll('main *')) {
+      if (hidden(el) || ['PRE','CODE','TEXTAREA','SCRIPT','STYLE'].includes(el.tagName)) continue;
+      const text = clean(el.textContent);
+      if (!text) continue;
+      const cs = getComputedStyle(el);
+      const clips = /(hidden|clip)/.test(cs.overflowX) || /(hidden|clip)/.test(cs.overflowY) || cs.textOverflow === 'ellipsis';
+      if (clips && (el.scrollWidth > el.clientWidth + 2 || el.scrollHeight > el.clientHeight + 2)) {
+        if (el.closest('.truncate') || el.closest('.table-wrap') || el.closest('.hero')) continue;
+        clipped.push({ tag: el.tagName.toLowerCase(), cls: clean(el.className).slice(0, 60), text: text.slice(0, 70), sw: el.scrollWidth, cw: el.clientWidth });
+        if (clipped.length >= 12) break;
+      }
+    }
+    for (const el of document.querySelectorAll('main a.btn, main button.btn, main .icon-btn, main [data-wizard-next], main [data-wizard-back]')) {
+      if (hidden(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 44 || r.height < 44) smallTargets.push({ tag: el.tagName.toLowerCase(), cls: clean(el.className).slice(0, 50), text: clean(el.textContent).slice(0, 40), w: Math.round(r.width), h: Math.round(r.height) });
+      if (smallTargets.length >= 12) break;
+    }
+  }
   const doc = document.documentElement;
   return {
     title: clean(document.title), identity, context,
+    clipped, smallTargets,
     overflow: { innerWidth: vw, scrollWidth: doc.scrollWidth, clientWidth: doc.clientWidth, offenders },
     duplicateIds: duplicateIds.slice(0, 20),
     labels: {
@@ -715,10 +739,12 @@ async function sweepRole(browser, collectors, role, session, axeSource) {
       if (page.forbidden.length) issue.push(`${page.forbidden.length} forbidden text(s)`);
       if (page.ariaBroken.length) issue.push(`${page.ariaBroken.length} broken aria ref(s)`);
       if (page.labels.missing) issue.push(`${page.labels.missing} unlabeled control(s)`);
+      if (page.clipped?.length) issue.push(`${page.clipped.length} clipped text block(s)`);
+      if (page.smallTargets?.length) issue.push(`${page.smallTargets.length} touch target(s) below 44px`);
       const routeResult = {
         role, path: pathname, width, status, finalUrl: collected?.finalUrl || url,
         consoleErrors: collected?.consoleErrors || [], failedRequests: collected?.failedRequests || [],
-        overflow: page.overflow, duplicateIds: page.duplicateIds, labels: page.labels,
+        overflow: page.overflow, clipped: page.clipped || [], smallTargets: page.smallTargets || [], duplicateIds: page.duplicateIds, labels: page.labels,
         forbidden: page.forbidden, headings: page.headings, ariaBroken: page.ariaBroken,
         identity: page.identity, context: page.context, title: page.title, issues: issue,
       };

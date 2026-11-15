@@ -17,13 +17,13 @@ export function register(router) {
     const badgeFor = (s) => s === 'ok' ? badge('OK', 'ok', { dot: true }) : s === 'warn' ? badge('Uwaga', 'warn', { dot: true }) : badge('Błąd', 'danger', { dot: true });
     const body = h`
       ${report.counts.fail ? alert(`${report.counts.fail} rzeczy wymaga naprawy. Kliknij „Napraw”, aby wdrożyć konfigurację ponownie.`, 'danger') : report.counts.warn ? alert('Panel działa, ale kilka rzeczy warto poprawić.', 'warn') : alert('Wszystko działa.', 'ok')}
-      ${card('Stan serwera', h`<div class="table-wrap"><table class="data-table">
+      ${card('Stan serwera', h`<div class="table-wrap"><table class="data-table responsive-table">
         <thead><tr><th>Element</th><th>Stan</th><th>Szczegóły</th><th class="col-actions">Naprawa</th></tr></thead>
         <tbody>${report.checks.map((c) => h`<tr>
-          <td class="cell-strong">${c.label}</td>
-          <td>${badgeFor(c.status)}</td>
-          <td class="small muted">${c.detail}</td>
-          <td class="col-actions">${c.fix ? h`<form method="post" action="/admin/health/fix" class="inline">
+          <td class="cell-strong" data-label="Element">${c.label}</td>
+          <td data-label="Stan">${badgeFor(c.status)}</td>
+          <td class="small muted" data-label="Szczegóły">${c.detail}</td>
+          <td class="col-actions" data-label="Naprawa">${c.fix ? h`<form method="post" action="/admin/health/fix" class="inline">
             <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="action" value="${c.fix.action}">
             <button class="btn btn-secondary btn-sm" type="submit">${c.fix.label}</button></form>` : '—'}</td>
         </tr>`)}</tbody></table></div>`) }

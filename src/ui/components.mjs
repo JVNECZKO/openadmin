@@ -106,6 +106,7 @@ export function table({
   actionsLabel = 'Akcje',
   selectAllLabel = 'Zaznacz wszystkie wiersze',
   selectRowLabel = 'Zaznacz wiersz',
+  cls = '',
 }) {
   if (!rows.length) {
     const message = safeEmptyMessage(empty);
@@ -116,7 +117,7 @@ export function table({
     });
   }
   return html`<div class="table-wrap" tabindex="0" role="region" aria-label="${label}">
-    <table class="data-table">
+    <table class="data-table ${cls}">
       <thead><tr>
         ${selectable ? html`<th scope="col" class="col-check"><input type="checkbox" data-check-all aria-label="${selectAllLabel}"></th>` : ''}
         ${columns.map((c) => html`<th scope="col" class="${c.align === 'right' ? 'ta-r' : ''}" ${c.width ? raw(`style="width:${e(c.width)}"`) : ''}>${c.label}</th>`)}
@@ -125,17 +126,17 @@ export function table({
       <tbody>
         ${rows.map((row, rowIndex) => html`<tr>
           ${selectable ? html`<td class="col-check"><input type="checkbox" name="selected[]" value="${row[rowKey]}" aria-label="${selectRowLabel} ${rowIndex + 1}"></td>` : ''}
-          ${columns.map((c) => html`<td class="${c.align === 'right' ? 'ta-r' : ''} ${c.cls || ''}">${tableCell(c.render ? c.render(row) : row[c.key])}</td>`)}
+          ${columns.map((c) => html`<td class="${c.align === 'right' ? 'ta-r' : ''} ${c.cls || ''}" data-label="${e(c.dataLabel || c.label || '')}">${tableCell(c.render ? c.render(row) : row[c.key])}</td>`)}
           ${actions.length ? html`<td class="col-actions"><div class="row-actions">${actions.map((a) => {
             if (a.show && !a.show(row)) return '';
             const actionLabel = a.label || actionsLabel;
             if (a.form) {
               const confirmText = typeof a.confirm === 'function' ? a.confirm(row) : a.confirm;
               return html`<form method="post" action="${a.form(row)}" class="inline" ${confirmText ? raw(`data-confirm="${e(confirmText)}"`) : ''}>
-                <button type="submit" class="icon-btn ${a.danger ? 'danger' : ''}" title="${actionLabel}" aria-label="${actionLabel}">${icon(a.icon || 'trash', { size: 16 })}</button>
+                <button type="submit" class="icon-btn ${a.danger ? 'danger' : ''}" title="${actionLabel}" aria-label="${actionLabel}">${icon(a.icon || 'trash', { size: 16 })}<span class="action-text">${e(actionLabel)}</span></button>
               </form>`;
             }
-            return html`<a class="icon-btn${a.danger ? ' danger' : ''}" href="${typeof a.href === 'function' ? a.href(row) : a.href}" title="${actionLabel}" aria-label="${actionLabel}">${icon(a.icon || 'edit', { size: 16 })}</a>`;
+            return html`<a class="icon-btn${a.danger ? ' danger' : ''}" href="${typeof a.href === 'function' ? a.href(row) : a.href}" title="${actionLabel}" aria-label="${actionLabel}">${icon(a.icon || 'edit', { size: 16 })}<span class="action-text">${e(actionLabel)}</span></a>`;
           })}</div></td>` : ''}
         </tr>`)}
       </tbody>

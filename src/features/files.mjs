@@ -383,37 +383,56 @@ export function register(router) {
     }
 
     const body = h`
-      ${card('File manager', h`
+      ${card('Menedżer plików', h`
         <div class="file-pathbar">
           <a class="crumb-home" href="/user/files?path=/home/${username}" aria-label="Katalog domowy">${icon('home', { size: 15 })}</a>
           ${crumbs.map((c) => h`<span class="crumb-sep">/</span><a class="crumb-link" href="/user/files?path=${encodeURIComponent(c.path)}">${c.label}</a>`)}
           <span class="file-path-abs">${display}</span>
         </div>
+        <p class="file-count small muted">${entries.length} elementów · ${formatBytes(dirSize(abs) / 1024 / 1024)}</p>
         <div class="file-toolbar">
-          <a class="btn btn-primary btn-sm" href="/user/files?path=${encodeURIComponent(display)}&new=file">${icon('file', { size: 14 })} New file</a>
-          <a class="btn btn-secondary btn-sm" href="/user/files?path=${encodeURIComponent(display)}&new=dir">${icon('folder', { size: 14 })} New folder</a>
-          <button class="btn btn-secondary btn-sm" type="button" data-open-modal="uploadModal">${icon('upload', { size: 14 })} Upload</button>
-          <a class="btn btn-secondary btn-sm" href="/api/v1/files/download?path=${encodeURIComponent(display)}">${icon('download', { size: 14 })} Download folder (zip)</a>
-          <span class="small muted" style="margin-left:auto">${entries.length} item(s) · ${formatBytes(dirSize(abs) / 1024 / 1024)}</span>
+          <details class="more-menu">
+            <summary class="btn btn-primary btn-sm" role="button">${icon('plus', { size: 14 })} Nowy</summary>
+            <div class="more-menu-list">
+              <a class="menu-item" href="/user/files?path=${encodeURIComponent(display)}&new=file">Nowy plik</a>
+              <a class="menu-item" href="/user/files?path=${encodeURIComponent(display)}&new=dir">Nowy katalog</a>
+            </div>
+          </details>
+          <button class="btn btn-secondary btn-sm" type="button" data-open-modal="uploadModal">${icon('upload', { size: 14 })} Wgraj</button>
+          <details class="more-menu">
+            <summary class="btn btn-ghost btn-sm" role="button">Więcej</summary>
+            <div class="more-menu-list">
+              <a class="menu-item" href="/api/v1/files/download?path=${encodeURIComponent(display)}">Pobierz katalog (zip)</a>
+            </div>
+          </details>
         </div>
-        <div class="table-wrap"><table class="data-table file-table">
-          <thead><tr><th>Name</th><th>Size</th><th>Permissions</th><th>Modified</th><th class="col-actions">Actions</th></tr></thead>
+        <div class="table-wrap"><table class="data-table file-table responsive-table">
+          <thead><tr><th>Nazwa</th><th>Rozmiar</th><th>Uprawnienia</th><th>Zmodyfikowano</th><th class="col-actions">Akcje</th></tr></thead>
           <tbody>
             ${display !== `/home/${username}` ? h`<tr><td colspan="5"><a class="link" href="/user/files?path=${encodeURIComponent(display.split('/').slice(0, -1).join('/') || '/home/' + username)}">${icon('arrowRight', { size: 14 })} Parent directory</a></td></tr>` : ''}
             ${entries.length ? entries.map((f) => h`<tr>
-              <td><div class="file-name">${icon(f.dir ? 'folder' : 'file', { size: 16 })}
+              <td data-label="Nazwa"><div class="file-name">${icon(f.dir ? 'folder' : 'file', { size: 16 })}
                 ${f.unsafe ? h`<span title="Symbolic link escapes the account home">${f.name}</span>${badge('blocked', 'danger')}`
                   : f.dir ? h`<a href="/user/files?path=${encodeURIComponent(display + '/' + f.name)}">${f.name}</a>` : h`<span>${f.name}</span>`}</div></td>
-              <td>${f.dir ? '—' : formatBytes(f.size / 1024 / 1024)}</td>
-              <td class="cell-mono">${f.perms}</td>
-              <td class="small">${formatDate(f.mtime, { time: true })}</td>
-              <td class="col-actions">${f.unsafe ? h`<span class="small muted">blocked</span>` : h`<div class="row-actions">
-                ${f.editable ? h`<a class="icon-btn" href="/user/files?path=${encodeURIComponent(display)}&edit=${encodeURIComponent(f.name)}" title="Edit">${icon('edit', { size: 16 })}</a>` : ''}
-                ${!f.dir ? h`<a class="icon-btn" href="/api/v1/files/download?path=${encodeURIComponent(display + '/' + f.name)}" title="Download">${icon('download', { size: 16 })}</a>` : ''}
-                <button class="icon-btn" type="button" data-open-modal="rename-${encodeURIComponent(f.name)}" title="Rename">${icon('tag', { size: 16 })}</button>
-                <form method="post" action="/user/files/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-                  <input type="hidden" name="path" value="${display}"><input type="hidden" name="name" value="${f.name}">
-                  <button class="icon-btn danger" type="submit" title="Delete" data-confirm="Delete ${e(f.name)}?">${icon('trash', { size: 16 })}</button></form>
+              <td data-label="Rozmiar">${f.dir ? '—' : formatBytes(f.size / 1024 / 1024)}</td>
+              <td class="cell-mono" data-label="Uprawnienia">${f.perms}</td>
+              <td class="small" data-label="Zmodyfikowano">${formatDate(f.mtime, { time: true })}</td>
+              <td class="col-actions" data-label="Akcje">${f.unsafe ? h`<span class="small muted">blocked</span>` : h`<div class="row-actions">
+                ${f.dir
+                  ? h`<a class="btn btn-secondary btn-sm" href="/user/files?path=${encodeURIComponent(display + '/' + f.name)}">Otwórz</a>`
+                  : f.editable
+                    ? h`<a class="btn btn-secondary btn-sm" href="/user/files?path=${encodeURIComponent(display)}&edit=${encodeURIComponent(f.name)}">Edytuj</a>`
+                    : h`<a class="btn btn-secondary btn-sm" href="/api/v1/files/download?path=${encodeURIComponent(display + '/' + f.name)}">Pobierz</a>`}
+                <details class="more-menu">
+                  <summary class="btn btn-ghost btn-sm" role="button">Więcej</summary>
+                  <div class="more-menu-list">
+                    ${!f.dir ? h`<a class="menu-item" href="/api/v1/files/download?path=${encodeURIComponent(display + '/' + f.name)}">Pobierz</a>` : ''}
+                    <button class="menu-item" type="button" data-open-modal="rename-${encodeURIComponent(f.name)}">Zmień nazwę</button>
+                    <form method="post" action="/user/files/delete"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+                      <input type="hidden" name="path" value="${display}"><input type="hidden" name="name" value="${f.name}">
+                      <button class="menu-item danger" type="submit" data-confirm="Usunąć ${e(f.name)}?">Usuń</button></form>
+                  </div>
+                </details>
               </div>`}</td>
             </tr>`) : h`<tr><td colspan="5">${emptyState('This directory is empty.')}</td></tr>`}
           </tbody>

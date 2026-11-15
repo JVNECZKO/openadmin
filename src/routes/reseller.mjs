@@ -386,7 +386,6 @@ function resellerDashboard(ctx) {
 
   const hero = h`<div class="hero">
     <div>
-      <h2>${isNew ? 'Witaj w panelu resellera' : 'Pulpit resellera'}</h2>
       <p>${isNew
         ? 'Zacznij od utworzenia klienta, przypisania domeny i pierwszego pakietu. Wszystko, co potrzebne do sprzedaży hostingu, jest w tym panelu.'
         : h`Zarządzasz <strong>${customers.length}</strong> ${plural(customers.length, 'klientem', 'klientami', 'klientami')} i <strong>${domains.length}</strong> ${plural(domains.length, 'domeną', 'domenami', 'domenami')}. Limity, aplikacje, DNS i zgłoszenia masz w jednym miejscu.`}</p>
@@ -398,8 +397,6 @@ function resellerDashboard(ctx) {
     </div>
     <div class="hero-actions">
       ${btn('Dodaj klienta', { href: '/reseller/users/create', icon: 'plus' })}
-      ${btn('Zainstaluj aplikację', { href: '/reseller/apps', variant: 'secondary', icon: 'cart' })}
-      ${btn('Nowy pakiet', { href: '/reseller/packages/create', variant: 'secondary', icon: 'archive' })}
     </div>
   </div>`;
 
@@ -567,7 +564,6 @@ function resellerDashboard(ctx) {
     ${kpis}
     ${onboarding}
     <div class="grid grid-2-1">${chart}${limitsCard}</div>
-    ${quickActions}
     ${customerList}
     <div class="grid grid-3">${ticketsWidget}${backupsWidget}${appsWidget}</div>
     ${automation}

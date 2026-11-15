@@ -135,7 +135,8 @@ test('reseller dashboard renders a real control center with KPIs and widgets', a
   assert.match(html, /Pulpit resellera/);
   assert.match(html, /Klienci/);
   assert.match(html, /Domeny klientów/);
-  assert.match(html, /Szybkie akcje/);
+  assert.match(html, /Dodaj klienta/);
+  assert.doesNotMatch(html, /Szybkie akcje/);
   assert.match(html, /Ostatnie zgłoszenia/);
   assert.match(html, /Ostatnie kopie klientów/);
   assert.match(html, /Aplikacje klientów/);
@@ -144,7 +145,6 @@ test('reseller dashboard renders a real control center with KPIs and widgets', a
   assert.match(html, /data-auto-refresh="60"/);
   assert.match(html, /data-live-url="\/healthz"/);
   assert.match(html, /class="stat-grid"/);
-  assert.match(html, /class="quick-grid"/);
   assert.match(html, /demouser/);
   assert.match(html, /pausedclient/);
   assert.match(html, /WordPress/);

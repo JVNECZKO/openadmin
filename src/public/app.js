@@ -1413,7 +1413,7 @@
     wraps.forEach((wrap) => {
       if (!wrap.hasAttribute('tabindex')) wrap.setAttribute('tabindex', '0');
       if (!wrap.hasAttribute('role')) wrap.setAttribute('role', 'group');
-      if (!wrap.getAttribute('aria-label')) wrap.setAttribute('aria-label', 'Scrollable table');
+      if (!wrap.getAttribute('aria-label')) wrap.setAttribute('aria-label', 'Tabela przewijalna w poziomie');
       const sync = () => {
         const scrollable = wrap.scrollWidth > wrap.clientWidth + 1;
         wrap.classList.toggle('is-scrollable', scrollable);
@@ -1663,4 +1663,32 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', inject);
   else inject();
   new MutationObserver(inject).observe(document.body, { childList: true, subtree: true });
+})();
+
+/* Backup destination: show only fields that apply to the selected type. */
+(function () {
+  const remote = ['host', 'port', 'username', 'password', 'key'];
+  document.querySelectorAll('form').forEach((form) => {
+    const type = form.querySelector('select[name="type"]');
+    if (!type || !form.querySelector('input[name="name"]')) return;
+    const fieldFor = (name) => form.querySelector(`[name="${name}"]`)?.closest('.field');
+    const sync = () => {
+      const value = type.value;
+      for (const name of remote) {
+        const field = fieldFor(name);
+        if (!field) continue;
+        const visible = value === 'sftp' || value === 'ftp' || value === 's3';
+        field.hidden = !visible;
+        if (name === 'port') field.hidden = value === 's3';
+        if (name === 'key') field.hidden = value !== 'sftp';
+      }
+      const path = fieldFor('path');
+      if (path) {
+        const label = path.querySelector('.field-label');
+        if (label) label.textContent = value === 'local' ? 'Katalog lokalny' : 'Katalog / bucket / prefiks';
+      }
+    };
+    type.addEventListener('change', sync);
+    sync();
+  });
 })();

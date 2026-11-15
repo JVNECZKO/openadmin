@@ -21,9 +21,9 @@ function requestedLocale(ctx) {
   const raw = String(ctx.query.lang || ctx.query.hl || ctx.cookies.oa_lang || '').toLowerCase();
   if (raw.startsWith('pl')) return 'pl';
   if (raw.startsWith('en')) return 'en';
-  const header = String(ctx.req.headers['accept-language'] || '').toLowerCase();
-  if (header.split(',').some((part) => part.trim().startsWith('pl'))) return 'pl';
-  return 'en';
+  // Panel sessions are Polish by default; English is an explicit choice via
+  // query/cookie so the login screen matches the post-login language.
+  return setting('default_language', 'pl') === 'en' ? 'en' : 'pl';
 }
 
 export function registerAuthRoutes(router) {

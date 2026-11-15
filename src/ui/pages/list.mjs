@@ -5,7 +5,7 @@ import { icon } from '../icons.mjs';
 
 export function listCard({
   title, sub = '', columns, rows, actions = [], createHref, createLabel = 'Create', empty = 'Nothing here yet',
-  filter = null, toolbarLeft = [], toolbarRight = [], footer = '', selectable = false, flush = true, id = '',
+  filter = null, toolbarLeft = [], toolbarRight = [], footer = '', selectable = false, flush = true, id = '', responsive = false,
 }) {
   const tools = [];
   if (filter) {
@@ -18,7 +18,7 @@ export function listCard({
   const hasToolbar = tools.length || right.length;
   return card(title, h`
     ${hasToolbar ? toolbar(tools, right) : ''}
-    <div id="${id || 'dataTable'}">${table({ columns, rows, actions, empty, selectable })}</div>
+    <div id="${id || 'dataTable'}">${table({ columns, rows, actions, empty, selectable, cls: responsive ? 'responsive-table' : '' })}</div>
     ${footer ? h`<div class="card-foot">${footer}</div>` : ''}
   `, { sub, padded: !flush, cls: 'list-card' });
 }

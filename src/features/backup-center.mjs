@@ -132,10 +132,10 @@ export function register(router) {
     const tz = schedulerTimezone();
     const body = h`
       ${tabs([
-        { key: 'servers', label: 'Serwery backup', count: servers.length },
+        { key: 'servers', label: 'Lokalizacje', count: servers.length },
         { key: 'jobs', label: 'Zadania', count: jobs.length },
-        { key: 'runs', label: 'Historia i przywracanie', count: runs.length },
-        { key: 'operations', label: 'Zadania', count: operations.length },
+        { key: 'runs', label: 'Historia', count: runs.length },
+        { key: 'operations', label: 'Operacje', count: operations.length },
       ], current, { base: A })}
       ${flash ? alert(flash.message, flash.type) : ''}
       ${current === 'servers' ? h`
@@ -163,6 +163,7 @@ export function register(router) {
           field({ name: 'key', label: 'Nowy klucz SSH (puste = bez zmian)', type: 'textarea', rows: 4, full: true, help: 'Klucz jest szyfrowany i usuwany z procesu po transferze.' }),
         ], { action: `${A}/servers/${editServer.id}/update`, csrf: ctx.csrf, submit: 'Zapisz lokalizację' })) : ''}
         ${card('Lokalizacje', table({
+          cls: 'responsive-table',
           columns: [
             { label: 'Nazwa', key: 'name' }, { label: 'Typ', key: 'type' },
             { label: 'Host', render: (r) => h`<span class="cell-mono small">${r.host || r.path || '—'}</span>` },
@@ -204,6 +205,7 @@ export function register(router) {
           field({ name: 'retention_days', label: 'Retencja dni', type: 'number', value: editJob.retention_days }),
         ], { action: `${A}/jobs/${editJob.id}/update`, csrf: ctx.csrf, submit: 'Zapisz job' })) : ''}
         ${card('Joby', table({
+          cls: 'responsive-table',
           columns: [
             { label: 'Nazwa', key: 'name' }, { label: 'Zakres', render: (r) => r.scope === 'user' ? `user: ${r.target_user}` : 'serwer' },
             { label: 'Lokalizacja', render: (r) => r.server_name || 'lokalnie' },
@@ -223,6 +225,7 @@ export function register(router) {
       ` : ''}
       ${current === 'runs' ? h`
         ${card('Historia', table({
+          cls: 'responsive-table',
           columns: [
             { label: 'Zadanie', render: (r) => r.job_name || '—' }, { label: 'Plik', render: (r) => h`<span class="cell-mono small">${r.filename}</span>` },
             { label: 'Status', render: (r) => badge(statusLabel(r.status), statusTone(r.status)) },
@@ -241,6 +244,7 @@ export function register(router) {
       ` : ''}
       ${current === 'operations' ? h`
         ${card('Zadania backupu i restore', table({
+          cls: 'responsive-table',
           columns: operationColumns(),
           rows: operations,
           empty: 'Brak zadań operacyjnych.',

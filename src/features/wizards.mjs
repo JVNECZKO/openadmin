@@ -460,7 +460,7 @@ export function renderUserProvisioningForm(ctx, {
     <ol class="wizard-steps" data-wizard-indicator aria-label="Kroki tworzenia konta">${stepCopy}</ol>
 
     <div data-wizard-step="1" data-wizard-title="Klient i kontakt">
-      ${card('Krok 1 z 6 · Klient i kontakt', h`
+      ${card('Krok 1 z 5 · Klient i kontakt', h`
         <div class="form-grid">
           <div class="field"><label class="field-label" for="oa-user-username">Login klienta <span class="req">*</span></label>
             <input id="oa-user-username" name="username" value="${asValue(values, 'username')}" required pattern="[a-z0-9][a-z0-9_.-]{1,31}" placeholder="johndoe" autocomplete="off">
@@ -483,7 +483,7 @@ export function renderUserProvisioningForm(ctx, {
     </div>
 
     <div data-wizard-step="2" data-wizard-title="Pakiet">
-      ${card('Krok 2 z 6 · Pakiet i limity', h`
+      ${card('Krok 2 z 5 · Pakiet i limity', h`
         <div class="form-grid">
           <div class="field field-full"><label class="field-label" for="oa-user-package">Pakiet <span class="req">*</span></label>
             <select id="oa-user-package" name="package">
@@ -508,7 +508,7 @@ export function renderUserProvisioningForm(ctx, {
     </div>
 
     <div data-wizard-step="3" data-wizard-title="Domena, IP i DNS">
-      ${card('Krok 3 z 6 · Domena, IP i DNS', h`
+      ${card('Krok 3 z 5 · Domena, IP i DNS', h`
         <div class="form-grid">
           <div class="field field-full"><label class="field-label" for="oa-user-domain">Domena główna</label>
             <input id="oa-user-domain" name="domain" value="${asValue(values, 'domain')}" placeholder="klient.pl" autocomplete="off">
@@ -529,7 +529,7 @@ export function renderUserProvisioningForm(ctx, {
     </div>
 
     <div data-wizard-step="4" data-wizard-title="WWW, PHP, SSL, poczta">
-      ${card('Krok 4 z 6 · WWW, PHP, SSL i poczta', h`
+      ${card('Krok 4 z 5 · WWW, PHP, SSL i poczta', h`
         <div class="form-grid">
           <div class="field field-full"><label class="field-label">Silnik WWW</label>${enginePicker({ selected: engine, name: 'engine' })}</div>
           <div class="field"><label class="field-label" for="oa-user-php">Wersja PHP</label>
@@ -562,7 +562,7 @@ export function renderUserProvisioningForm(ctx, {
     </div>
 
     <div data-wizard-step="5" data-wizard-title="Podsumowanie i preflight" data-preflight>
-      ${card('Krok 5 z 6 · Podsumowanie i preflight', h`
+      ${card('Krok 5 z 5 · Podsumowanie i preflight', h`
         <div data-user-summary class="small muted">Podsumowanie wypełni się na podstawie wybranych wartości.</div>
         <h3 class="form-section">Bezpieczne hasło</h3>
         <div class="form-grid">
