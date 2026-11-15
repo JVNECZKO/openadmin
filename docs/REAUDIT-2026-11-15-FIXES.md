@@ -69,3 +69,22 @@ the database page, Roundcube health is HTTP 200, and the Exim queue is empty.
 - A daily offsite SFTP backup with a dedicated key completed; the remote archive
   SHA-256 matches the local archive and the restore preview reads all homes and the
   panel database snapshot.
+
+## Final verification for this iteration
+
+- `node --test tests/*.test.mjs`: **305/305 pass**, no EADDRINUSE/no-table warnings.
+- `node tools/qa-final.mjs`: **54/54 checks**, 350 route-width snapshots, 14/14
+  security checks, 27 axe pages with 0 serious/critical, 7/7 counter checks.
+- Live build: commit `1d52b45…`; phpMyAdmin SSO reaches the database UI; Roundcube
+  health is 200; Exim queue is 0; Security Center reports 83% (5/6).
+- Offsite backup completed (272.7 MB, identical SHA-256); restore preview reads the
+  archive. The full transactional restore path is covered by `tests/jobs-restore`.
+
+## Still requiring operator input
+
+- Admin TOTP enrolment (needs the user's authenticator; enabling it silently would
+  lock the account out).
+- A publicly trusted TLS certificate for a real panel hostname.
+- Public SPF/DKIM/DMARC for real mail domains and a pinned release-signing key.
+- ModSecurity/WAF (host lacks the module) and remaining mixed-language advanced
+  feature pages outside navigation/automation.
