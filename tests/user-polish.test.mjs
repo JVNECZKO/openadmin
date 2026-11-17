@@ -249,7 +249,7 @@ test('appIcon renders safe inline SVG at 40 and 52 px', async () => {
     assert.doesNotMatch(markup, /<img/);
   }
   const hardened = appIcon('wordpress', { cls: 'tile-logo evil" onclick="alert(1)' }).value;
-  assert.match(hardened, /class="app-logo tile-logo"/);
+  assert.match(hardened, /class="app-logo app-logo-44 tile-logo"/);
   assert.doesNotMatch(hardened, /onclick/);
   assert.match(appIcon('unknown-app').value, /data-app-icon="generic"/);
   assert.equal(appName('unknown-app'), 'Aplikacja');

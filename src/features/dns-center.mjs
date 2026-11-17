@@ -24,7 +24,7 @@ export function register(router) {
           columns: [
             { label: 'Domena', render: (r) => h`<span class="cell-strong">${r.name}</span>` },
             { label: 'Rekordy', render: (r) => String(r.records) },
-            { label: 'TTL strefy', render: (r) => h`<form method="post" action="${A}/zones/${encodeURIComponent(r.name)}/ttl" class="row" style="gap:6px"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input name="ttl" type="number" value="${r.dns_ttl}" min="60" max="604800" style="width:110px"><button class="btn btn-ghost btn-sm" type="submit">Zapisz</button></form>` },
+            { label: 'TTL strefy', render: (r) => h`<form method="post" action="${A}/zones/${encodeURIComponent(r.name)}/ttl" class="row u-s76"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input class="u-s94" name="ttl" type="number" value="${r.dns_ttl}" min="60" max="604800"><button class="btn btn-ghost btn-sm" type="submit">Zapisz</button></form>` },
           ],
           rows: ov.zones,
           actions: [{ label: 'Edytuj rekordy', href: (r) => `/admin/dns?domain=${encodeURIComponent(r.name)}`, icon: 'edit' }],

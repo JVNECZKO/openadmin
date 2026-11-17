@@ -28,7 +28,7 @@ export function register(router) {
         <p class="small muted">Dla większych backupów wgraj plik przez SFTP do <code>${path.join(config.dataDir, 'imports')}</code> i podaj ścieżkę. Import nie nadpisuje istniejących domen — dopisuje rekordy DNS i pliki.</p>
         <div class="form-actions"><button class="btn btn-primary" type="submit" id="importSubmit">Analizuj i importuj</button> <button class="btn btn-secondary" type="submit" id="importPreview">Podgląd bez zmian</button></div>
       </form>`, { sub: 'Bezpieczne rozpakowanie, raport co zostało zaimportowane' })}
-      ${card('Co jest importowane', h`<ul class="small" style="line-height:1.9;padding-left:18px">
+      ${card('Co jest importowane', h`<ul class="small u-s13">
         <li><strong>Pliki:</strong> katalogi <code>public_html</code> trafiają do odpowiednich domen.</li>
         <li><strong>DNS:</strong> rekordy A/AAAA/CNAME/MX/TXT/SRV/CAA ze stref <code>dnszones/*.db</code>.</li>
         <li><strong>Bazy:</strong> pliki <code>mysql/*.sql</code> są tworzone jako <code>użytkownik_nazwa</code>.</li>
@@ -94,7 +94,7 @@ export function register(router) {
           ['Przykładowe pliki', plan.sampleFiles.slice(0, 8).join(', ') || 'brak'],
         ])}
       `)}
-      ${card('Co zostanie zrobione po imporcie', h`<ul class="small" style="line-height:1.9;padding-left:18px">
+      ${card('Co zostanie zrobione po imporcie', h`<ul class="small u-s13">
         <li>Pliki trafią do katalogu użytkownika <strong>${target}</strong>.</li>
         <li>Domeny: <strong>${plan.domains.length}</strong>; rekordy DNS zostaną dopisane, bez kasowania istniejących.</li>
         <li>Bazy: <strong>${plan.counts.databases}</strong>; nazwy zostaną poprzedzone nazwą konta.</li>

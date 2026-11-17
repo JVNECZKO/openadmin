@@ -50,7 +50,7 @@ export function register(router) {
         title: 'Email accounts', sub: `${rows.length} mailbox(es) on ${d?.name || '—'} · ${formatBytes(totalUsed)} stored${lim.emails ? ` · ${lim.emails} allowed` : ''}`,
         columns: [
           { label: 'Mailbox', render: (r) => h`<span class="cell-strong">${r.local_part}@${r.domain}</span><span class="cell-sub">${r.suspended ? 'Suspended' : 'Active'}</span>` },
-          { label: 'Quota', render: (r) => h`<div style="min-width:150px">${progress(r.used_mb, r.quota_mb || 1, { showText: false })}<span class="cell-sub">${formatBytes(r.used_mb)} / ${r.quota_mb ? formatBytes(r.quota_mb) : 'unlimited'}</span></div>` },
+          { label: 'Quota', render: (r) => h`<div class="u-s67">${progress(r.used_mb, r.quota_mb || 1, { showText: false })}<span class="cell-sub">${formatBytes(r.used_mb)} / ${r.quota_mb ? formatBytes(r.quota_mb) : 'unlimited'}</span></div>` },
           { label: 'Created', render: (r) => formatDate(r.created_at) },
         ],
         rows,
@@ -95,7 +95,7 @@ export function register(router) {
             <p class="field-help">Letters, numbers, dots, hyphens and underscores.</p></div>
           <div class="field"><label class="field-label" for="mpass">Password <span class="req">*</span></label>
             <div class="field-control"><input id="mpass" name="password" type="password" required minlength="8" placeholder="At least 8 characters">
-              <button class="btn btn-secondary btn-sm" type="button" data-genpass="#mpass" style="margin-left:8px">Generate</button></div></div>
+              <button class="btn btn-secondary btn-sm u-s18" type="button" data-genpass="#mpass">Generate</button></div></div>
           <div class="field"><label class="field-label">Quota (MB)</label><input name="quota_mb" type="number" min="0" value="1024"><p class="field-help">0 = unlimited.</p></div>
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit" ${!q.ok || !domains.length ? 'disabled' : ''}>${icon('plus', { size: 16 })} Create mailbox</button>
@@ -177,12 +177,12 @@ export function register(router) {
           { label: 'Edit', href: (r) => `/user/email/forwarders?edit=${r.id}`, icon: 'edit' },
           { label: 'Delete', form: (r) => `/user/email/forwarders/${r.id}/delete`, confirm: 'Delete forwarder?', icon: 'trash', danger: true },
         ],
-        footer: h`<form method="post" action="/user/email/forwarders/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        footer: h`<form class="u-s31" method="post" action="/user/email/forwarders/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <select name="domain">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
-          <input name="source" placeholder="sales" style="max-width:150px" required>
+          <input class="u-s63" name="source" placeholder="sales" required>
           <span class="muted">→</span>
-          <input name="dest" type="email" placeholder="you@elsewhere.com" style="max-width:260px" required>
+          <input class="u-s28" name="dest" type="email" placeholder="you@elsewhere.com" required>
           <label class="check-field small"><input type="checkbox" name="keep_copy" value="1" checked> Keep copy</label>
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add forwarder</button>
         </form>`,
@@ -246,11 +246,11 @@ export function register(router) {
         ],
         rows, empty: 'No autoresponders yet.',
         actions: [{ label: 'Delete', form: (r) => `/user/email/autoresponders/${r.id}/delete`, confirm: 'Delete autoresponder?', icon: 'trash', danger: true }],
-        footer: h`<form method="post" action="/user/email/autoresponders/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        footer: h`<form class="u-s31" method="post" action="/user/email/autoresponders/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <select name="domain">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
-          <input name="email" type="email" placeholder="support@example.com" style="max-width:250px" required>
-          <input name="subject" placeholder="Subject" style="max-width:220px" required>
+          <input class="u-s68" name="email" type="email" placeholder="support@example.com" required>
+          <input class="u-s26" name="subject" placeholder="Subject" required>
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add autoresponder</button>
         </form>`,
       })}`;
@@ -324,7 +324,7 @@ export function register(router) {
           { label: 'Toggle', form: (r) => `/user/email/vacation/${r.id}/toggle`, icon: 'refresh' },
           { label: 'Delete', form: (r) => `/user/email/vacation/${r.id}/delete`, confirm: 'Delete vacation message?', icon: 'trash', danger: true },
         ],
-        footer: d ? h`<form method="post" action="/user/email/vacation/create" class="oa-form" style="padding:0">
+        footer: d ? h`<form method="post" action="/user/email/vacation/create" class="oa-form u-s69">
           <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}">
           <div class="form-grid">
             <div class="field"><label class="field-label">Mailbox</label><input name="email" type="email" placeholder="you@${d.name}" required></div>
@@ -392,17 +392,17 @@ export function register(router) {
       ${d ? card(`Catch-all for ${d.name}`, h`
         <p class="small muted mb-18">Any message sent to an address on this domain that does not exist will be delivered to the address below.</p>
         ${row ? kvList([['Current catch-all', row.dest || 'Discard'], ['Updated', formatDate(row.created_at)]]) : alert('Catch-all is not configured for this domain.', 'info')}
-        <form method="post" action="/user/email/catch-all/save" style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+        <form class="u-s70" method="post" action="/user/email/catch-all/save">
           <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}">
-          <div class="field" style="flex:1;min-width:240px"><label class="field-label">Deliver to</label>
+          <div class="field u-s42"><label class="field-label">Deliver to</label>
             <select name="dest"><option value="">Discard (blackhole)</option>
               ${mailboxes.map((m) => h`<option value="${m.local_part}@${m.domain}" ${row?.dest === m.local_part + '@' + m.domain ? 'selected' : ''}>${m.local_part}@${m.domain}</option>`)}
               <option value="__custom">Custom address…</option>
             </select></div>
-          <div class="field" style="flex:1;min-width:220px"><label class="field-label">Or enter an address</label><input name="custom_dest" type="email" placeholder="catchall@elsewhere.com"></div>
+          <div class="field u-s71"><label class="field-label">Or enter an address</label><input name="custom_dest" type="email" placeholder="catchall@elsewhere.com"></div>
           <button class="btn btn-primary" type="submit">Save</button>
         </form>
-        ${row ? h`<form method="post" action="/user/email/catch-all/delete" style="margin-top:10px"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+        ${row ? h`<form class="u-s55" method="post" action="/user/email/catch-all/delete"><input type="hidden" name="_csrf" value="${ctx.csrf}">
           <input type="hidden" name="domain" value="${d.name}"><button class="btn btn-quiet-danger btn-sm" type="submit">Remove catch-all</button></form>` : ''}
       `) : ''}`;
     return page(ctx, { title: 'Catch-All Email', subtitle: 'Deliver unknown recipients to one mailbox', body });
@@ -438,7 +438,7 @@ export function register(router) {
         title: 'Mailing lists', sub: 'Discussion lists powered by Mailman-compatible storage',
         columns: [
           { label: 'List', render: (r) => h`<span class="cell-strong">${r.name}@${r.domain}</span><span class="cell-sub">${(r.members || '').split(',').filter(Boolean).length} subscriber(s)</span>` },
-          { label: 'Members', render: (r) => h`<span class="truncate" style="max-width:320px;display:block">${r.members || '—'}</span>` },
+          { label: 'Members', render: (r) => h`<span class="truncate u-s30">${r.members || '—'}</span>` },
           { label: 'Created', render: (r) => formatDate(r.created_at) },
         ],
         rows, empty: 'No mailing lists yet.',
@@ -446,11 +446,11 @@ export function register(router) {
           { label: 'Edytuj', href: (r) => `/user/email/lists?edit=${r.id}`, icon: 'edit' },
           { label: 'Delete', form: (r) => `/user/email/lists/${r.id}/delete`, confirm: 'Delete mailing list?', icon: 'trash', danger: true },
         ],
-        footer: h`<form method="post" action="/user/email/lists/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        footer: h`<form class="u-s31" method="post" action="/user/email/lists/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <select name="domain">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
-          <input name="name" placeholder="announce" style="max-width:160px" required>
-          <input name="members" placeholder="a@example.com, b@example.com" style="max-width:340px">
+          <input class="u-s34" name="name" placeholder="announce" required>
+          <input class="u-s72" name="members" placeholder="a@example.com, b@example.com">
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Create list</button>
         </form>`,
       })}
@@ -511,14 +511,14 @@ export function register(router) {
             { label: 'Delete', form: (r) => `/user/email/spam/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Delete rule?' },
           ],
         }) : emptyState('No spam rules for this domain.')}
-        <form method="post" action="/user/email/spam/create" style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <form class="u-s73" method="post" action="/user/email/spam/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <input type="hidden" name="domain" value="${d?.name || ''}">
           <select name="field"><option value="subject">Subject</option><option value="from">From</option><option value="to">To</option><option value="body">Body</option></select>
           <select name="operator"><option value="contains">contains</option><option value="equals">equals</option><option value="starts">starts with</option></select>
-          <input name="value" placeholder="text to match" style="max-width:220px" required>
+          <input class="u-s26" name="value" placeholder="text to match" required>
           <select name="action"><option value="move">move to folder</option><option value="discard">discard</option><option value="tag">tag subject</option></select>
-          <input name="target" placeholder="Junk" style="max-width:120px">
+          <input class="u-s29" name="target" placeholder="Junk">
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add rule</button>
         </form>
         ${editing ? h`<form method="post" action="/user/email/spam/${editing.id}/update" class="oa-form mt-18">
@@ -605,7 +605,7 @@ export function register(router) {
           { label: 'Mailbox', render: (r) => h`<span class="cell-strong">${r.local_part}@${r.domain}</span>` },
           { label: 'Used', render: (r) => formatBytes(r.used_mb), align: 'right' },
           { label: 'Quota', render: (r) => (r.quota_mb ? formatBytes(r.quota_mb) : 'Unlimited'), align: 'right' },
-          { label: 'Utilisation', render: (r) => h`<div style="min-width:140px">${progress(r.used_mb, r.quota_mb || 1, { showText: false })}</div>` },
+          { label: 'Utilisation', render: (r) => h`<div class="u-s74">${progress(r.used_mb, r.quota_mb || 1, { showText: false })}</div>` },
         ],
         rows,
       })}`;
@@ -646,7 +646,7 @@ export function register(router) {
           ])}<p class="small muted mt-12">Hasło to hasło skrzynki ustawione w panelu. Nie wysyłamy go e-mailem.</p>`)}
           ${card('Autokonfiguracja', h`<p class="small muted">Klient poczty może pobrać ustawienia automatycznie z tego adresu (Thunderbird / Outlook / Apple Mail).</p>
             <pre class="code-block small">${autoUrl}</pre>
-            ${qr ? h`<div style="text-align:center">${raw(qr)}<p class="small muted">Zeskanuj kod, aby otworzyć autokonfigurację.</p></div>` : ''}
+            ${qr ? h`<div class="u-s66">${raw(qr)}<p class="small muted">Zeskanuj kod, aby otworzyć autokonfigurację.</p></div>` : ''}
             <form method="post" action="/user/email/${account.id}/test" class="mt-12"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary btn-sm" type="submit">Test połączenia IMAP/SMTP</button></form>`)}
         </div>
         ${card('DNS poczty', h`<div class="stack">

@@ -8,7 +8,7 @@ import { startImpersonation } from '../secrets.mjs';
 import { previewActorCookie } from '../apps.mjs';
 import { html as h, raw, formatBytes, pct } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
-import { card, table, btn, badge, alert, emptyState, kvList, progress, statCard, sparkline } from '../ui/components.mjs';
+import { card, table, btn, badge, alert, emptyState, kvList, progress, statCard, sparkline, pctClass } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
 import { domainSelect } from '../ui/pages/list.mjs';
 import { countForNav, visibleUsers, visibleDomains, canManageUser, domainFor } from '../core/access.mjs';
@@ -430,8 +430,8 @@ function resellerDashboard(ctx) {
   const onboarding = stepsDone < steps.length ? card(
     isNew ? 'Zacznij tutaj' : 'Dokończ konfigurację',
     h`<div class="spread mb-12"><strong>${stepsDone} z ${steps.length} gotowe</strong><span class="small muted">${isNew ? 'Pierwsze kroki w panelu resellera' : 'Kilka kroków do pełnej konfiguracji'}</span></div>
-      <div class="progress mb-18"><span style="width:${Math.round((stepsDone / steps.length) * 100)}%"></span></div>
-      <div class="stack" style="gap:10px">${steps.map((step) => h`<div class="spread">
+      <div class="progress mb-18"><span class="${pctClass((stepsDone / steps.length) * 100)}"></span></div>
+      <div class="stack u-s49">${steps.map((step) => h`<div class="spread">
         <span>${step.done ? badge('gotowe', 'ok', { dot: true }) : badge('do zrobienia', 'warn', { dot: true })} ${step.done ? step.label : h`<a class="link" href="${step.href}">${step.label}</a>`}</span>
         ${step.done ? '' : h`<a class="btn btn-ghost btn-sm" href="${step.href}">Przejdź →</a>`}
       </div>`)}</div>`,
@@ -452,7 +452,7 @@ function resellerDashboard(ctx) {
       action: btn('Zobacz statystyki', { href: '/reseller/statistics', variant: 'secondary', icon: 'chart' }),
     }), { sub: 'Ostatnie 30 dni', actions: [h`<a class="link small" href="/reseller/statistics">Szczegóły</a>`] });
 
-  const limitsCard = card('Limity i kondycja', h`<div class="stack" style="gap:14px">
+  const limitsCard = card('Limity i kondycja', h`<div class="stack u-s51">
     ${limitRow('Klienci', customers.length, limits.users, String(customers.length), String(limits.users), healthUsers)}
     ${limitRow('Domeny', domains.length, limits.domains, String(domains.length), String(limits.domains), healthDomains)}
     ${limitRow('Dysk', disk, limits.disk_mb, formatBytes(disk), formatBytes(limits.disk_mb), healthDisk)}
@@ -537,21 +537,21 @@ function resellerDashboard(ctx) {
     actions: [h`<a class="link small" href="/reseller/apps">Katalog aplikacji</a>`],
   });
 
-  const automation = card('Automatyzacja i kondycja', h`<div class="stack" style="gap:14px">
+  const automation = card('Automatyzacja i kondycja', h`<div class="stack u-s51">
     <div>
-      <div class="spread"><span class="small" style="font-weight:600">Automatyczne kopie zapasowe</span>${backupConfig.enabled ? badge('włączone', 'ok', { dot: true }) : badge('wyłączone', 'warn', { dot: true })}</div>
+      <div class="spread"><span class="small u-s47">Automatyczne kopie zapasowe</span>${backupConfig.enabled ? badge('włączone', 'ok', { dot: true }) : badge('wyłączone', 'warn', { dot: true })}</div>
       <p class="field-help">Ostatni przebieg: ${backupConfig.lastRun ? relTime(backupConfig.lastRun) : 'jeszcze nie uruchamiano'} · retencja ${backupConfig.retentionDays} dni</p>
     </div>
     <div>
-      <div class="spread"><span class="small" style="font-weight:600">Ostatnie wdrożenie konfiguracji</span>${deployBadge}</div>
+      <div class="spread"><span class="small u-s47">Ostatnie wdrożenie konfiguracji</span>${deployBadge}</div>
       <p class="field-help">${deployment.lastAt ? `Ostatnio: ${relTime(deployment.lastAt)}` : 'Jeszcze nie uruchamiano wdrożenia.'}${deployment.pending ? ' Zmiany oczekują na wdrożenie.' : ''}</p>
     </div>
     <div>
-      <div class="spread"><span class="small" style="font-weight:600">Certyfikaty SSL klientów</span>${expiringCerts.length ? badge(`${expiringCerts.length} wygasa`, 'warn', { dot: true }) : badge(`${sslCerts.length} aktywnych`, sslCerts.length ? 'ok' : 'muted', { dot: true })}</div>
+      <div class="spread"><span class="small u-s47">Certyfikaty SSL klientów</span>${expiringCerts.length ? badge(`${expiringCerts.length} wygasa`, 'warn', { dot: true }) : badge(`${sslCerts.length} aktywnych`, sslCerts.length ? 'ok' : 'muted', { dot: true })}</div>
       <p class="field-help">${expiringCerts.length ? 'Odnów certyfikaty w panelu klienta lub przez AutoSSL.' : 'Brak certyfikatów wygasających w ciągu 30 dni.'}</p>
     </div>
     <div>
-      <div class="spread"><span class="small" style="font-weight:600">Pomiar użycia</span>${usageInfo.lastCollected ? badge(relTime(usageInfo.lastCollected), 'ok', { dot: true }) : badge('brak danych', 'muted', { dot: true })}</div>
+      <div class="spread"><span class="small u-s47">Pomiar użycia</span>${usageInfo.lastCollected ? badge(relTime(usageInfo.lastCollected), 'ok', { dot: true }) : badge('brak danych', 'muted', { dot: true })}</div>
       <p class="field-help">Źródło transferu: ${usageSourceLabel(usageInfo.bandwidthSource)}</p>
     </div>
   </div>`, {
@@ -651,12 +651,12 @@ function resellerDns(ctx) {
       </div>
       <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz rekord</button><a class="btn btn-ghost" href="/reseller/dns?domain=${encodeURIComponent(domain.name)}">Anuluj</a></div>
     </form>`) : ''}
-    ${domain ? card('Dodaj rekord', h`<form method="post" action="/reseller/dns/add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+    ${domain ? card('Dodaj rekord', h`<form class="u-s103" method="post" action="/reseller/dns/add">
       <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${domain.name}">
-      <div class="field"><label class="field-label">Nazwa</label><input name="name" value="@" style="width:140px"></div>
-      <div class="field"><label class="field-label">Typ</label><select name="type" style="width:100px">${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((type) => h`<option>${type}</option>`)}</select></div>
-      <div class="field" style="flex:1;min-width:240px"><label class="field-label">Wartość</label><input name="value" required></div>
-      <div class="field"><label class="field-label">Priorytet</label><input name="priority" type="number" style="width:100px"></div>
+      <div class="field"><label class="field-label">Nazwa</label><input class="u-s109" name="name" value="@"></div>
+      <div class="field"><label class="field-label">Typ</label><select class="u-s96" name="type">${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((type) => h`<option>${type}</option>`)}</select></div>
+      <div class="field u-s42"><label class="field-label">Wartość</label><input name="value" required></div>
+      <div class="field"><label class="field-label">Priorytet</label><input class="u-s96" name="priority" type="number"></div>
       <button class="btn btn-primary" type="submit">Dodaj rekord</button>
     </form>`, { sub: `Zmiany są wdrażane automatycznie · ${domain.name}` }) : ''}`;
   return page(ctx, {
@@ -810,7 +810,7 @@ function resellerDomains(ctx) {
     : btn('Dodaj klienta z domeną', { href: '/reseller/users/create', icon: 'plus' });
   const filterForm = h`<form method="get" action="/reseller/domains" class="toolbar">
     <div class="toolbar-left">
-      <div class="search">${icon('search', { size: 15 })}<input type="search" name="q" value="${query}" placeholder="Szukaj domeny, klienta lub pakietu…" aria-label="Szukaj domeny, klienta lub pakietu" data-filter-input="#resellerDomains" style="padding-left:32px"></div>
+      <div class="search">${icon('search', { size: 15 })}<input class="u-s110" type="search" name="q" value="${query}" placeholder="Szukaj domeny, klienta lub pakietu…" aria-label="Szukaj domeny, klienta lub pakietu" data-filter-input="#resellerDomains"></div>
       ${status !== 'all' ? h`<input type="hidden" name="status" value="${status}">` : ''}
       <button class="btn btn-secondary btn-sm" type="submit">Szukaj</button>
       ${query || status !== 'all' ? h`<a class="btn btn-ghost btn-sm" href="/reseller/domains">Wyczyść</a>` : ''}
@@ -924,7 +924,7 @@ function resellerApps(ctx) {
             <div class="field field-full"><label class="field-label">Domena klienta</label><select name="domain" required>${domainOptions}</select><p class="field-help">Lista zawiera wyłącznie domeny Twoich aktywnych klientów.</p></div>
             <div class="field"><label class="field-label">Ścieżka</label><input name="path" value="${isNextcloud ? '/' : app.defaultPath}" ${isNextcloud ? 'readonly' : ''}></div>
             <div class="field"><label class="field-label">Login administratora</label><input name="admin_user" value="admin" pattern="[A-Za-z0-9._-]{2,32}" required></div>
-            <div class="field"><label class="field-label">Hasło administratora</label><div class="field-control"><input id="apppass_${app.key}" name="admin_password" type="password" minlength="8" required autocomplete="new-password"><button class="btn btn-secondary btn-sm" type="button" data-genpass="#apppass_${app.key}" style="margin-left:6px">Generuj</button></div></div>
+            <div class="field"><label class="field-label">Hasło administratora</label><div class="field-control"><input id="apppass_${app.key}" name="admin_password" type="password" minlength="8" required autocomplete="new-password"><button class="btn btn-secondary btn-sm u-s111" type="button" data-genpass="#apppass_${app.key}">Generuj</button></div></div>
             <div class="field field-full"><label class="field-label">Tytuł strony (opcjonalnie)</label><input name="title" placeholder="Np. ${app.name} — nazwa klienta"></div>
           </div>
           <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('download', { size: 15 })} Zainstaluj ${app.name}</button></div>
@@ -1066,9 +1066,9 @@ export function registerResellerRoutes(router) {
       <tbody>${users.map((user) => h`<tr>
         <td><a class="cell-strong" href="/reseller/users/${user.id}">${user.username}</a><span class="cell-sub">${user.email || '—'}</span></td>
         <td>${badge(user.package || 'default', 'brand')}</td>
-        <td><form method="post" action="${R}/users/${user.id}/move" class="inline" style="display:flex;gap:6px;align-items:center">
+        <td><form method="post" action="${R}/users/${user.id}/move" class="inline u-s112">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <select name="package" style="height:30px;width:180px">${packages.map((pkg) => h`<option ${pkg.name === user.package ? 'selected' : ''}>${pkg.name}</option>`)}</select>
+          <select class="u-s113" name="package">${packages.map((pkg) => h`<option ${pkg.name === user.package ? 'selected' : ''}>${pkg.name}</option>`)}</select>
           <button class="btn btn-secondary btn-sm" type="submit">Przenieś</button>
         </form></td>
       </tr>`)}</tbody>

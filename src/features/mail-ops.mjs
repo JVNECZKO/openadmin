@@ -70,7 +70,7 @@ export function register(router) {
     if (t === 'diagnose') {
       body += card('Diagnostyka adresu e-mail', h`
         <form method="post" action="${A}/diagnose" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <input name="address" type="email" placeholder="np. kontakt@twojadomena.pl" required style="min-width:320px">
+          <input class="u-s95" name="address" type="email" placeholder="np. kontakt@twojadomena.pl" required>
           <button class="btn btn-primary" type="submit">Diagnozuj</button></form>
         <p class="small muted mt-12">Sprawdzamy domenę w panelu, MX, SPF, DKIM, DMARC, skrzynkę oraz porty IMAP/SMTP.</p>`);
     }
@@ -217,7 +217,7 @@ export function register(router) {
           <button class="btn btn-secondary" type="submit">Zastosuj Exim</button></form>`)}
         ${card('Filtr krajów nadawcy', h`${!geoipSupport().supported ? alert(`Zapis polityki bez egzekwowania: ${geoipSupport().reason}.`, 'warn') : ''}
           <form method="post" action="${A}/countries" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-            <input name="country" maxlength="2" placeholder="np. ru" required style="width:100px"><button class="btn btn-secondary" type="submit">Dodaj kraj</button></form>
+            <input class="u-s96" name="country" maxlength="2" placeholder="np. ru" required><button class="btn btn-secondary" type="submit">Dodaj kraj</button></form>
           ${listCountries().length ? table({
             columns: [{ label: 'Kraj', render: (r) => h`<span class="cell-mono">${r.country.toUpperCase()}</span>` }, { label: 'Akcja', key: 'action' }],
             rows: listCountries(),
@@ -237,7 +237,7 @@ export function register(router) {
       ${card(`Diagnoza · ${result.email}`, h`
         <div class="spread mb-12"><strong>Wynik: ${result.score}%</strong>${badge(result.score >= 80 ? 'dobrze' : result.score >= 50 ? 'do poprawy' : 'krytycznie', result.score >= 80 ? 'ok' : result.score >= 50 ? 'warn' : 'danger')}</div>
         <div class="stack">${result.checks.map((c) => h`<div class="service-row">
-          <span class="service-dot ${c.ok ? 'on' : 'off'}"></span><div style="flex:1"><strong>${c.label}</strong><div class="small muted">${c.detail}</div>${c.ok ? '' : h`<div class="small" style="color:var(--warn)">${c.hint}</div>`}</div>
+          <span class="service-dot ${c.ok ? 'on' : 'off'}"></span><div class="u-s14"><strong>${c.label}</strong><div class="small muted">${c.detail}</div>${c.ok ? '' : h`<div class="small u-s3">${c.hint}</div>`}</div>
           ${badge(c.ok ? 'OK' : 'problem', c.ok ? 'ok' : 'warn')}
         </div>`)}</div>
         <div class="row mt-18"><a class="btn btn-primary" href="${A}?tab=diagnose">Kolejny adres</a><a class="btn btn-secondary" href="${A}?tab=events">Raporty</a></div>`)}`;

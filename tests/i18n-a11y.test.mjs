@@ -739,6 +739,34 @@ test('catalogue tiles and installed rows label icon-only actions', async () => {
   }
 });
 
+test('source templates contain no inline style attributes', () => {
+  const root = path.resolve('src');
+  const hits = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.(mjs|js|html)$/.test(entry.name)) continue;
+      const text = fs.readFileSync(full, 'utf8');
+      if (/\sstyle\s*=/.test(text)) hits.push(path.relative(root, full));
+    }
+  };
+  walk(root);
+  assert.deepEqual(hits, [], `inline style attributes remain in: ${hits.join(', ')}`);
+});
+
+test('CSP forbids inline styles and every rendered page uses classes only', async () => {
+  const cookie = await loginAs('demoadmin');
+  for (const route of ['/admin', '/admin/security', '/admin/web-server', '/admin/settings', '/user', '/user/app-catalog']) {
+    const { res, html } = await page(route, cookie);
+    assert.equal(res.status, 200, route);
+    const csp = res.headers.get('content-security-policy') || '';
+    assert.match(csp, /style-src 'self'(?:;|$)/, `${route}: ${csp}`);
+    assert.doesNotMatch(csp, /style-src[^;]*'unsafe-inline'/, route);
+    assert.doesNotMatch(html, /\sstyle\s*=/i, `${route} contains an inline style attribute`);
+  }
+});
+
 test('CSP uses a nonce and all rendered scripts carry it', async () => {
   const cookie = await loginAs('demoadmin');
   const { res, html } = await page('/admin', cookie);

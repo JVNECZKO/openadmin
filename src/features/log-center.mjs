@@ -20,12 +20,12 @@ export function register(router) {
       ${tab === 'browse' ? h`
         ${srcs.length ? card('Wybierz log', h`<form method="get" action="${A}" class="row"><input type="hidden" name="tab" value="browse">
           <select name="source">${srcs.map((s) => h`<option value="${s.id}" ${s.id === id ? 'selected' : ''}>${s.label} (${s.sizeBytes === null ? 'niedostępny' : formatBytesIEC(s.sizeBytes)})</option>`)}</select>
-          <input name="lines" value="${lines}" style="width:90px" type="number" min="20" max="2000">
+          <input class="u-s65" name="lines" value="${lines}" type="number" min="20" max="2000">
           <input name="q" value="${query}" placeholder="filtr tekstowy">
           <button class="btn btn-secondary" type="submit">Pokaż</button>
           ${id ? h`<a class="btn btn-ghost" href="${A}/download?source=${encodeURIComponent(id)}">Pobierz</a>` : ''}
         </form>`, { sub: 'Ostatnie 512 KB, maks. 2000 linii. Pobieranie zwraca cały plik.' }) : alert('Nie wykryto plików logów. Sprawdź, czy usługi zapisują logi w standardowych lokalizacjach.', 'warn')}
-        ${!result.ok ? alert(result.error || 'Brak logów do wyświetlenia.', 'warn') : card(result.source.label, h`<pre class="code-block small" style="max-height:560px;overflow:auto">${result.rows.join('\n') || 'Brak linii.'}</pre>`, { sub: `${result.rows.length} linii · ${result.source.sizeBytes === null ? 'rozmiar niedostępny' : formatBytesIEC(result.source.sizeBytes)} · ${result.source.file}` })}
+        ${!result.ok ? alert(result.error || 'Brak logów do wyświetlenia.', 'warn') : card(result.source.label, h`<pre class="code-block small u-s75">${result.rows.join('\n') || 'Brak linii.'}</pre>`, { sub: `${result.rows.length} linii · ${result.source.sizeBytes === null ? 'rozmiar niedostępny' : formatBytesIEC(result.source.sizeBytes)} · ${result.source.file}` })}
       ` : ''}
       ${tab === 'rotation' ? h`
         ${card('Konfiguracja logrotate', h`<form method="post" action="${A}/rotation" class="oa-form"><input type="hidden" name="_csrf" value="${ctx.csrf}">

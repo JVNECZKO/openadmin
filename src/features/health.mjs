@@ -47,7 +47,7 @@ export function register(router) {
           <form method="post" action="/admin/health/fix" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="action" value="test-mail">
             <button class="btn btn-ghost btn-sm" type="submit">Wyślij test poczty</button></form>
         </div>`)}
-        ${card('Szybkie naprawy', h`<div class="stack" style="gap:10px">
+        ${card('Szybkie naprawy', h`<div class="stack u-s49">
           <form method="post" action="/admin/health/fix"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="action" value="apply">
             <button class="btn btn-primary" type="submit">Wdróż wszystko ponownie</button></form>
           <form method="post" action="/admin/health/fix"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="action" value="web">

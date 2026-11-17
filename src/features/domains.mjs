@@ -164,7 +164,7 @@ export function domainCreatePage(ctx, error = '', values = {}) {
           <div class="form-grid">
             <div class="field"><label class="field-label" for="domain-mailbox">Skrzynka podstawowa</label>
               <input id="domain-mailbox" name="mailbox_local" value="${values.mailboxLocal || ctx.body?.mailbox_local || 'postmaster'}" pattern="[a-z0-9][a-z0-9._-]{0,63}">
-              <label class="check-field" style="margin-top:6px"><input type="checkbox" name="create_mailbox" value="1" ${createMailbox ? 'checked' : ''}> <span>Utwórz skrzynkę</span></label>
+              <label class="check-field u-s24"><input type="checkbox" name="create_mailbox" value="1" ${createMailbox ? 'checked' : ''}> <span>Utwórz skrzynkę</span></label>
               <p class="field-help">Bez hasła panel wygeneruje je bezpiecznie; ustawisz je później w module Poczta.</p></div>
             <div class="field"><label class="field-label" for="domain-mailbox-quota">Limit skrzynki (MB)</label>
               <input id="domain-mailbox-quota" name="mailbox_quota_mb" type="number" min="0" value="${values.mailboxQuotaMb || ctx.body?.mailbox_quota_mb || 1024}"></div>
@@ -187,14 +187,14 @@ export function domainCreatePage(ctx, error = '', values = {}) {
               <p class="field-help">Zapisuje profil monitoringu; test HTTP uruchomisz przyciskiem „Sprawdź teraz” w edycji domeny.</p></div>
           </div>
           <p class="small muted">Zapis uruchomi preflight i atomowe wdrożenie. Jeżeli którakolwiek operacja kluczowa zawiedzie, utworzona w tym żądaniu domena zostanie wycofana.</p>
-          <div class="form-actions" data-wizard-fallback style="margin-top:14px">
+          <div class="form-actions u-s52" data-wizard-fallback>
             <button class="btn btn-primary" type="submit" ${!q.ok ? 'disabled' : ''}>${icon('plus', { size: 16 })}<span>Create domain</span></button>
             <a class="btn btn-ghost" href="/user/domains">Cancel</a>
           </div>`)}
           <div class="wizard-actions"><button type="button" class="btn btn-ghost" data-wizard-back>← Wstecz</button><button type="button" class="btn btn-primary" data-wizard-submit>Create domain</button></div>
       </div>
     </form>
-    ${card('Istniejące domeny', h`${domains.length ? h`<div class="stack" style="gap:10px">${domains.map((d) => h`<div class="existing-domain">
+    ${card('Istniejące domeny', h`${domains.length ? h`<div class="stack u-s49">${domains.map((d) => h`<div class="existing-domain">
       <strong>${d.name}</strong>
       <code class="existing-domain-path">${d.docroot || '—'}</code>
     </div>`)}</div>` : emptyState('Brak domen.')}`)}`;
@@ -334,7 +334,7 @@ export function registerDomainsPost(router) {
       try { text = fs.readFileSync(f, 'utf8').split('\n').slice(-200).join('\n'); } catch { text = 'Nie można odczytać pliku'; }
       return { file: f, text };
     });
-    const body = h`${card(`Logi: ${d.name}`, logs.length ? h`${logs.map((l) => h`<h3 class="form-section">${l.file}</h3><pre class="code-block small" style="max-height:320px;overflow:auto">${l.text || '(pusty)'}</pre>`)}` : h`<p class="small muted">Brak plików logów dla tej domeny. Na Linuksie pojawią się po pierwszym żądaniu do strony.</p>`, { actions: [h`<a class="link small" href="http://${d.name}/" target="_blank">Otwórz stronę</a>`] })}`;
+    const body = h`${card(`Logi: ${d.name}`, logs.length ? h`${logs.map((l) => h`<h3 class="form-section">${l.file}</h3><pre class="code-block small u-s53">${l.text || '(pusty)'}</pre>`)}` : h`<p class="small muted">Brak plików logów dla tej domeny. Na Linuksie pojawią się po pierwszym żądaniu do strony.</p>`, { actions: [h`<a class="link small" href="http://${d.name}/" target="_blank">Otwórz stronę</a>`] })}`;
     return page(ctx, { title: 'Logi domeny', subtitle: d.name, body, wide: true });
   });
 
@@ -352,9 +352,9 @@ export function registerDomainsPost(router) {
       ? h`
         ${status.warnings?.length ? alert(h`${status.warnings.map((w) => h`<div>${w}</div>`)}`, 'warn', { title: 'Warnings' }) : ''}
         ${alert(status.ok ? 'Last deployment completed.' : 'Last deployment completed with warnings or errors.', status.ok ? 'ok' : 'warn')}
-        <div class="small muted" style="margin-bottom:10px">${formatDate(status.at, { time: true })} · ${SERVERS[status.engine]?.label || status.engine || '—'} · PHP ${status.phpVersion || '—'}</div>
+        <div class="small muted u-s54">${formatDate(status.at, { time: true })} · ${SERVERS[status.engine]?.label || status.engine || '—'} · PHP ${status.phpVersion || '—'}</div>
         ${provisioningSteps(status.steps || [])}
-        ${retryable.length ? h`<form method="post" action="/user/domains/${d.id}/retry" class="oa-form" style="margin-top:14px">
+        ${retryable.length ? h`<form method="post" action="/user/domains/${d.id}/retry" class="oa-form u-s52">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <p class="field-label">Ponów tylko nieudane kroki</p>
           <div class="radio-row">${retryable.map((step) => h`<label class="check-field"><input type="checkbox" name="steps[]" value="${step.key}" checked> <span>${step.label || step.key}</span></label>`)}</div>
@@ -388,7 +388,7 @@ export function registerDomainsPost(router) {
           ['URL', h`<code>${monitoring.url}</code>`],
           ['Ostatni test', monitoring.lastCheck ? `${monitoring.lastCheck.ok ? badge(`HTTP ${monitoring.lastCheck.status}`, 'ok') : badge('błąd', 'danger')} ${formatDate(monitoring.lastCheck.at, { time: true })} ${monitoring.lastCheck.error || ''}` : 'jeszcze nie uruchomiony'],
         ])}
-        <form method="post" action="/user/domains/${d.id}/monitor" style="margin-top:10px"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <form class="u-s55" method="post" action="/user/domains/${d.id}/monitor"><input type="hidden" name="_csrf" value="${ctx.csrf}">
           <button class="btn btn-secondary btn-sm" type="submit">${icon('refresh', { size: 14 })} Sprawdź teraz</button>
           <a class="btn btn-ghost btn-sm" href="/user/backups">Profil backupu w Backup Center</a>
         </form>`, { sub: 'Realny test HTTP; profil monitoringu jest zapisany dla tej domeny.' }) : ''}`;
@@ -618,11 +618,11 @@ export function registerDomainsPost(router) {
       const body = h`${card('Import BIND — podgląd diffu', h`
         ${alert('Nic nie zapisano. Sprawdź diff i zatwierdź import.', 'info')}
         ${kvList([['Dodane', String(result.diff.counts.added)], ['Usunięte', String(result.diff.counts.removed)], ['Zmienione', String(result.diff.counts.changed)]])}
-        <div class="grid grid-2" style="margin-top:12px">
+        <div class="grid grid-2 u-s27">
           <div><h3 class="form-section">Dodane</h3>${result.diff.added.length ? h`<ul class="doc-list">${result.diff.added.map((r) => h`<li><strong>+ ${r.type} ${r.name}</strong> → <code>${r.value}</code></li>`)}</ul>` : '<p class="small muted">Brak.</p>'}</div>
           <div><h3 class="form-section">Usunięte</h3>${result.diff.removed.length ? h`<ul class="doc-list">${result.diff.removed.map((r) => h`<li><strong>− ${r.type} ${r.name}</strong> → <code>${r.value}</code></li>`)}</ul>` : '<p class="small muted">Brak.</p>'}</div>
         </div>
-        <form method="post" action="/user/dns/import" class="oa-form" style="margin-top:12px"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <form method="post" action="/user/dns/import" class="oa-form u-s27"><input type="hidden" name="_csrf" value="${ctx.csrf}">
           <input type="hidden" name="domain" value="${d.name}"><input type="hidden" name="dry_run" value="0">
           <div class="field field-full"><label class="field-label" for="dns-import-confirm">Strefa BIND do importu</label><textarea id="dns-import-confirm" name="text" rows="8">${text}</textarea></div>
           <div class="form-actions"><button class="btn btn-primary" type="submit">Zatwierdź import</button><a class="btn btn-ghost" href="/user/dns?domain=${encodeURIComponent(d.name)}">Anuluj</a></div>
@@ -734,7 +734,7 @@ export function register(router) {
         ],
         footer: d ? h`<form method="post" action="/user/subdomains/create" class="inline-form">
           <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}">
-          <input type="text" name="name" placeholder="blog" required style="max-width:180px">
+          <input class="u-s44" type="text" name="name" placeholder="blog" required>
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add subdomain</button>
         </form>` : '',
       })}
@@ -770,7 +770,7 @@ export function register(router) {
       ${!domains.length ? alert('Add a domain first to manage its DNS zone.', 'warn') : ''}
       ${d ? domainSelect(domains, d.name, { action: '/user/dns' }) : ''}
       ${d ? h`
-        <div class="row" style="justify-content:flex-end;margin-bottom:8px">
+        <div class="row u-s56">
           <form method="post" action="/user/dns/expert"><input type="hidden" name="_csrf" value="${ctx.csrf}">
             <input type="hidden" name="enabled" value="${expert ? '0' : '1'}">
             <button class="btn btn-ghost btn-sm" type="submit">${expert ? 'Wyłącz tryb ekspercki' : 'Tryb ekspercki'}</button></form>
@@ -783,7 +783,7 @@ export function register(router) {
           <tbody>${records.map((r) => h`<tr>
             <td class="cell-mono">${r.name}</td>
             <td>${badge(r.type, 'brand')}</td>
-            <td class="cell-mono truncate" style="max-width:380px">${r.value}</td>
+            <td class="cell-mono truncate u-s57">${r.value}</td>
             <td>${r.priority ?? '—'}</td>
             <td>${r.ttl}</td>
             <td class="col-actions"><div class="row-actions">
@@ -796,7 +796,7 @@ export function register(router) {
         </table></div>`, { padded: false, actions: [h`<form method="post" action="/user/dns/rebuild" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}"><button class="btn btn-secondary btn-sm" type="submit">Rebuild zone</button></form>`] }) : ''}
 
       ${d ? card('Szablon DNS i podgląd diffu', h`
-        <form method="get" action="/user/dns" class="row" style="align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <form method="get" action="/user/dns" class="row u-s58">
           <input type="hidden" name="domain" value="${d.name}">
           <input type="hidden" name="preview" value="1">
           <div class="field"><label class="field-label" for="dns-template-select">Szablon</label>
@@ -815,7 +815,7 @@ export function register(router) {
               ['Bez zmian', String(preview.diff.counts.unchanged)],
               ['Źródło', preview.template ? `szablon ${preview.template.name}` : (preview.source === 'builtin' ? 'wbudowane rekordy automatyczne' : preview.source)],
             ])}
-            <div class="grid grid-2" style="margin-top:12px">
+            <div class="grid grid-2 u-s27">
               <div><h3 class="form-section">Dodane / zmienione</h3>
                 ${(preview.diff.added.length || preview.diff.changed.length) ? h`<ul class="doc-list">${preview.diff.added.map((r) => h`<li><strong>+ ${r.type} ${r.name}</strong> → <code>${r.value}</code></li>`)}${preview.diff.changed.map((entry) => h`<li><strong>~ ${entry.after.type} ${entry.after.name}</strong> <code>${entry.before.value}</code> → <code>${entry.after.value}</code></li>`)}</ul>` : '<p class="small muted">Brak nowych rekordów.</p>'}
               </div>
@@ -823,7 +823,7 @@ export function register(router) {
                 ${preview.diff.removed.length ? h`<ul class="doc-list">${preview.diff.removed.map((r) => h`<li><strong>− ${r.type} ${r.name}</strong> → <code>${r.value}</code></li>`)}</ul>` : '<p class="small muted">Brak usuwanych rekordów.</p>'}
               </div>
             </div>
-            <form method="post" action="/user/dns/template/apply" class="oa-form" style="margin-top:12px">
+            <form method="post" action="/user/dns/template/apply" class="oa-form u-s27">
               <input type="hidden" name="_csrf" value="${ctx.csrf}">
               <input type="hidden" name="domain" value="${d.name}">
               <input type="hidden" name="template" value="${selectedTemplate}">
@@ -837,17 +837,17 @@ export function register(router) {
               <p class="small muted">Zastosowanie tworzy punkt przywracania; rollback przywróci poprzednie rekordy strefy.</p>
               <div class="form-actions"><button class="btn btn-primary" type="submit">Zastosuj szablon</button></div>
             </form>` : ''}
-          ${snapshot ? h`<form method="post" action="/user/dns/rollback" style="margin-top:10px"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+          ${snapshot ? h`<form class="u-s55" method="post" action="/user/dns/rollback"><input type="hidden" name="_csrf" value="${ctx.csrf}">
             <input type="hidden" name="domain" value="${d.name}"><input type="hidden" name="snapshot" value="${snapshot.id}">
             <button class="btn btn-ghost btn-sm" type="submit">Cofnij ostatnią zmianę strefy (${snapshot.count} rekordów)</button></form>` : ''}
         ` : '<p class="small muted">Wybierz szablon i pokaż diff przed zapisem — walidacja składni i konfliktów odbywa się przed mutacją.</p>'}`) : ''}
 
       ${d ? card('Import / eksport BIND', h`
-        <div class="row" style="flex-wrap:wrap;gap:8px">
+        <div class="row u-s59">
           <a class="btn btn-secondary btn-sm" href="/user/dns/export?domain=${encodeURIComponent(d.name)}">Eksportuj strefę BIND</a>
           <span class="small muted">Eksport obejmuje tylko tę domenę (scope).</span>
         </div>
-        <form method="post" action="/user/dns/import" class="oa-form" style="margin-top:12px">
+        <form method="post" action="/user/dns/import" class="oa-form u-s27">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <input type="hidden" name="domain" value="${d.name}">
           <div class="field field-full"><label class="field-label" for="dns-import-text">Import BIND (SOA/NS pomijane, walidacja przed zapisem)</label>
@@ -905,10 +905,10 @@ export function register(router) {
           { label: 'Edytuj', href: (r) => `/user/pointers?edit=${r.id}`, icon: 'edit' },
           { label: 'Remove', form: (r) => `/user/pointers/${r.id}/delete`, confirm: 'Remove this pointer?', icon: 'trash', danger: true },
         ],
-        footer: h`<form method="post" action="/user/pointers/create" class="inline-form" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        footer: h`<form method="post" action="/user/pointers/create" class="inline-form u-s60">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <select name="domain" style="width:220px">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
-          <input type="text" name="alias" placeholder="alias-domain.com" style="max-width:240px">
+          <select class="u-s61" name="domain">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
+          <input class="u-s62" type="text" name="alias" placeholder="alias-domain.com">
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add pointer</button>
         </form>`,
       })}
@@ -939,12 +939,12 @@ export function register(router) {
           { label: 'Edytuj', href: (r) => `/user/redirects?edit=${r.id}`, icon: 'edit' },
           { label: 'Delete', form: (r) => `/user/redirects/${r.id}/delete`, confirm: 'Delete redirect?', icon: 'trash', danger: true },
         ],
-        footer: h`<form method="post" action="/user/redirects/create" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        footer: h`<form class="u-s60" method="post" action="/user/redirects/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <select name="domain" style="width:200px">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
-          <input name="from_path" placeholder="/old-page" style="max-width:150px">
-          <input name="to_url" placeholder="https://example.com/new-page" style="max-width:280px">
-          <select name="type" style="width:90px"><option>301</option><option>302</option></select>
+          <select class="u-s40" name="domain">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
+          <input class="u-s63" name="from_path" placeholder="/old-page">
+          <input class="u-s64" name="to_url" placeholder="https://example.com/new-page">
+          <select class="u-s65" name="type"><option>301</option><option>302</option></select>
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add redirect</button>
         </form>`,
       })}

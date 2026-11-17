@@ -62,8 +62,8 @@ export function register(router) {
       ], tab, { base: A })}
       <div class="toolbar"><form method="get" action="${A}" class="row">
         <input type="hidden" name="tab" value="${tab}">
-        <label class="field-label" for="sslDomain" style="margin:0">Domena</label>
-        <select id="sslDomain" name="domain" data-domain-select style="width:280px">
+        <label class="field-label u-s11" for="sslDomain">Domena</label>
+        <select class="u-s15" id="sslDomain" name="domain" data-domain-select>
           <option value="">Wszystkie domeny</option>
           ${domains.map((d) => h`<option value="${d.name}" ${domainFilter === d.name ? 'selected' : ''}>${d.name}</option>`)}
         </select>
@@ -78,7 +78,7 @@ export function register(router) {
           ['Alerty po wyczerpaniu prób', String(summary.alerts)],
         ])}
           <form method="post" action="${A}/keytype" class="row mt-18"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-            <label class="field-label" for="ssl-key-type" style="margin:0">Typ klucza</label>
+            <label class="field-label u-s11" for="ssl-key-type">Typ klucza</label>
             <select id="ssl-key-type" name="type">${['rsa2048', 'rsa4096', 'ecdsa-p256'].map((t) => h`<option ${t === st.keyType ? 'selected' : ''}>${t}</option>`)}</select>
             <button class="btn btn-secondary" type="submit">Zmień typ klucza</button></form>
           <form method="post" action="${A}/renew" class="mt-12"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="btn btn-secondary" type="submit">Odnów wygasające</button></form>`)}

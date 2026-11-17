@@ -7,7 +7,7 @@ import { userHome } from '../paths.mjs';
 import { limitsFor } from '../auth.mjs';
 import { html as h, formatBytes, safeJson } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
-import { card, statCard, btn, badge, emptyState, alert, sparkline } from '../ui/components.mjs';
+import { card, statCard, btn, badge, emptyState, alert, sparkline, pctClass } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
 import { appIcon, appName } from '../ui/appicons.mjs';
 import { greeting } from '../ui/pages/widgets.mjs';
@@ -105,10 +105,10 @@ function resourceMeter({ key, label, used, limit, format = String, href = '', la
           : [labels.within || 'W normie', 'ok'];
   return h`<div class="quota-row" data-resource-meter="${key}" data-resource-state="${state}">
     <div class="spread">
-      <span class="small" style="font-weight:600">${href ? h`<a class="link" href="${href}">${label}</a>` : label}</span>
+      <span class="small u-s47">${href ? h`<a class="link" href="${href}">${label}</a>` : label}</span>
       ${badge(state, tone)}
     </div>
-    ${limited ? h`<div class="progress ${tone === 'warn' ? 'warn' : tone === 'danger' ? 'danger' : ''}" role="progressbar" aria-label="${label}" aria-valuenow="${Math.min(100, rawPercent)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${barPercent}%"></span></div>` : ''}
+    ${limited ? h`<div class="progress ${tone === 'warn' ? 'warn' : tone === 'danger' ? 'danger' : ''}" role="progressbar" aria-label="${label}" aria-valuenow="${Math.min(100, rawPercent)}" aria-valuemin="0" aria-valuemax="100"><span class="${pctClass(barPercent)}"></span></div>` : ''}
     <div class="progress-text"><span>${format(used)}${limited ? ' / ' + format(limit) : ''}</span><span>${limited ? rawPercent + '%' : (labels.unlimited || 'bez limitu')}</span></div>
   </div>`;
 }
@@ -324,7 +324,7 @@ export function userDashboard(ctx) {
   const body = h`
     <div class="hero">
       <div>
-        <div class="row" style="gap:8px;margin-bottom:8px">
+        <div class="row u-s48">
           ${badge(L('Package: ', 'Pakiet: ') + (u.package || 'default'), 'brand')}
           ${badge(u.suspended ? L('Suspended', 'Zawieszona') : L('Active', 'Aktywna'), u.suspended ? 'danger' : 'ok', { dot: true })}
           ${badge(L('Free license', 'Darmowa licencja'), 'ok')}
@@ -341,7 +341,7 @@ export function userDashboard(ctx) {
     </div>
 
     <div class="spread mb-18" id="user-live-status" data-auto-refresh="60" data-auto-refresh-unit="seconds" data-live-url="/user" data-live-scope="dashboard">
-      <div class="row" style="gap:8px">
+      <div class="row u-s16">
         ${badge(L('Online', 'Online'), 'ok', { dot: true })}
         <span class="small muted">${L('Updated', 'Zaktualizowano')} <time datetime="${now}">${dateTime(now, locale)}</time></span>
       </div>
@@ -362,15 +362,15 @@ export function userDashboard(ctx) {
         <strong>${stepsDone} z ${steps.length} ${L('done', 'gotowe')}</strong>
         <span class="small muted">${nextStep === -1 ? L('Everything is ready', 'Wszystko gotowe — konto pracuje') : `${L('Next', 'Następny krok')}: ${steps[nextStep].label}`}</span>
       </div>
-      <div class="progress mb-18" role="progressbar" aria-label="${L('Setup progress', 'Postęp konfiguracji')}" aria-valuenow="${stepsDone}" aria-valuemin="0" aria-valuemax="${steps.length}"><span style="width:${Math.round((stepsDone / steps.length) * 100)}%"></span></div>
-      <div class="stack" style="gap:10px">
+      <div class="progress mb-18" role="progressbar" aria-label="${L('Setup progress', 'Postęp konfiguracji')}" aria-valuenow="${stepsDone}" aria-valuemin="0" aria-valuemax="${steps.length}"><span class="${pctClass((stepsDone / steps.length) * 100)}"></span></div>
+      <div class="stack u-s49">
         ${steps.map((step, index) => step.done
           ? h`<div class="spread" data-onboarding-step="${index}">
-              <span class="row" style="gap:8px">${badge(L('done', 'gotowe'), 'ok')}<span>${step.label}</span></span>
+              <span class="row u-s16">${badge(L('done', 'gotowe'), 'ok')}<span>${step.label}</span></span>
               ${icon('check', { size: 16, cls: 'text-ok' })}
             </div>`
-          : h`<a class="spread" href="${step.href}" data-onboarding-step="${index}" style="color:inherit">
-              <span class="row" style="gap:8px">${badge(index === nextStep ? L('next', 'następny krok') : L('to do', 'do zrobienia'), index === nextStep ? 'brand' : 'muted')}<span>${step.label}</span></span>
+          : h`<a class="spread u-s50" href="${step.href}" data-onboarding-step="${index}">
+              <span class="row u-s16">${badge(index === nextStep ? L('next', 'następny krok') : L('to do', 'do zrobienia'), index === nextStep ? 'brand' : 'muted')}<span>${step.label}</span></span>
               <span class="btn btn-ghost btn-sm">${L('Open', 'Otwórz')} ${icon('arrowRight', { size: 14 })}</span>
             </a>`)}
       </div>`, { sub: L('Domain → site → SSL → mailbox → backup → 2FA', 'Domena → strona → SSL → poczta → kopia → 2FA') }) : ''}
@@ -400,7 +400,7 @@ export function userDashboard(ctx) {
     <div class="grid grid-2-1">
       ${usageCard(series, L)}
       ${card(L('Account resources', 'Zasoby konta'), h`
-        <div class="stack" style="gap:14px" data-resource-meters>
+        <div class="stack u-s51" data-resource-meters>
           ${resourceMeter({ key: 'disk', label: L('Disk', 'Dysk'), used: storage.used, limit: limits.disk_mb, format: formatBytes, href: '/user/statistics', labels: meterLabels })}
           ${resourceMeter({ key: 'bandwidth', label: L('Bandwidth (30d)', 'Transfer (30 dni)'), used: bw30, limit: limits.bandwidth_mb, format: formatBytes, href: '/user/statistics', labels: meterLabels })}
           ${resourceMeter({ key: 'email', label: L('Email accounts', 'Skrzynki e-mail'), used: emailCount, limit: limits.emails, href: '/user/email', labels: meterLabels })}
@@ -418,7 +418,7 @@ export function userDashboard(ctx) {
       ${card(L('Your domains', 'Twoje domeny'), h`${domains.length ? h`<table class="data-table table-compact">
         <thead><tr><th>${L('Domain', 'Domena')}</th><th>SSL</th><th>${L('Disk', 'Dysk')}</th><th></th></tr></thead>
         <tbody>${domains.slice(0, 6).map((d) => h`<tr>
-          <td><a class="cell-strong" href="/user/dns?domain=${encodeURIComponent(d.name)}">${d.name}</a><span class="cell-sub truncate" title="${d.docroot || ''}" style="max-width:300px">${d.docroot || ''}</span></td>
+          <td><a class="cell-strong" href="/user/dns?domain=${encodeURIComponent(d.name)}">${d.name}</a><span class="cell-sub truncate u-s33" title="${d.docroot || ''}">${d.docroot || ''}</span></td>
           <td>${d.ssl ? badge(L('Enabled', 'Włączony'), 'ok') : badge(L('Off', 'Wyłączony'), 'muted')}</td>
           <td>${formatBytes(d.disk_mb)}</td>
           <td class="col-actions"><a class="link small" href="/user/files?path=${encodeURIComponent(d.docroot || '/')}">${L('Files', 'Pliki')}</a></td>
@@ -428,7 +428,7 @@ export function userDashboard(ctx) {
       ${card(L('Top mailboxes', 'Największe skrzynki'), h`${emails.length ? h`<div class="timeline">${emails.map((m) => h`<div class="timeline-item">
           <div class="timeline-dot">${icon('mail', { size: 15 })}</div>
           <div class="timeline-body"><div class="spread"><strong>${m.local_part}@${m.domain}</strong><span class="small muted">${formatBytes(m.used_mb)} / ${formatBytes(m.quota_mb)}</span></div>
-            <div class="progress" style="margin-top:6px"><span style="width:${Math.min(100, Math.round((m.used_mb / Math.max(m.quota_mb, 1)) * 100))}%"></span></div>
+            <div class="progress u-s24"><span class="${pctClass((m.used_mb / Math.max(m.quota_mb, 1)) * 100)}"></span></div>
           </div>
         </div>`)}</div>` : emptyState(L('No mailboxes yet', 'Brak skrzynek'), { icon: 'mail', action: btn(L('Create mailbox', 'Utwórz skrzynkę'), { href: '/user/email/new', icon: 'plus' }) })}`, { sub: L('Storage used by mailbox', 'Miejsce zajęte przez skrzynki'), actions: [h`<a class="link small" href="/user/email/new">${L('New mailbox', 'Nowa skrzynka')}</a>`, h`<a class="link small" href="/user/email">${L('Manage', 'Zarządzaj')}</a>`] })}
     </div>

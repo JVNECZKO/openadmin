@@ -973,9 +973,7 @@
       const area = document.createElement('textarea');
       area.value = text;
       area.setAttribute('readonly', '');
-      area.style.position = 'fixed';
-      area.style.top = '-1000px';
-      area.style.opacity = '0';
+      area.className = 'visually-hidden-fixed';
       document.body.appendChild(area);
       area.select();
       area.setSelectionRange(0, area.value.length);
@@ -1327,7 +1325,10 @@
           if (!event.lengthComputable) return;
           const pct = Math.min(100, Math.round(((offset + event.loaded) / Math.max(1, file.size)) * 100));
           const bar = dropzone.querySelector('[data-upload-progress]');
-          if (bar) bar.style.width = `${pct}%`;
+          if (bar) {
+            for (const name of [...bar.classList]) if (/^pct-\d+$/.test(name)) bar.classList.remove(name);
+            bar.classList.add(`pct-${pct}`);
+          }
         };
         xhr.onload = () => {
           const json = xhr.response || {};

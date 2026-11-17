@@ -79,7 +79,7 @@ function filterForm(B, objectType, query) {
     <input type="hidden" name="type" value="${objectType}">
     <div class="row">
       <label class="field-label" for="bulk-q">Search</label>
-      <input id="bulk-q" name="q" type="search" value="${query.q || ''}" placeholder="${objectType === 'domains' ? 'domain or client' : 'username, email or package'}" style="width:min(320px,60vw)">
+      <input class="u-s45" id="bulk-q" name="q" type="search" value="${query.q || ''}" placeholder="${objectType === 'domains' ? 'domain or client' : 'username, email or package'}">
       <label class="field-label" for="bulk-state">Status</label>
       <select id="bulk-state" name="state">
         <option value="" ${state === '' ? raw('selected') : ''}>All</option>
@@ -254,7 +254,7 @@ function previewPage(ctx, B, result) {
     {
       label: 'Reason / effects',
       render: (entry) => (entry.eligible
-        ? h`<ul class="small" style="margin:0;padding-left:18px">${(entry.effects || []).map((effect) => h`<li>${effect}</li>`)}</ul>`
+        ? h`<ul class="small u-s46">${(entry.effects || []).map((effect) => h`<li>${effect}</li>`)}</ul>`
         : h`<span class="small">${entry.reason || entry.code || 'Blocked'}</span>`),
     },
     {

@@ -160,10 +160,10 @@ export function register(router) {
         { label: 'Edytuj', href: (r) => `/user/${kind}?edit=${r.id}`, icon: 'edit' },
         { label: 'Delete', form: (r) => `/user/${kind}/${r.id}/delete`, icon: 'trash', danger: true },
       ],
-      footer: h`<form method="post" action="/user/${kind}/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      footer: h`<form class="u-s31" method="post" action="/user/${kind}/create">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <input name="key" placeholder="${placeholderKey}" style="max-width:220px" required>
-        <input name="value" placeholder="${placeholderValue}" style="flex:1;min-width:260px" required>
+        <input class="u-s26" name="key" placeholder="${placeholderKey}" required>
+        <input class="u-s43" name="value" placeholder="${placeholderValue}" required>
         <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add</button>
       </form>`,
     })}${editing ? card(`Edytuj wpis · ${editing.key}`, h`<form method="post" action="/user/${kind}/${editing.id}/update" class="oa-form">
@@ -229,12 +229,12 @@ export function register(router) {
         { label: 'Edytuj', href: (r) => `/user/protected-directories?edit=${r.id}`, icon: 'edit' },
         { label: 'Remove', form: (r) => `/user/protected-directories/${r.id}/delete`, confirm: 'Remove protection?', icon: 'trash', danger: true },
       ],
-      footer: h`<form method="post" action="/user/protected-directories/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      footer: h`<form class="u-s31" method="post" action="/user/protected-directories/create">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <select name="domain" style="width:200px">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
-        <input name="path" placeholder="/members" style="max-width:160px" required>
-        <input name="username" placeholder="user" style="max-width:140px" required>
-        <input name="password" type="password" placeholder="password" style="max-width:160px" required>
+        <select class="u-s40" name="domain">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
+        <input class="u-s34" name="path" placeholder="/members" required>
+        <input class="u-s39" name="username" placeholder="user" required>
+        <input class="u-s34" name="password" type="password" placeholder="password" required>
         <button class="btn btn-primary btn-sm" type="submit">${icon('lock', { size: 14 })} Protect</button>
       </form>`,
     })}${editing ? card(`Edytuj ochronę · ${editing.domain}${editing.path}`, h`<form method="post" action="/user/protected-directories/${editing.id}/update" class="oa-form">
@@ -449,12 +449,12 @@ export function register(router) {
         ],
         rows: repos, empty: 'No repositories yet.',
         actions: [{ label: 'Delete', form: (r) => `/user/git/${r.id}/delete`, confirm: 'Delete repository?', icon: 'trash', danger: true }],
-        footer: h`<form method="post" action="/user/git/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        footer: h`<form class="u-s31" method="post" action="/user/git/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <input name="name" placeholder="my-app" style="max-width:180px" required>
-          <select name="domain" style="width:200px">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
-          <input name="path" placeholder="/" style="max-width:120px">
-          <input name="branch" placeholder="main" style="max-width:120px">
+          <input class="u-s44" name="name" placeholder="my-app" required>
+          <select class="u-s40" name="domain">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
+          <input class="u-s29" name="path" placeholder="/">
+          <input class="u-s29" name="branch" placeholder="main">
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Initialise repository</button>
         </form>`,
       })}`;
@@ -490,7 +490,7 @@ export function register(router) {
       <div class="terminal" id="term">${history ? h`<div class="tline">${history.replace(/\n/g, '<br>')}</div>` : h`<div class="tline"><span class="tprompt">${ctx.user.username}@${setting('server_name', 'server')}</span>:~$ help</div><div class="tline">Available: ls, pwd, df, du, uptime, whoami, date, cat &lt;file&gt;, help</div>`}</div>
       <form class="term-form" method="post" action="/user/terminal">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <span class="mono" style="align-self:center;color:var(--ok)">$</span>
+        <span class="mono u-s2">$</span>
         <input name="command" placeholder="ls -la" autofocus autocomplete="off">
         <button class="btn btn-primary" type="submit">Run</button>
       </form>

@@ -79,7 +79,7 @@ function buildCard(info) {
           function fallback(v) {
             var area = document.createElement('textarea');
             area.value = v; area.setAttribute('readonly', 'readonly');
-            area.style.position = 'absolute'; area.style.left = '-9999px';
+            area.className = 'offscreen-textarea';
             document.body.appendChild(area); area.select();
             try { document.execCommand('copy'); done(); } catch (e) { if (status) status.textContent = 'Kopiowanie niedostępne'; }
             document.body.removeChild(area);
@@ -149,7 +149,7 @@ function jobDetail(ctx, job) {
       </div>` : ''}
     `)}
     ${card('Etapy', h`<div class="stack">${job.stages.map((stage) => h`
-      <div class="service-row"><div style="flex:1"><strong>${stage.label}</strong><div class="small muted">${stage.detail || ''}</div></div>
+      <div class="service-row"><div class="u-s14"><strong>${stage.label}</strong><div class="small muted">${stage.detail || ''}</div></div>
       ${badge(stage.status, stage.status === 'complete' ? 'ok' : stage.status === 'failed' ? 'danger' : stage.status === 'running' ? 'brand' : 'muted')}
       </div>`)}</div><div class="mt-18">${progress(job.stagesDone, job.stagesTotal || 1, { label: `${job.progress}%` })}</div>`)}
     ${card('Log', job.events.length ? h`<pre class="code-block small">${job.events.map((event) => `[${event.created_at}] ${event.level}: ${event.message}`).join('\n')}</pre>` : '<p class="small muted">Brak wpisów.</p>')}

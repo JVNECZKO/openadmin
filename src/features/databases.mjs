@@ -71,7 +71,7 @@ export function register(router) {
       ${pma.installed && !pma.sso ? alert(h`${pma.reason} ${ctx.user.level === 'admin' ? h`<a class="link" href="/admin/web-apps">Przejdź do Admin → Web Apps</a>` : 'Poproś administratora o włączenie jednokrotnego logowania.'}`, 'info') : ''}
       ${!pma.installed ? alert(pma.reason, 'info') : ''}
       ${listCard({
-        title: 'Bazy danych', sub: `${filtered.length} z ${lim.databases || '∞'} · ${formatBytes(total)} · ${mst.connected ? 'serwer live' : 'tylko metadane'}`, footer: h`<form method="get" action="/user/databases" class="row"><input name="q" value="${q}" placeholder="Szukaj bazy lub użytkownika" style="flex:1;max-width:320px"><button class="btn btn-secondary btn-sm" type="submit">Filtruj</button></form>`,
+        title: 'Bazy danych', sub: `${filtered.length} z ${lim.databases || '∞'} · ${formatBytes(total)} · ${mst.connected ? 'serwer live' : 'tylko metadane'}`, footer: h`<form method="get" action="/user/databases" class="row"><input class="u-s17" name="q" value="${q}" placeholder="Szukaj bazy lub użytkownika"><button class="btn btn-secondary btn-sm" type="submit">Filtruj</button></form>`,
         columns: [
           { label: 'Baza danych', render: (r) => h`<span class="cell-strong">${r.db_name}</span><span class="cell-sub">user: ${r.db_user}</span>` },
           { label: 'Stan', render: (r) => (mst.connected ? (r.live ? badge('na serwerze', 'ok') : badge('brak', 'danger')) : badge('zapisana', 'muted')) },
@@ -119,7 +119,7 @@ SHOW DATABASES;</pre>
           <div class="input-group"><span class="input-prefix">${ctx.user.username}_</span><input name="db_user" pattern="[a-zA-Z0-9_]{1,32}" placeholder="app"></div></div>
         <div class="field"><label class="field-label">Hasło</label>
           <div class="field-control"><input id="dbpass" name="password" type="password" minlength="8" placeholder="Pozostaw puste, aby wygenerować" autocomplete="new-password">
-            <button class="btn btn-secondary btn-sm" type="button" data-genpass="#dbpass" style="margin-left:8px">Wygeneruj</button></div>
+            <button class="btn btn-secondary btn-sm u-s18" type="button" data-genpass="#dbpass">Wygeneruj</button></div>
           <p class="field-help">Jeśli pozostawisz puste, panel wygeneruje silne hasło i pokaże je tylko raz.</p></div>
         <div class="field"><label class="field-label">Kodowanie znaków</label><select name="charset"><option>utf8mb4</option><option>utf8</option><option>latin1</option></select></div>
       </div>

@@ -56,11 +56,9 @@ export function appIcon(key, { size = 44, cls = '' } = {}) {
   const cleanKey = safeKey(key);
   const meta = META[cleanKey];
   const px = Math.max(24, Math.min(96, Math.round(Number(size) || 44)));
-  // Keep the squircle proportional at every size (40–52 px in catalogue
-  // tiles, 46–52 px on the dashboard and result screens).
-  const radius = Math.round(px * 0.26);
+  const sizeClass = [34, 40, 44, 46, 52].includes(px) ? `app-logo-${px}` : 'app-logo-44';
   const classes = safeClassNames(cls);
-  return raw(`<span class="app-logo${classes ? ' ' + classes : ''}" style="--app-bg:${meta.bg};width:${px}px;height:${px}px;border-radius:${radius}px" data-app-icon="${cleanKey}" aria-hidden="true">
+  return raw(`<span class="app-logo ${sizeClass}${classes ? ' ' + classes : ''}" data-app-icon="${cleanKey}" aria-hidden="true">
     <svg width="${px}" height="${px}" viewBox="0 0 40 40" focusable="false" aria-hidden="true"><rect width="40" height="40" rx="12" fill="${meta.bg}"/><rect x="0.7" y="0.7" width="38.6" height="38.6" rx="11.3" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="1.4"/>${glyph(cleanKey, meta.fg)}</svg>
   </span>`);
 }

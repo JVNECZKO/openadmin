@@ -107,7 +107,7 @@ export function packageForm(ctx, { path, type, existing = null }) {
         <div class="field"><label class="field-label">Type</label><input value="${type === 'reseller' ? 'Reseller package' : 'User package'}" disabled></div>
       </div>
       <h3 class="form-section">Resource limits</h3>
-      <p class="small muted" style="margin:-8px 0 14px">Set 0 for unlimited.</p>
+      <p class="small muted u-s88">Set 0 for unlimited.</p>
       <div class="form-grid form-grid-3">
         ${LIMIT_FIELDS.filter(([k]) => type === 'reseller' || !['users', 'ips', 'packages'].includes(k)).map(([k, label]) => h`<div class="field">
           <label class="field-label">${label}</label><input type="number" min="0" name="lim_${k}" value="${limits[k] ?? 0}">
@@ -231,7 +231,7 @@ export function userForm(ctx, { path, existing = null, packages = [], resellers 
           <input id="oa-edit-username" name="username" value="${existing.username}" disabled></div>
         <div class="field"><label class="field-label" for="oa-edit-password">Nowe hasło (puste = bez zmiany)</label>
           <div class="field-control"><input id="oa-edit-password" name="password" type="password" minlength="10">
-            <button class="btn btn-secondary btn-sm" type="button" data-genpass="#oa-edit-password" style="margin-left:8px">Generate</button></div>
+            <button class="btn btn-secondary btn-sm u-s18" type="button" data-genpass="#oa-edit-password">Generate</button></div>
           <p class="field-help">Polityka panelu: długość i klasy znaków są sprawdzane po stronie serwera.</p></div>
         <div class="field"><label class="field-label" for="oa-edit-email">Email</label><input id="oa-edit-email" name="email" type="email" value="${existing.email || ''}" required></div>
         <div class="field"><label class="field-label" for="oa-edit-package">Package</label><select id="oa-edit-package" name="package">
@@ -436,7 +436,7 @@ export function userDetailPage(ctx, { path, target }) {
           <div class="field"><label class="field-label">Primary domain</label><input name="domain" value="${target.domain || ''}"></div>
           <div class="field"><label class="field-label">IP</label><input name="ip" value="${target.ip || ''}"></div>
           <div class="field"><label class="field-label">New password</label><div class="field-control"><input id="upass" name="password" type="password" placeholder="leave blank to keep">
-            <button class="btn btn-secondary btn-sm" type="button" data-genpass="#upass" style="margin-left:8px">Generate</button></div></div>
+            <button class="btn btn-secondary btn-sm u-s18" type="button" data-genpass="#upass">Generate</button></div></div>
           <div class="field"><label class="field-label">Notes</label><input name="notes" value="${target.notes || ''}"></div>
           <div class="field field-full"><label class="check-field"><input type="checkbox" name="shell_enabled" value="1" ${target.shell_enabled ? 'checked' : ''}> <span>Shell access (SSH/terminal)</span></label></div>
           <div class="field field-full"><label class="check-field"><input type="checkbox" name="suspend" value="1" ${target.suspended ? 'checked' : ''}> <span>Suspend account</span></label></div>

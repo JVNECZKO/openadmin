@@ -8,7 +8,7 @@ export function qrSvg(text, { size = 220 } = {}) {
   });
   if (r.status !== 0 || !r.stdout || !r.stdout.includes('<svg')) return null;
   return r.stdout.replace(/<svg([^>]*)width="[^"]*"([^>]*)height="[^"]*"/, `<svg$1width="${size}"$2height="${size}"`)
-    .replace('<svg', '<svg style="background:#fff;border-radius:8px;padding:6px"');
+    .replace('<svg', '<svg class="qr-svg"');
 }
 
 export function qrAvailable() {

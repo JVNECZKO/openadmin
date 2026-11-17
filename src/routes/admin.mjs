@@ -136,10 +136,10 @@ function adminDashboard(ctx) {
     <div class="grid grid-2">
       ${card('Automatyzacja', h`
         <div class="spread mb-12"><div class="row">${badge(automation.enabled ? 'WŁĄCZONA' : 'WSTRZYMANA', automation.enabled ? 'ok' : 'warn', { dot: true })}${criticalJobs.length ? badge(`${criticalJobs.length} krytycznych`, 'danger') : dueJobs.length ? badge(`${dueJobs.length} do uruchomienia`, 'warn') : badge('wszystko na czasie', 'ok')}</div><span class="small muted">${automation.totals.enabled}/${automation.totals.jobs} zadań</span></div>
-        ${criticalJobs.length || failedJobs.length ? h`<div class="stack" style="gap:8px">${[...criticalJobs, ...failedJobs.filter((job) => !criticalJobs.includes(job))].slice(0, 3).map((j) => h`<div class="spread small"><span>${j.label}</span><span>${badge(j.observation?.observedStatus === 'critical' ? 'krytyczny' : (j.last_status || 'error'), j.observation?.observedStatus === 'critical' ? 'danger' : 'warn')}</span></div>`)}</div>` : h`<p class="small muted">Backupy, SSL, health check, kolejka poczty i czyszczenie działają według harmonogramu.</p>`}
+        ${criticalJobs.length || failedJobs.length ? h`<div class="stack u-s16">${[...criticalJobs, ...failedJobs.filter((job) => !criticalJobs.includes(job))].slice(0, 3).map((j) => h`<div class="spread small"><span>${j.label}</span><span>${badge(j.observation?.observedStatus === 'critical' ? 'krytyczny' : (j.last_status || 'error'), j.observation?.observedStatus === 'critical' ? 'danger' : 'warn')}</span></div>`)}</div>` : h`<p class="small muted">Backupy, SSL, health check, kolejka poczty i czyszczenie działają według harmonogramu.</p>`}
         <div class="row mt-18"><a class="btn btn-secondary btn-sm" href="/admin/automation">Otwórz automatyzację</a></div>
       `, { actions: [h`<a class="link small" href="/admin/automation">Logi</a>`] })}
-      ${card('Silniki stron', h`<div class="stack" style="gap:8px">
+      ${card('Silniki stron', h`<div class="stack u-s16">
         ${engineRows.map((e) => h`<div class="spread"><span>${e.label}${e.active ? h` ${badge('aktywny', 'ok')}` : ''}</span><strong>${e.count}</strong></div>`)}
       </div>`, { sub: 'Nginx / Apache / OpenLiteSpeed / LiteSpeed', actions: [h`<a class="link small" href="/admin/web-server">Zarządzaj serwerem WWW</a>`] })}
     </div>
@@ -174,7 +174,7 @@ function attentionCard(attention) {
   const unavailable = Number(attention?.unavailableSources) || 0;
   return card('Wymaga uwagi', h`
     <div class="spread mb-12">
-      <div class="row" style="gap:6px">
+      <div class="row u-s76">
         ${badge(`Krytyczne: ${counts.P0 || 0}`, counts.P0 ? 'danger' : 'muted', { dot: Boolean(counts.P0) })}
         ${badge(`Ważne: ${counts.P1 || 0}`, counts.P1 ? 'warn' : 'muted', { dot: Boolean(counts.P1) })}
         ${badge(`Zalecenia: ${counts.P2 || 0}`, counts.P2 ? 'brand' : 'muted', { dot: Boolean(counts.P2) })}
@@ -182,11 +182,11 @@ function attentionCard(attention) {
       </div>
       <span class="small muted">${total} aktywnych pozycji${unavailable ? ` · ${unavailable} źródeł niedostępnych` : ''}</span>
     </div>
-    ${top.length ? h`<div class="stack" style="gap:8px">${top.map((item) => h`<div class="service-row attention-row">
+    ${top.length ? h`<div class="stack u-s16">${top.map((item) => h`<div class="service-row attention-row">
       <span class="service-dot ${item.severity === 'P0' ? 'off' : item.severity === 'P1' ? '' : 'on'}"></span>
       <strong><a class="link" href="${item.detailsHref || '/admin/action-center'}">${item.title}</a></strong>
-      <span class="small muted" style="margin-left:8px; min-width:0; overflow-wrap:anywhere">${item.source}</span>
-      <span style="margin-left:auto">${badge(DASHBOARD_PRIORITY[item.severity] || item.severity, dashboardSeverityTone(item.severity))}</span>
+      <span class="small muted u-s78">${item.source}</span>
+      <span class="u-s3">${badge(DASHBOARD_PRIORITY[item.severity] || item.severity, dashboardSeverityTone(item.severity))}</span>
     </div>`)}</div>` : h`<p class="small muted">Brak aktywnych pozycji wymagających uwagi${unavailable ? '; część źródeł jest niedostępna — sprawdź Action Center' : ''}.</p>`}
     <div class="row mt-18"><a class="btn btn-secondary btn-sm" href="/admin/action-center">Otwórz Action Center</a><a class="link small" href="/admin/action-center?severity=P0">Pokaż krytyczne</a></div>
   `, {
@@ -287,7 +287,7 @@ export function registerAdminRoutes(router) {
         <div class="spread"><span class="stat-value">${disk.available ? `${disk.percent}%` : 'Niedostępne'}</span><span class="small muted">${disk.available ? `${formatBytesIEC(disk.usedBytes)} z ${formatBytesIEC(disk.totalBytes)}` : disk.reason}</span></div>
         ${disk.available ? progress(disk.usedBytes, disk.totalBytes, { showText: false }) : ''}
         <p class="small muted">${metricDetail(disk)}</p>
-        <div class="spread" style="margin-top:14px"><span class="stat-value">${formatBytesIEC(domainDiskBytes)}</span><span class="small muted">${domains.length} domen · ${accountCount} kont</span></div>
+        <div class="spread u-s52"><span class="stat-value">${formatBytesIEC(domainDiskBytes)}</span><span class="small muted">${domains.length} domen · ${accountCount} kont</span></div>
         ${progress(domainDiskBytes, Math.max(domainDiskBytes * 1.4, disk.totalBytes || 102400), { showText: false })}
         <p class="small muted">Wartość sumowana z metadanych kont (disk_mb) w bajtach; nie jest to zajętość całego dysku.</p>
       `)}`;
@@ -308,7 +308,7 @@ export function registerAdminRoutes(router) {
       ${card('Service monitor', h`${services.map((s) => h`<div class="service-row attention-row">
       <span class="service-dot ${s.state === 'running' ? 'on' : s.state === 'failed' ? 'off' : ''}"></span>
       <strong>${s.name}</strong><span class="small muted">${serviceMeta(s.name)} · ${s.detail}</span>
-      <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <div class="u-s25">
         ${badge(s.label, serviceTone(s.state), { dot: true })}${s.simulated ? badge('simulated', 'muted') : ''}
         <form method="post" action="/admin/services/${encodeURIComponent(s.name)}/toggle" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
           <button class="btn btn-secondary btn-sm" type="submit">${s.status === 'running' ? 'Stop' : 'Start'}</button></form>
@@ -348,13 +348,13 @@ export function registerAdminRoutes(router) {
       ${result.ok ? '' : alert(result.error, 'error')}
       ${result.simulated ? alert('Showing the host process list from the sandbox provider; kill/action is simulated.', 'info') : ''}
       <form method="get" action="/admin/processes" class="row mb-12">
-        <input name="q" value="${q}" placeholder="Filtruj PID, użytkownika lub komendę" style="flex:1;min-width:220px">
+        <input class="u-s71" name="q" value="${q}" placeholder="Filtruj PID, użytkownika lub komendę">
         <button class="btn btn-secondary" type="submit">Filtruj</button>
         ${q ? h`<a class="btn btn-ghost" href="/admin/processes">Wyczyść</a>` : ''}
       </form>
       <div class="table-wrap"><table class="data-table">
         <thead><tr><th>PID</th><th>User</th><th>CPU %</th><th>MEM %</th><th>Command</th><th></th></tr></thead>
-        <tbody>${rows.map((p) => h`<tr><td class="cell-mono">${p.pid}</td><td>${p.user}</td><td>${p.cpu.toFixed(1)}</td><td>${p.mem.toFixed(1)}</td><td class="cell-mono truncate" style="max-width:520px;display:block">${p.command}</td>
+        <tbody>${rows.map((p) => h`<tr><td class="cell-mono">${p.pid}</td><td>${p.user}</td><td>${p.cpu.toFixed(1)}</td><td>${p.mem.toFixed(1)}</td><td class="cell-mono truncate u-s99">${p.command}</td>
           <td class="col-actions"><div class="row-actions">
             <form method="post" action="/admin/processes/${p.pid}/kill" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="icon-btn danger" type="submit" title="Kill" data-confirm="Wysłać SIGTERM do PID ${p.pid}?">${icon('close', { size: 16 })}</button></form>
             <form method="post" action="/admin/processes/${p.pid}/trace" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><button class="icon-btn" type="submit" title="Trace">${icon('eye', { size: 16 })}</button></form>
@@ -622,9 +622,9 @@ export function registerAdminRoutes(router) {
       columns: [
         { label: 'User', key: 'username' },
         { label: 'Current owner', render: (u) => u.owner || 'admin' },
-        { label: 'New owner', render: (u) => h`<form method="post" action="${A}/users/${u.id}/move" class="inline" style="display:flex;gap:6px">
+        { label: 'New owner', render: (u) => h`<form method="post" action="${A}/users/${u.id}/move" class="inline u-s100">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <select name="owner" style="height:30px;width:170px"><option value="">admin</option>${resellers.map((r) => h`<option ${r.username === u.owner ? 'selected' : ''}>${r.username}</option>`)}</select>
+          <select class="u-s101" name="owner"><option value="">admin</option>${resellers.map((r) => h`<option ${r.username === u.owner ? 'selected' : ''}>${r.username}</option>`)}</select>
           <button class="btn btn-secondary btn-sm" type="submit">Move</button></form>` },
       ],
       rows: users, empty: 'No users',
@@ -769,12 +769,12 @@ export function registerAdminRoutes(router) {
         { label: 'Edit', href: (i) => `${A}/ip-manager?edit=${i.id}`, icon: 'edit' },
         { label: 'Delete', form: (i) => `${A}/ip-manager/${i.id}/delete`, confirm: 'Remove this IP?', icon: 'trash', danger: true, show: (i) => i.status === 'free' },
       ],
-      footer: h`<form method="post" action="${A}/ip-manager/add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      footer: h`<form class="u-s31" method="post" action="${A}/ip-manager/add">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <input name="ip" placeholder="203.0.113.10" style="max-width:180px" required>
-        <input name="netmask" value="255.255.255.0" style="max-width:170px">
+        <input class="u-s44" name="ip" placeholder="203.0.113.10" required>
+        <input class="u-s102" name="netmask" value="255.255.255.0">
         <select name="status"><option value="free">Free</option><option value="shared">Shared</option><option value="server">Server</option></select>
-        <input name="owner" placeholder="reseller (optional)" style="max-width:180px">
+        <input class="u-s44" name="owner" placeholder="reseller (optional)">
         <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add IP</button>
       </form>`,
     })}`;
@@ -836,13 +836,13 @@ export function registerAdminRoutes(router) {
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz rekord</button><a class="btn btn-ghost" href="${A}/dns?domain=${encodeURIComponent(d.name)}">Anuluj</a></div>
       </form>`) : ''}
-      ${d ? card('Dodaj rekord', h`<form method="post" action="${A}/dns/add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+      ${d ? card('Dodaj rekord', h`<form class="u-s103" method="post" action="${A}/dns/add">
         <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}">
-        <div class="field"><label class="field-label">Nazwa</label><input name="name" value="@" style="width:130px"></div>
-        <div class="field"><label class="field-label">Typ</label><select name="type" style="width:100px">${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((t) => h`<option>${t}</option>`)}</select></div>
-        <div class="field" style="flex:1;min-width:240px"><label class="field-label">Wartość</label><input name="value" required></div>
-        <div class="field"><label class="field-label">Priorytet</label><input name="priority" type="number" style="width:90px"></div>
-        <div class="field"><label class="field-label">TTL</label><input name="ttl" type="number" value="3600" style="width:100px"></div>
+        <div class="field"><label class="field-label">Nazwa</label><input class="u-s104" name="name" value="@"></div>
+        <div class="field"><label class="field-label">Typ</label><select class="u-s96" name="type">${['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'].map((t) => h`<option>${t}</option>`)}</select></div>
+        <div class="field u-s42"><label class="field-label">Wartość</label><input name="value" required></div>
+        <div class="field"><label class="field-label">Priorytet</label><input class="u-s65" name="priority" type="number"></div>
+        <div class="field"><label class="field-label">TTL</label><input class="u-s96" name="ttl" type="number" value="3600"></div>
         <button class="btn btn-primary" type="submit">Dodaj</button>
       </form>`) : ''}`;
     return page(ctx, { title: 'Administracja DNS', subtitle: 'Wszystkie strefy na serwerze', body });
@@ -953,7 +953,7 @@ ${setting('ns2', 'ns2')}.   3600  IN  A  ${setting('server_ip', '127.0.0.1')}</p
           <option value="evolution" ${ctx.user.skin === 'evolution' ? 'selected' : ''}>Evolution (modern)</option>
           <option value="enhanced" ${ctx.user.skin === 'enhanced' ? 'selected' : ''}>Enhanced (classic)</option>
         </select></div>
-        <div class="field"><label class="field-label">Accent colour</label><input type="color" name="accent" value="#0a6daa" style="height:38px"></div>
+        <div class="field"><label class="field-label">Accent colour</label><input class="u-s105" type="color" name="accent" value="#0a6daa"></div>
         <div class="field"><label class="field-label">Komunikat na stronie logowania</label><input name="login_message" value="${setting('login_page_message', '')}"></div>
       </div>
       <div class="form-actions"><button class="btn btn-primary" type="submit">Save appearance</button></div>
@@ -988,12 +988,12 @@ ${setting('ns2', 'ns2')}.   3600  IN  A  ${setting('server_ip', '127.0.0.1')}</p
         { label: 'Toggle', form: (p) => `${A}/plugins/${p.id}/toggle`, icon: 'refresh' },
         { label: 'Remove', form: (p) => `${A}/plugins/${p.id}/delete`, confirm: 'Remove plugin?', icon: 'trash', danger: true },
       ],
-      footer: h`<form method="post" action="${A}/plugins/add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      footer: h`<form class="u-s31" method="post" action="${A}/plugins/add">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <input name="name" placeholder="plugin-name" style="max-width:180px" required>
-        <input name="title" placeholder="Display name" style="max-width:180px">
+        <input class="u-s44" name="name" placeholder="plugin-name" required>
+        <input class="u-s44" name="title" placeholder="Display name">
         <select name="level"><option>user</option><option>reseller</option><option>admin</option></select>
-        <input name="description" placeholder="Description" style="flex:1;min-width:200px">
+        <input class="u-s106" name="description" placeholder="Description">
         <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Install plugin</button>
       </form>`,
     })}${card('Hook contract', h`<p class="small muted">Place a plugin under <code>${config.dataDir}/plugins/&lt;name&gt;/hook.js</code>. It is executed with Node for events such as <code>user.create</code>, <code>domain.create</code> and <code>email.create</code>; the event payload arrives as JSON on stdin and the event name as the first argument. Output is appended to <code>hook.log</code>.</p>
@@ -1233,7 +1233,7 @@ ${setting('ns2', 'ns2')}.   3600  IN  A  ${setting('server_ip', '127.0.0.1')}</p
     const file = selected ? readTarget(selected) : { ok: false, error: 'No editable files found' };
     const body = h`${card('File editor', h`
       ${!file.ok ? alert(file.error, 'error') : h`
-      <div class="row mb-12" style="flex-wrap:wrap">${targets.slice(0, 24).map((t) => h`<a class="chip ${t.path === selected ? 'active' : ''}" href="${A}/file-editor?file=${encodeURIComponent(t.path)}">${t.label}</a>`)}</div>
+      <div class="row mb-12 u-s107">${targets.slice(0, 24).map((t) => h`<a class="chip ${t.path === selected ? 'active' : ''}" href="${A}/file-editor?file=${encodeURIComponent(t.path)}">${t.label}</a>`)}</div>
       <form method="post" action="${A}/file-editor" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="file" value="${selected}">
         <p class="small muted mb-12"><code>${selected}</code> · ${file.writable ? 'writable' : 'read-only'} · ${file.bytes} bytes · modified ${file.mtime}</p>
@@ -1257,7 +1257,7 @@ ${setting('ns2', 'ns2')}.   3600  IN  A  ${setting('server_ip', '127.0.0.1')}</p
       columns: [
         { label: 'User', render: (c) => c.username },
         { label: 'Schedule', render: (c) => h`<span class="cell-mono">${[c.minute, c.hour, c.day, c.month, c.weekday].join(' ')}</span>` },
-        { label: 'Command', render: (c) => h`<span class="cell-mono truncate" style="max-width:460px;display:block">${c.command}</span>` },
+        { label: 'Command', render: (c) => h`<span class="cell-mono truncate u-s108">${c.command}</span>` },
       ],
       rows, empty: 'No cron jobs on the server.',
     })}`, { sub: 'All user cron jobs, aggregated' })}

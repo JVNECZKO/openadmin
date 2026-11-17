@@ -196,7 +196,7 @@ export function registerAuthRoutes(router) {
   });
 
   router.get('/login/account-disabled', (ctx) => {
-    const body = h`<div class="login-card" style="max-width:440px;margin:8vh auto">
+    const body = h`<div class="login-card u-s114">
       ${card('Account disabled', h`
         ${alert('This account has been suspended by an administrator or reseller. Websites, email and FTP access are offline until it is restored.', 'danger')}
         <p class="small muted">If you believe this is a mistake, contact your hosting provider and quote your username.</p>
@@ -206,7 +206,7 @@ export function registerAuthRoutes(router) {
   });
 
   router.get('/login/license-expired', (ctx) => {
-    const body = h`<div class="login-card" style="max-width:480px;margin:8vh auto">
+    const body = h`<div class="login-card u-s115">
       ${card('No license required', h`
         ${alert('OpenAdmin has no license expiry. This page exists for compatibility with DirectAdmin redirects, but the Community Edition is free forever with unlimited accounts.', 'ok')}
         ${kvList([['Edition', 'Community'], ['Expires', 'Never'], ['Accounts', 'Unlimited'], ['Cost', '€0.00']], { cols: 1 })}
@@ -218,7 +218,7 @@ export function registerAuthRoutes(router) {
   router.get('/login/lost-password', (ctx) => ctx.redirect('/lost-password'));
 
   router.get('/lost-password', (ctx) => {
-    const body = h`<div class="login-card" style="max-width:420px;margin:8vh auto">
+    const body = h`<div class="login-card u-s116">
       ${card('Reset your password', h`
         ${alert('For security, password resets are handled by your administrator or reseller. Ask them to issue a new password from the panel, or run <code>openadmin passwd &lt;username&gt;</code> on the server.', 'info')}
         <form method="post" action="/lost-password" class="oa-form">

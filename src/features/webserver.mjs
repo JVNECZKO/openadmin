@@ -22,20 +22,20 @@ export function enginePicker({ selected = '', name = 'engine' } = {}) {
     || choices.find((c) => c.active && c.available)
     || choices.find((c) => c.available);
   return h`<div class="grid grid-2" data-engine-picker>
-    ${choices.map((c) => h`<label class="service-row" data-engine-card="${c.id}" data-engine-available="${c.available ? '1' : '0'}" style="align-items:flex-start;padding:12px;border:1px solid var(--border);border-radius:10px;cursor:pointer">
+    ${choices.map((c) => h`<label class="service-row u-s1" data-engine-card="${c.id}" data-engine-available="${c.available ? '1' : '0'}">
       <input type="radio" name="${name}" value="${c.id}" ${preferred?.id === c.id ? 'checked' : ''} ${c.available ? '' : 'disabled'} data-engine-radio>
-      <span class="service-dot ${c.installed ? 'on' : 'off'}" style="margin-top:5px"></span>
-      <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
-        <strong style="min-width:0">${c.label}</strong>
+      <span class="service-dot ${c.installed ? 'on' : 'off'} u-s19"></span>
+      <span class="u-s20">
+        <strong class="u-s21">${c.label}</strong>
         <span class="small muted">${c.reason}</span>
       </span>
-      <span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+      <span class="u-s22">
         ${c.active ? badge('default', 'brand') : ''}
         ${c.installed ? badge('detected', 'ok') : c.sandbox ? badge('sandbox', 'warn') : badge('unavailable', 'muted')}
       </span>
     </label>`)}
   </div>
-  <p class="field-help" style="margin-top:8px">Availability is read from real binary/service detection. “Sandbox” means the configuration is staged instead of reloading a live service.</p>`;
+  <p class="field-help u-s23">Availability is read from real binary/service detection. “Sandbox” means the configuration is staged instead of reloading a live service.</p>`;
 }
 
 export function sslModeSelect({ selected = 'selfsigned', name = 'ssl_mode', includeKeep = false, id = 'ssl_mode' } = {}) {
@@ -58,7 +58,7 @@ export function provisioningSteps(steps = []) {
         : badge('failed', 'danger')}
     </div>
     <div class="small muted">${s.detail || ''}</div>
-    ${Array.isArray(s.subdomains) && s.subdomains.length ? h`<ul class="doc-list" style="margin-top:6px">${s.subdomains.map((sub) => h`<li>${sub.ok ? badge('OK', 'ok') : badge('failed', 'danger')} ${sub.detail || sub.label}</li>`)}</ul>` : ''}
+    ${Array.isArray(s.subdomains) && s.subdomains.length ? h`<ul class="doc-list u-s24">${s.subdomains.map((sub) => h`<li>${sub.ok ? badge('OK', 'ok') : badge('failed', 'danger')} ${sub.detail || sub.label}</li>`)}</ul>` : ''}
   </li>`)}</ol>`;
 }
 
@@ -68,7 +68,7 @@ function serverRow(ctx, id, info, active) {
     <span class="service-dot ${info.installed ? 'on' : 'off'}"></span>
     <strong>${info.label}</strong>
     <span class="small muted">${info.installed ? `${info.binary.path}${info.binary.version ? ' · ' + info.binary.version : ''}` : 'not detected on this host'}</span>
-    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+    <div class="u-s25">
       ${active === id ? badge('active', 'brand') : ''}
       ${info.installed ? (info.service ? badge(info.service.status, info.service.status === 'running' ? 'ok' : 'muted', { dot: true }) : badge('no service', 'muted')) : badge('not installed', 'muted')}
       <form method="post" action="/admin/web-server/active" class="inline">
@@ -157,8 +157,8 @@ export function register(router) {
         ['Serial', setting('litespeed_serial', '—')],
       ])}
       <form method="post" action="/admin/web-server/litespeed" class="row mt-18"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <input name="license" placeholder="License key" value="${setting('litespeed_license', '')}" style="flex:1">
-        <input name="serial" placeholder="Serial number" value="${setting('litespeed_serial', '')}" style="max-width:220px">
+        <input class="u-s14" name="license" placeholder="License key" value="${setting('litespeed_license', '')}">
+        <input class="u-s26" name="serial" placeholder="Serial number" value="${setting('litespeed_serial', '')}">
         <button class="btn btn-primary" type="submit">Save license</button>
       </form>`) : ''}`;
     return page(ctx, { title: 'Web Server', subtitle: 'Nginx, Apache, OpenLiteSpeed and LiteSpeed Enterprise', body });

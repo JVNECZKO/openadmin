@@ -67,7 +67,7 @@ export function register(router) {
         ${card('Wersja', h`<form method="get" action="${A}" class="row"><input type="hidden" name="tab" value="extensions">
           <select name="version" data-auto-submit>${vers.map((x) => h`<option ${x === v ? 'selected' : ''}>${x}</option>`)}</select></form>`)}
         ${card('Rozszerzenia PHP ' + v, h`<div class="grid grid-3">${extensions(v).map((ext) => h`<div class="service-row"><span class="service-dot on"></span><span class="cell-mono">${ext}</span>
-          <form method="post" action="${A}/extensions?version=${v}" class="inline" style="margin-left:auto"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="ext" value="${ext}"><input type="hidden" name="enabled" value="0"><button class="btn btn-ghost btn-sm" type="submit">Wyłącz</button></form></div>`)}</div>
+          <form method="post" action="${A}/extensions?version=${v}" class="inline u-s3"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="ext" value="${ext}"><input type="hidden" name="enabled" value="0"><button class="btn btn-ghost btn-sm" type="submit">Wyłącz</button></form></div>`)}</div>
           <p class="small muted mt-12">Lista pokazuje aktywne rozszerzenia. Wyłączanie wymaga phpdismod i może wymagać ponownego uruchomienia FPM.</p>`, { padded: true })}
       ` : ''}
       ${tab === 'fpm' ? h`

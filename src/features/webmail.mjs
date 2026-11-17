@@ -8,6 +8,7 @@ import { all, get, run, nowIso, verifyPassword, setting } from '../db.mjs';
 import { config, VERSION } from '../config.mjs';
 import { html as h, raw, formatDate, formatBytes, timeAgo, e, isEmail } from '../util.mjs';
 import { icon } from '../ui/icons.mjs';
+import { pctClass } from '../ui/components.mjs';
 import { sendMail, mtaStatus } from '../mta.mjs';
 import { systemProvider } from '../providers/index.mjs';
 import { syncMaildirs } from '../maildir.mjs';
@@ -192,8 +193,8 @@ function sidebar(mailbox, counts, active) {
     </a>`)}
     <div class="wm-side-foot">
       <div class="small muted">Storage</div>
-      <div class="progress"><span style="width:${Math.min(100, Math.round((get('SELECT COALESCE(SUM(size_kb),0) s FROM mail_messages WHERE mailbox = ?', mailbox).s || 0) / Math.max(get('SELECT quota_mb FROM email_accounts WHERE local_part || char(64) || domain = ?', mailbox)?.quota_mb || 1024, 1) * 100 / 1024))}%"></span></div>
-      <div class="small muted" style="margin-top:6px">${formatBytes((get('SELECT COALESCE(SUM(size_kb),0) s FROM mail_messages WHERE mailbox = ?', mailbox).s || 0) / 1024)} used</div>
+      <div class="progress"><span class="${pctClass(Math.min(100, Math.round((get('SELECT COALESCE(SUM(size_kb),0) s FROM mail_messages WHERE mailbox = ?', mailbox).s || 0) / Math.max(get('SELECT quota_mb FROM email_accounts WHERE local_part || char(64) || domain = ?', mailbox)?.quota_mb || 1024, 1) * 100 / 1024)))}"></span></div>
+      <div class="small muted u-s24">${formatBytes((get('SELECT COALESCE(SUM(size_kb),0) s FROM mail_messages WHERE mailbox = ?', mailbox).s || 0) / 1024)} used</div>
     </div>
   </aside>`;
 }

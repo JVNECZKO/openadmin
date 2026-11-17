@@ -181,7 +181,7 @@ export function register(router) {
       body += h`
         ${card('Blokuj kraj', h`<form method="post" action="${A}/countries" class="row">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <input name="country" placeholder="np. ru" maxlength="2" required style="max-width:120px">
+          <input class="u-s29" name="country" placeholder="np. ru" maxlength="2" required>
           <input name="enabled" type="hidden" value="1">
           <button class="btn btn-primary" type="submit">Dodaj blokadę</button>
         </form>

@@ -45,7 +45,7 @@ function appRow(ctx, st) {
     <div class="app-row-body">
       <strong>${st.name} <span class="small muted">${st.version || st.version === '' ? 'v' + st.version : ''}</span></strong>
       <span class="small muted">${st.description}</span>
-      <div class="row" style="gap:6px;margin-top:6px">
+      <div class="row u-s79">
         ${st.installed ? badge('zainstalowana', 'ok') : badge('niezainstalowana', 'muted')}
         ${st.running ? badge('działa na :' + st.port, 'brand') : badge('zatrzymana', 'muted')}
         ${st.missingExtensions.length ? badge('brakuje PHP: ' + st.missingExtensions.join(', '), 'warn') : ''}
@@ -159,9 +159,9 @@ export function register(router) {
       ${Object.values(all).filter((st) => st.installed).map((st) => {
         const activeFilter = String(ctx.query.logapp || '') === st.id ? String(ctx.query.logq || '') : '';
         return card(`${st.name} — log`, h`
-          <form method="get" action="/admin/web-apps" class="row" style="gap:8px;margin-bottom:8px">
+          <form method="get" action="/admin/web-apps" class="row u-s48">
             <input type="hidden" name="logapp" value="${st.id}">
-            <input name="logq" value="${activeFilter}" placeholder="Szukaj w logu" style="flex:1;max-width:280px">
+            <input class="u-s80" name="logq" value="${activeFilter}" placeholder="Szukaj w logu">
             <button class="btn btn-secondary btn-sm" type="submit">Szukaj</button>
             <a class="btn btn-ghost btn-sm" href="/admin/web-apps/${st.id}/logs/download">Pobierz log</a>
           </form>
@@ -202,7 +202,7 @@ export function register(router) {
     })}${!pf.ready ? alert('Roundcube cannot complete a login until every red item is resolved. The built-in /webmail has no PHP extension dependency.', 'warn') : ''}`, { sub: 'Everything is checked against the host, not assumed' })}
     ${card('IMAP host', h`<form method="post" action="/admin/web-apps/roundcube/imap" class="row">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
-      <input name="host" value="${pf.imapHost}" style="max-width:260px">
+      <input class="u-s28" name="host" value="${pf.imapHost}">
       <button class="btn btn-secondary btn-sm" type="submit">Save &amp; rewrite config</button>
       <span class="small muted">Panel IMAP: localhost:1143 · Dovecot: localhost:143</span>
     </form>`)}

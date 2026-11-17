@@ -1,6 +1,6 @@
 // Shared dashboard widgets.
 import { html as h, formatBytes, pct, timeAgo, formatDate } from '../../util.mjs';
-import { card, statCard, progress, sparkline, donut, badge, statusBadge, btn, kvList } from '../components.mjs';
+import { card, statCard, progress, sparkline, donut, badge, statusBadge, btn, kvList, pctClass } from '../components.mjs';
 import { icon } from '../icons.mjs';
 
 export function usageChartCard(series, { title = 'Bandwidth usage', sub = 'Last 30 days', metric = 'bandwidth_mb' } = {}) {
@@ -20,9 +20,9 @@ export function usageChartCard(series, { title = 'Bandwidth usage', sub = 'Last 
 export function quotaCard({ title, used, limit, unit = 'MB', sub = '' }) {
   const p = pct(used, limit);
   return h`<div class="quota-row">
-    <div class="spread"><span class="small" style="font-weight:600">${title}</span><span class="small muted">${used} / ${limit || '∞'} ${unit}</span></div>
-    <div class="progress ${p > 90 ? 'danger' : p > 75 ? 'warn' : ''}" style="margin-top:6px"><span style="width:${p}%"></span></div>
-    ${sub ? h`<div class="small muted" style="margin-top:4px">${sub}</div>` : ''}
+    <div class="spread"><span class="small u-s47">${title}</span><span class="small muted">${used} / ${limit || '∞'} ${unit}</span></div>
+    <div class="progress ${p > 90 ? 'danger' : p > 75 ? 'warn' : ''} mt-6"><span class="${pctClass(p)}"></span></div>
+    ${sub ? h`<div class="small muted u-s98">${sub}</div>` : ''}
   </div>`;
 }
 
@@ -37,7 +37,7 @@ export function serviceRow(name, status, meta = '') {
   return h`<div class="service-row">
     <span class="service-dot ${status === 'running' ? 'on' : 'off'}"></span>
     <strong>${name}</strong><span class="small muted">${meta}</span>
-    <span style="margin-left:auto">${statusBadge(status)}</span>
+    <span class="u-s3">${statusBadge(status)}</span>
   </div>`;
 }
 

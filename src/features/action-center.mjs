@@ -110,7 +110,7 @@ function findingCard(ctx, item, returnTo) {
     ? badge(`Wyciszone do ${item.muteUntil ? formatDate(item.muteUntil, { time: true }) : '—'}`, 'muted')
     : '';
   const body = h`
-    <div class="row mb-12" style="gap:6px">
+    <div class="row mb-12 u-s76">
       ${badge(SEVERITY_LABEL[item.severity] || item.severity, severityTone(item.severity))}
       ${badge(typeLabel, 'muted')}
       ${muted}
@@ -121,7 +121,7 @@ function findingCard(ctx, item, returnTo) {
       ['Źródło', item.sourceDetail ? h`<span>${item.source} · ${item.sourceDetail}</span>` : item.source],
       ['Zaobserwowano', item.observedAt ? h`<span title="${formatDate(item.observedAt, { time: true })}">${timeAgo(item.observedAt)}</span>` : '—'],
     ])}
-    <div class="row mt-18" style="align-items:flex-start">
+    <div class="row mt-18 u-s77">
       ${item.action ? btn(item.action.label, { href: item.action.href, icon: 'arrowRight' }) : ''}
       ${btn('Szczegóły', { href: item.detailsHref || A, variant: 'secondary', icon: 'list' })}
       <a class="link small" href="${buildUrl({}, { type: item.type, show: 'all' })}">Tylko ten typ</a>
@@ -136,13 +136,13 @@ function sourcesCard(snapshot) {
   const rows = snapshot.sources.map((source) => h`<div class="service-row">
     <span class="service-dot ${source.status === 'ok' ? 'on' : source.status === 'partial' ? '' : 'off'}"></span>
     <strong>${source.label}</strong>
-    <span class="small muted" style="margin-left:8px; min-width:0; overflow-wrap:anywhere">${source.detail || 'Brak dodatkowych informacji'}</span>
-    <span style="margin-left:auto">${badge(source.status === 'ok' ? 'OK' : source.status === 'info' ? 'Zalecenie' : source.status === 'partial' ? 'Częściowe' : 'Niedostępne', sourceTone(source.status), { dot: true })}</span>
+    <span class="small muted u-s78">${source.detail || 'Brak dodatkowych informacji'}</span>
+    <span class="u-s3">${badge(source.status === 'ok' ? 'OK' : source.status === 'info' ? 'Zalecenie' : source.status === 'partial' ? 'Częściowe' : 'Niedostępne', sourceTone(source.status), { dot: true })}</span>
   </div>`);
   const notable = snapshot.sources.filter((source) => source.status !== 'ok' && source.status !== 'info').length;
   return card('Źródła danych', h`
     <p class="small muted">Każda pozycja ma jawne źródło i czas obserwacji. „Niedostępne” oznacza, że panel nie posiada danych — nie jest to zero ani sukces.</p>
-    <div class="stack" style="gap:8px">${rows}</div>
+    <div class="stack u-s16">${rows}</div>
     ${notable ? '' : h`<p class="small muted mt-12">Wszystkie źródła odpowiedziały w tym odczycie.</p>`}
   `, { sub: `${snapshot.sources.length} źródeł · ${notable} wymaga uwagi`, padded: true });
 }
@@ -331,14 +331,14 @@ export function register(router) {
       ${snapshot.unavailableSources ? alert(`Część źródeł jest niedostępna (${snapshot.unavailableSources}). Panel nie zgaduje ich stanu — powody znajdziesz w sekcji „Źródła danych”.`, 'warn') : ''}
       ${filterCard(filters, snapshot)}
       <div class="spread mb-12">
-        <div class="row" style="gap:8px">
+        <div class="row u-s16">
           ${badge(`${visible.length} pozycji w widoku`, 'brand')}
           ${badge(`ostatni odczyt ${timeAgo(snapshot.generatedAt)}`, 'muted')}
         </div>
         <a class="link small" href="${A}?apps=0">Szybki odczyt bez probe aplikacji</a>
       </div>
       ${visible.length
-        ? h`<div class="stack" style="gap:14px">${visible.map((item) => findingCard(ctx, item, returnTo))}</div>`
+        ? h`<div class="stack u-s51">${visible.map((item) => findingCard(ctx, item, returnTo))}</div>`
         : emptyState(
           filters.show === 'muted'
             ? 'Brak wyciszonych pozycji w tym widoku.'

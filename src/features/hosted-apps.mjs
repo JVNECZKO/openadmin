@@ -73,7 +73,7 @@ export function register(router) {
         title: 'Hosted applications', sub: `${rows.length} app(s)`,
         columns: [
           { label: 'App', render: (a) => h`<span class="cell-strong">${a.domain}${a.path_prefix}</span><span class="cell-sub">${a.type} · port ${a.port}</span>` },
-          { label: 'Command', render: (a) => h`<span class="cell-mono truncate" style="max-width:320px;display:block">${a.command}</span>` },
+          { label: 'Command', render: (a) => h`<span class="cell-mono truncate u-s30">${a.command}</span>` },
           { label: 'Status', render: (a) => badge(a.status, a.status === 'running' ? 'ok' : 'muted') },
           { label: 'Created', render: (a) => formatDate(a.created_at) },
         ],
@@ -84,13 +84,13 @@ export function register(router) {
           { label: 'Stop', form: (a) => `/user/apps/${a.id}/stop`, icon: 'x' },
           { label: 'Remove', form: (a) => `/user/apps/${a.id}/delete`, icon: 'trash', danger: true, confirm: 'Remove this application?' },
         ],
-        footer: h`<form method="post" action="/user/apps/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        footer: h`<form class="u-s31" method="post" action="/user/apps/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <select name="domain" style="width:200px">${domains.map((d) => h`<option>${d.name}</option>`)}</select>
-          <input name="path_prefix" value="/" style="max-width:100px">
+          <select class="u-s40" name="domain">${domains.map((d) => h`<option>${d.name}</option>`)}</select>
+          <input class="u-s41" name="path_prefix" value="/">
           <select name="type"><option value="node">Node.js</option><option value="python">Python</option></select>
-          <input name="port" type="number" min="3000" max="3999" value="3000" style="max-width:100px">
-          <input name="command" placeholder="/usr/bin/node app.js" style="flex:1;min-width:240px" required>
+          <input class="u-s41" name="port" type="number" min="3000" max="3999" value="3000">
+          <input class="u-s42" name="command" placeholder="/usr/bin/node app.js" required>
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Register app</button>
         </form>`,
       })}

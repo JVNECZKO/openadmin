@@ -84,7 +84,7 @@ export function register(router) {
             { label: 'Domena', dataLabel: 'Domena', render: (d) => h`<span class="cell-strong">${d.name}</span>` },
             { label: 'Transfer', dataLabel: 'Transfer', render: (d) => formatBytes(d.bandwidth_mb), align: 'right' },
             { label: 'Dysk', dataLabel: 'Dysk', render: (d) => formatBytes(d.disk_mb), align: 'right' },
-            { label: 'Udział', dataLabel: 'Udział', render: (d) => h`<div style="min-width:110px">${progress(d.bandwidth_mb, Math.max(...domains.map((x) => x.bandwidth_mb), 1), { showText: false })}</div>` },
+            { label: 'Udział', dataLabel: 'Udział', render: (d) => h`<div class="u-s97">${progress(d.bandwidth_mb, Math.max(...domains.map((x) => x.bandwidth_mb), 1), { showText: false })}</div>` },
           ],
           rows: domains, empty: 'Brak domen.',
         })}`)}
@@ -103,7 +103,7 @@ export function register(router) {
         columns: [
           { label: 'Typ', dataLabel: 'Typ', key: 'type' },
           { label: 'Rozmiar', dataLabel: 'Rozmiar', render: (r) => formatBytes(r.size), align: 'right' },
-          { label: 'Udział', dataLabel: 'Udział', render: (r) => h`<div style="min-width:120px">${progress(r.size, Math.max(storage.used, 1), { showText: false })}</div>` },
+          { label: 'Udział', dataLabel: 'Udział', render: (r) => h`<div class="u-s36">${progress(r.size, Math.max(storage.used, 1), { showText: false })}</div>` },
         ],
         rows: [
           { type: 'Pliki i strony', size: fileUsed },
@@ -131,8 +131,8 @@ export function register(router) {
       <div class="timeline-dot">${icon(m.read_at ? 'mail' : 'bell', { size: 15 })}</div>
       <div class="timeline-body">
         <div class="spread"><strong>${m.subject}</strong><span class="small muted">${timeAgo(m.created_at)}</span></div>
-        <p class="small muted" style="margin-top:4px">${m.body}</p>
-        ${!m.read_at ? h`<form method="post" action="/user/messages/${m.id}/read" style="margin-top:6px"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+        <p class="small muted u-s98">${m.body}</p>
+        ${!m.read_at ? h`<form class="u-s24" method="post" action="/user/messages/${m.id}/read"><input type="hidden" name="_csrf" value="${ctx.csrf}">
           <button class="btn btn-ghost btn-sm" type="submit">Mark as read</button></form>` : badge('Read', 'muted')}
       </div></div>`)}</div>` : emptyState('No messages.')}`, { sub: `${rows.filter((r) => !r.read_at).length} unread` })}`;
     return page(ctx, { title: 'Messages', subtitle: 'Notices from your hosting provider', body });

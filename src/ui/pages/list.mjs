@@ -9,7 +9,7 @@ export function listCard({
 }) {
   const tools = [];
   if (filter) {
-    tools.push(h`<div class="search">${icon('search', { size: 15 })}<input type="search" placeholder="${filter.placeholder || 'Filter…'}" data-filter-input="#${filter.target || 'dataTable'}" style="padding-left:32px"></div>`);
+    tools.push(h`<div class="search">${icon('search', { size: 15 })}<input class="u-s110" type="search" placeholder="${filter.placeholder || 'Filter…'}" data-filter-input="#${filter.target || 'dataTable'}"></div>`);
   }
   tools.push(...toolbarLeft);
   const right = [];
@@ -31,8 +31,8 @@ export function domainSelect(domains, selected, { action = '', label = 'Domain' 
   if (!domains.length) return emptyState('No domains yet. Add a domain first.');
   return h`<div class="toolbar">
     <form method="get" action="${action}" class="row">
-      <label class="field-label" for="domainSel" style="margin:0">${label}</label>
-      <select id="domainSel" name="domain" data-domain-select style="width:280px">
+      <label class="field-label u-s11" for="domainSel">${label}</label>
+      <select class="u-s15" id="domainSel" name="domain" data-domain-select>
         ${domains.map((d) => h`<option value="${d.name}" ${d.name === selected ? raw('selected') : ''}>${d.name}</option>`)}
       </select>
       <noscript><button class="btn btn-secondary btn-sm" type="submit">Switch</button></noscript>

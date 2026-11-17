@@ -7,7 +7,7 @@ import { config } from '../config.mjs';
 import { limitsFor } from '../auth.mjs';
 import { html as h, formatBytes, formatDate, e, randomPassword, isEmail } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
-import { card, table, badge, alert, emptyState, kvList, progress } from '../ui/components.mjs';
+import { card, table, badge, alert, emptyState, kvList, progress, pctClass } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
 import { listCard } from '../ui/pages/list.mjs';
 import { quota } from '../core/access.mjs';
@@ -439,7 +439,7 @@ export function register(router) {
         </table></div>
       `, { padded: false })}
 
-      ${ctx.query.new ? card(ctx.query.new === 'dir' ? 'New folder' : 'New file', h`<form method="post" action="/user/files/create" class="oa-form" style="max-width:520px">
+      ${ctx.query.new ? card(ctx.query.new === 'dir' ? 'New folder' : 'New file', h`<form method="post" action="/user/files/create" class="oa-form u-s82">
         <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="path" value="${display}">
         <input type="hidden" name="kind" value="${ctx.query.new === 'dir' ? 'dir' : 'file'}">
         <div class="form-grid">
@@ -466,7 +466,7 @@ export function register(router) {
               <p><strong>Drop files here</strong> or click to browse</p>
               <input type="file" id="fileInput" multiple hidden>
               <span class="small muted">Maximum ${config.limits.maxUploadMb} MB per file · strumieniowo z możliwością wznowienia</span>
-              <div class="progress-track" style="max-width:360px;margin:8px auto 0" aria-hidden="true"><div class="progress-fill" data-upload-progress style="width:0%"></div></div>
+              <div class="progress-track u-s83" aria-hidden="true"><div class="progress-fill u-s84" data-upload-progress></div></div>
             </div>
           </div>
         </div>
@@ -637,7 +637,7 @@ export function register(router) {
       <div class="form-grid">
         <div class="field"><label class="field-label">Username <span class="req">*</span></label><input name="username" required pattern="[a-zA-Z0-9._-]{2,32}" placeholder="deploy"><p class="field-help">Created as <code>${ctx.user.username}_deploy</code>.</p></div>
         <div class="field"><label class="field-label">Password <span class="req">*</span></label>
-          <div class="field-control"><input id="ftppass" name="password" type="password" required minlength="8"><button class="btn btn-secondary btn-sm" type="button" data-genpass="#ftppass" style="margin-left:8px">Generate</button></div></div>
+          <div class="field-control"><input id="ftppass" name="password" type="password" required minlength="8"><button class="btn btn-secondary btn-sm u-s18" type="button" data-genpass="#ftppass">Generate</button></div></div>
         <div class="field field-full"><label class="field-label">Directory</label><input name="path" value="/home/${ctx.user.username}" required></div>
         <div class="field"><label class="field-label">Quota (MB)</label><input name="quota_mb" type="number" min="0" value="0"><p class="field-help">0 = unlimited</p></div>
       </div>
@@ -740,7 +740,7 @@ export function register(router) {
         ${card('Create backup', h`
           <p class="small muted mb-18">User backups contain your home directory plus SQL dumps of your own databases. The panel database is excluded by design; DNS zones stay server-managed and are not included.</p>
           ${kvList([['Last backup', rows[0] ? formatDate(rows[0].created_at, { time: true }) : 'never'], ['Total backups', String(rows.length)], ['Storage used', formatBytes(rows.reduce((a, r) => a + r.size_mb, 0))]])}
-          <form method="post" action="/user/backups/create" style="margin-top:16px" class="row">
+          <form method="post" action="/user/backups/create" class="row u-s85">
             <input type="hidden" name="_csrf" value="${ctx.csrf}">
             <select name="kind"><option value="full">Full backup</option><option value="home">Home directory</option><option value="email">Email only</option><option value="db">Databases only</option></select>
             <button class="btn btn-primary" type="submit">${icon('archive', { size: 16 })} Create backup</button>
@@ -785,7 +785,7 @@ export function register(router) {
     const stages = job.stages || [];
     const body = h`${card('Zadanie backupu', h`
       ${alert(`Status: ${job.status} · etap: ${job.stage_label || job.stage || '—'} · ${job.progress || 0}%`, job.status === 'complete' ? 'ok' : job.status === 'failed' ? 'danger' : 'info')}
-      <div class="progress-track mb-18"><div class="progress-fill" style="width:${Math.max(0, Math.min(100, Number(job.progress) || 0))}%"></div></div>
+      <div class="progress-track mb-18"><div class="progress-fill ${pctClass(job.progress)}"></div></div>
       <div class="stack">${stages.map((stage) => h`<div class="spread small"><span>${stage.label}</span><span>${badge(stage.status, stage.status === 'complete' ? 'ok' : stage.status === 'failed' ? 'danger' : 'muted')}</span></div>`)}</div>
       ${job.error ? alert(job.error, 'danger') : ''}
       <div class="row mt-18"><a class="btn btn-primary" href="/user/backups">Wróć do backupów</a>${['queued', 'running'].includes(job.status) ? h`<button class="btn btn-secondary" type="button" data-refresh-now>Odśwież status</button>` : ''}</div>
@@ -822,7 +822,7 @@ export function register(router) {
         title: 'Cron jobs', sub: `${rows.length} of ${lim.cron || '∞'} jobs`,
         columns: [
           { label: 'Schedule', render: (r) => h`<span class="cell-mono">${[r.minute, r.hour, r.day, r.month, r.weekday].join(' ')}</span>` },
-          { label: 'Command', render: (r) => h`<span class="cell-mono truncate" style="max-width:420px;display:block">${r.command}</span>` },
+          { label: 'Command', render: (r) => h`<span class="cell-mono truncate u-s86">${r.command}</span>` },
           { label: 'Created', render: (r) => formatDate(r.created_at) },
         ],
         rows, empty: 'No cron jobs yet.',
@@ -839,7 +839,7 @@ export function register(router) {
             <input name="month" value="*" title="Month" aria-label="Month">
             <input name="weekday" value="*" title="Weekday" aria-label="Weekday">
           </div>
-          <input name="command" placeholder="/usr/local/bin/php /home/${ctx.user.username}/cron.php" required style="flex:1;min-width:280px">
+          <input class="u-s87" name="command" placeholder="/usr/local/bin/php /home/${ctx.user.username}/cron.php" required>
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add cron job</button>
         </form>`,
       })}

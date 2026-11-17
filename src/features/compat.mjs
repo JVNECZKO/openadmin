@@ -61,7 +61,7 @@ function servicePanel(ctx, name, label, meta = '', { admin = false, returnTo = '
   return h`<div class="service-row">
     <span class="service-dot ${running ? 'on' : state?.state === 'failed' ? 'off' : ''}"></span>
     <strong>${label}</strong><span class="small muted">${meta}</span>
-    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+    <div class="u-s25">
       ${badge(badgeLabel, tone, { dot: true })}
       ${admin && svc ? h`<form method="post" action="/compat/service/${encodeURIComponent(name)}" class="inline">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -188,7 +188,7 @@ export function register(router) {
         { label: 'Mailboxes', render: (r) => r.accounts, align: 'right' },
         { label: 'Used', render: (r) => formatBytesIEC(Number(r.used || 0) * 1024 * 1024), align: 'right' },
         { label: 'Quota', render: (r) => formatBytesIEC(Number(r.quota || 0) * 1024 * 1024), align: 'right' },
-        { label: 'Utilisation', render: (r) => h`<div style="min-width:120px">${progress(r.used, r.quota || 1, { showText: false })}</div>` },
+        { label: 'Utilisation', render: (r) => h`<div class="u-s36">${progress(r.used, r.quota || 1, { showText: false })}</div>` },
       ],
       rows, empty: 'No mail domains yet.',
     })}
@@ -382,10 +382,10 @@ export function register(router) {
         ],
         rows: peers,
         actions: [{ label: 'Remove', form: (p) => `/compat/admin/multi-server/${encodeURIComponent(p.host)}/delete`, icon: 'trash', danger: true, confirm: 'Remove peer?' }],
-        footer: h`<form method="post" action="/compat/admin/multi-server" style="display:flex;gap:8px;flex-wrap:wrap">
+        footer: h`<form class="u-s37" method="post" action="/compat/admin/multi-server">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <input name="host" placeholder="node2.example.com" style="max-width:220px" required>
-          <input name="url" placeholder="https://node2.example.com:2222" style="max-width:300px" required>
+          <input class="u-s26" name="host" placeholder="node2.example.com" required>
+          <input class="u-s33" name="url" placeholder="https://node2.example.com:2222" required>
           <button class="btn btn-primary btn-sm" type="submit">Add peer</button>
         </form>`,
       })}`;
@@ -640,7 +640,7 @@ export function register(router) {
       <div class="form-grid">
         <div class="field"><label class="field-label">User</label><select name="username">${users.map((u) => h`<option>${u.username}</option>`)}</select></div>
         <div class="field"><label class="field-label">New password</label><div class="field-control"><input id="bulkpass" name="password" type="password" minlength="8" required>
-          <button class="btn btn-secondary btn-sm" type="button" data-genpass="#bulkpass" style="margin-left:8px">Generate</button></div></div>
+          <button class="btn btn-secondary btn-sm u-s18" type="button" data-genpass="#bulkpass">Generate</button></div></div>
         <div class="field field-full"><label class="check-field"><input type="checkbox" name="force" value="1" checked><span>Require the user to change it at next login</span></label></div>
       </div>
       <div class="form-actions"><button class="btn btn-primary" type="submit">Update password</button></div>
@@ -783,7 +783,7 @@ export function register(router) {
         { label: 'Source', render: (j) => h`<span class="cell-mono">${j.source_user}@${j.source_host}</span>` },
         { label: 'Destination', render: (j) => h`<span class="cell-mono">${j.dest}</span>` },
         { label: 'Status', render: (j) => badge(j.status, j.status === 'complete' ? 'ok' : j.status === 'failed' ? 'danger' : 'brand') },
-        { label: 'Detail', render: (j) => h`<span class="small muted truncate" style="max-width:260px;display:block">${j.output || '—'}</span>` },
+        { label: 'Detail', render: (j) => h`<span class="small muted truncate u-s38">${j.output || '—'}</span>` },
         { label: 'Started', render: (j) => formatDate(j.created_at, { time: true }) },
       ],
       rows: jobs, empty: 'No migrations yet.',
@@ -904,8 +904,8 @@ export function register(router) {
       ${servicePanel(ctx, 'unit', 'Nginx Unit', 'control socket', { admin: ctx.user.level === 'admin', returnTo: '/compat/user/unit' })}
       ${card('Applications', h`${apps.length ? table({ columns: [{ label: 'Application', render: (a) => a.key.replace('unit_app:', '') }, { label: 'Config', render: (a) => h`<span class="cell-mono">${a.value}</span>` }], rows: apps }) : emptyState('No Unit applications configured.')}`)}
       ${card('Add application', h`<form method="post" action="/compat/user/unit" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <input name="name" placeholder="my-node-app" style="max-width:200px" required>
-        <input name="runtime" placeholder="node:20" style="max-width:140px">
+        <input class="u-s32" name="name" placeholder="my-node-app" required>
+        <input class="u-s39" name="runtime" placeholder="node:20">
         <button class="btn btn-primary" type="submit" ${svc?.status === 'running' ? '' : 'disabled'}>Register</button>
       </form>`)}`;
     return titled(ctx, 'Nginx Unit', 'Polyglot application server', body);

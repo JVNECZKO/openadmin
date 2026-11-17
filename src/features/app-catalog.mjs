@@ -137,7 +137,7 @@ function installForm(ctx, app, domains, locale) {
   return h`<form method="post" action="${installAction(app)}" class="oa-form app-install-form" aria-label="${L(locale, `Install ${app.name}`, `Zainstaluj ${app.name}`)}" data-install-form>
     <input type="hidden" name="_csrf" value="${ctx.csrf}">
     <input type="hidden" name="app" value="${app.key}">
-    <fieldset class="app-install-fields" style="border:0;padding:0;margin:0;min-width:0">
+    <fieldset class="app-install-fields u-s81">
       <legend class="field-label">${L(locale, 'Installation details', 'Dane instalacji')}</legend>
       <div class="form-grid">
         <div class="field">
@@ -236,7 +236,7 @@ function installedRow(ctx, row, locale) {
     `Usunąć ${appName(row.type)} z ${pathLabel}? Usunięta zostanie także baza danych.`);
   return h`<div class="app-installed" data-installed-app="${row.type}">
     ${appIcon(row.type, { size: 40 })}
-    <div style="min-width:0">
+    <div class="u-s21">
       <div class="app-tile-title"><strong>${appName(row.type)}</strong>${badge(status.label, status.tone, { dot: status.tone !== 'muted' })}${badge(`v${row.version || '—'}`, 'muted')}</div>
       <p class="app-tile-sub">${pathLabel} · ${L(locale, 'admin', 'admin')}: ${row.admin_user || 'admin'} · ${L(locale, 'created', 'utworzono')} ${dateTime(row.created_at, locale)}</p>
     </div>
@@ -294,7 +294,7 @@ export function register(router) {
         'One catalogue, six applications. Pick a tile, check the version and installer type, then install on your own domain. After submitting the form you see the real result — no fake percentage.',
         'Jeden katalog, sześć aplikacji. Wybierz kafelek, sprawdź wersję i typ instalatora, a następnie zainstaluj na własnej domenie. Po wysłaniu formularza zobaczysz prawdziwy wynik — bez sztucznego procentu.'), 'info')}
       <div class="spread mb-12" data-app-catalog-summary>
-        <div class="row" style="gap:8px">
+        <div class="row u-s16">
           ${badge(L(locale, `${APPS.length} applications`, `${APPS.length} aplikacji`), 'brand')}
           ${badge(L(locale, `${installedTypes} of ${APPS.length} installed`, `${installedTypes} z ${APPS.length} zainstalowanych`), installedTypes ? 'ok' : 'muted', { dot: installedTypes > 0 })}
           ${badge(L(locale, `Available to install: ${available}`, `Dostępne do instalacji: ${available}`), 'muted')}
@@ -306,7 +306,7 @@ export function register(router) {
           <div class="toolbar-left">
             <div class="search">
               ${icon('search', { size: 15 })}
-              <input type="search" id="app-search" data-app-search placeholder="${L(locale, 'Search applications…', 'Szukaj aplikacji…')}" aria-label="${L(locale, 'Search applications by name', 'Szukaj aplikacji po nazwie')}" autocomplete="off" style="width:280px">
+              <input class="u-s15" type="search" id="app-search" data-app-search placeholder="${L(locale, 'Search applications…', 'Szukaj aplikacji…')}" aria-label="${L(locale, 'Search applications by name', 'Szukaj aplikacji po nazwie')}" autocomplete="off">
             </div>
             <div class="chip-row" role="group" aria-label="${L(locale, 'Application filter', 'Filtr aplikacji')}">
               <button type="button" class="chip active" data-app-filter="all" aria-pressed="true">${L(locale, 'All', 'Wszystkie')} <span class="tab-count">${APPS.length}</span></button>
@@ -329,7 +329,7 @@ export function register(router) {
                   <p class="app-tile-sub">${appDesc(app, locale)}</p>
                 </div>
               </div>
-              <div class="row" style="gap:6px">${badge(versionLabel(app, locale), 'brand')}${badge(typeLabel(app, locale), 'muted')}</div>
+              <div class="row u-s76">${badge(versionLabel(app, locale), 'brand')}${badge(typeLabel(app, locale), 'muted')}</div>
               <div class="app-meta"><span>PHP + MariaDB</span><span>${app.native ? L(locale, 'Updates through the panel', 'Aktualizacje przez panel') : app.mode === 'cli' ? L(locale, 'CLI, then web', 'CLI, potem WWW') : L(locale, 'Browser installer', 'Instalator w przeglądarce')}</span></div>
               <div class="app-tile-actions">
                 ${canInstall
@@ -466,10 +466,7 @@ export function register(router) {
             target.classList.add('is-target');
             target.setAttribute('aria-expanded', 'true');
             target.setAttribute('tabindex', '-1');
-            if (target.style) {
-              target.style.outline = '3px solid var(--brand)';
-              target.style.outlineOffset = '4px';
-            }
+            target.classList.add('flash-target');
             var detail = target.querySelector('[data-app-detail]');
             if (detail) detail.hidden = false;
             if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'center' });

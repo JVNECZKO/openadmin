@@ -29,7 +29,7 @@ export function register(router) {
           ['Provider', state.provider],
           ['Panel', `port 2222 · ${state.https ? 'HTTPS' : 'HTTP'}`],
         ])}`)}
-        ${card('Sprawdzenie gotowości', h`<div class="stack" style="gap:8px">
+        ${card('Sprawdzenie gotowości', h`<div class="stack u-s16">
           ${health.checks.filter((c) => ['web', 'php', 'db', 'dns', 'mail', 'port-80', 'port-25', 'port-993'].includes(c.id)).map((c) => h`<div class="spread"><span>${c.label}</span><span>${statusBadge(c.status)}</span></div>`)}
         </div>`, { actions: [h`<a class="link small" href="/admin/health">Pełny raport</a>`] })}
       </div>

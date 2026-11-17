@@ -40,8 +40,8 @@ export function register(router) {
       ${alert(`OpenSSL ${status.openssl ? 'available' : 'missing'} · certbot ${status.certbot ? 'available' : 'not installed (ACME issuance unavailable)'} · certificates in <code>${status.directory}</code>`, status.certbot ? 'info' : 'warn')}
       ${domains.length ? h`<div class="toolbar"><form method="get" action="/user/ssl" class="row">
         <input type="hidden" name="tab" value="${tab}">
-        <label class="field-label" for="sslDomain" style="margin:0">Domain</label>
-        <select id="sslDomain" name="domain" data-domain-select style="width:280px">${domains.map((x) => h`<option value="${x.name}" ${x.name === d?.name ? 'selected' : ''}>${x.name}</option>`)}</select>
+        <label class="field-label u-s11" for="sslDomain">Domain</label>
+        <select class="u-s15" id="sslDomain" name="domain" data-domain-select>${domains.map((x) => h`<option value="${x.name}" ${x.name === d?.name ? 'selected' : ''}>${x.name}</option>`)}</select>
         <noscript><button class="btn btn-secondary btn-sm">Switch</button></noscript></form></div>` : ''}
       ${!domains.length ? alert('Add a domain before installing certificates.', 'warn') : ''}
 
@@ -59,7 +59,7 @@ export function register(router) {
             <div>
               <p class="small muted">Certificate fingerprint</p>
               <pre class="code-block small">${active.cert ? String(active.cert).slice(0, 40) + '…' : 'SHA256: ' + crypto.createHash('sha256').update(active.domain + active.created_at).digest('hex').slice(0, 40)}</pre>
-              <form method="post" action="/user/ssl/renew" style="margin-top:12px"><input type="hidden" name="_csrf" value="${ctx.csrf}">
+              <form class="u-s27" method="post" action="/user/ssl/renew"><input type="hidden" name="_csrf" value="${ctx.csrf}">
                 <input type="hidden" name="domain" value="${d.name}">
                 <button class="btn btn-secondary btn-sm" type="submit">${icon('refresh', { size: 14 })} Force renewal</button></form>
             </div>
@@ -111,8 +111,8 @@ export function register(router) {
       ${tab === 'certificates' ? card('Create self-signed certificate', h`
         <form method="post" action="/user/ssl/self-signed" class="row">
           <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d?.name || ''}">
-          <input name="common_name" placeholder="Common name (CN)" value="${d?.name || ''}" style="max-width:260px">
-          <input name="days" type="number" value="365" style="max-width:120px">
+          <input class="u-s28" name="common_name" placeholder="Common name (CN)" value="${d?.name || ''}">
+          <input class="u-s29" name="days" type="number" value="365">
           <button class="btn btn-secondary" type="submit">Create self-signed</button>
         </form>`, { sub: 'Useful for internal or staging hostnames' }) : ''}`;
     return page(ctx, { title: 'SSL/TLS Certificates', subtitle: d ? `Secure ${d.name} with HTTPS` : 'Manage HTTPS certificates', body });
@@ -195,7 +195,7 @@ export function register(router) {
           <div class="form-grid">
             <div class="field field-full"><label class="field-label">Current password</label><input name="current" type="password" required autocomplete="current-password"></div>
             <div class="field"><label class="field-label">New password</label>
-              <div class="field-control"><input id="newpass" name="password" type="password" required minlength="8"><button class="btn btn-secondary btn-sm" type="button" data-genpass="#newpass" style="margin-left:8px">Generate</button></div>
+              <div class="field-control"><input id="newpass" name="password" type="password" required minlength="8"><button class="btn btn-secondary btn-sm u-s18" type="button" data-genpass="#newpass">Generate</button></div>
               <p class="field-help">At least 8 characters. Use a password manager.</p></div>
             <div class="field"><label class="field-label">Confirm new password</label><input name="confirm" type="password" required minlength="8"></div>
             <div class="field field-full"><label class="check-field"><input type="checkbox" name="signout" value="1" checked> <span>Sign out all other sessions</span></label></div>
@@ -217,7 +217,7 @@ export function register(router) {
           { label: 'IP address', key: 'ip' },
           { label: 'Started', render: (r) => formatDate(r.created_at, { time: true }) },
           { label: 'Expires', render: (r) => formatDate(r.expires_at, { time: true }) },
-          { label: 'User agent', render: (r) => h`<span class="truncate small" style="max-width:320px;display:block">${r.ua || '—'}</span>` },
+          { label: 'User agent', render: (r) => h`<span class="truncate small u-s30">${r.ua || '—'}</span>` },
         ],
         rows: activeSessions(ctx.user.id), empty: 'No active sessions.',
       })}`)}`;
@@ -255,11 +255,11 @@ export function register(router) {
         ],
         rows, empty: 'No login keys yet.',
         actions: [{ label: 'Revoke', form: (r) => `/user/login-keys/${r.id}/delete`, confirm: 'Revoke this key?', icon: 'trash', danger: true }],
-        footer: h`<form method="post" action="/user/login-keys/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        footer: h`<form class="u-s31" method="post" action="/user/login-keys/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
-          <input name="name" placeholder="deploy-script" style="max-width:200px">
+          <input class="u-s32" name="name" placeholder="deploy-script">
           <select name="days"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="365">1 year</option><option value="0">Never expires</option></select>
-          <input name="commands" placeholder="CMD_API_DOMAIN,CMD_API_POP" style="max-width:300px">
+          <input class="u-s33" name="commands" placeholder="CMD_API_DOMAIN,CMD_API_POP">
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Create key</button>
         </form>`,
       })}
@@ -300,10 +300,10 @@ export function register(router) {
       ],
       rows, empty: 'No SSH keys added.',
       actions: [{ label: 'Delete', form: (r) => `/user/ssh-keys/${r.id}/delete`, confirm: 'Remove this key?', icon: 'trash', danger: true }],
-      footer: h`<form method="post" action="/user/ssh-keys/create" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      footer: h`<form class="u-s31" method="post" action="/user/ssh-keys/create">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <input name="name" placeholder="laptop" style="max-width:160px">
-        <input name="public_key" placeholder="ssh-ed25519 AAAAC3… user@host" style="flex:1;min-width:300px">
+        <input class="u-s34" name="name" placeholder="laptop">
+        <input class="u-s35" name="public_key" placeholder="ssh-ed25519 AAAAC3… user@host">
         <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add key</button>
       </form>`,
     })}${card('Shell access', h`<p class="small muted">Shell access is <strong>${ctx.caps.ssh ? 'enabled' : 'disabled'}</strong> for your account. Use SSH at <code>${ctx.user.username}@${setting('server_name', 'localhost')}</code> on port 22.</p>`)}`;

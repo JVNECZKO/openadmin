@@ -36,7 +36,7 @@ export function register(router) {
       <div class="grid grid-2">
         ${kvList([['Konto', user.username], ['Sekret', h`<code>${secret}</code>`], ['Typ', 'Czasowy (TOTP)'], ['Cyfry', '6 / 30 sekund']])}
         <div>
-          ${qr ? h`<div style="text-align:center">${raw(qr)}<p class="small muted">Zeskanuj w aplikacji Google Authenticator / Microsoft Authenticator</p></div>` : h`<p class="small muted">Zainstaluj pakiet <code>qrencode</code>, aby zobaczyć kod QR, albo wpisz sekret ręcznie.</p>`}
+          ${qr ? h`<div class="u-s66">${raw(qr)}<p class="small muted">Zeskanuj w aplikacji Google Authenticator / Microsoft Authenticator</p></div>` : h`<p class="small muted">Zainstaluj pakiet <code>qrencode</code>, aby zobaczyć kod QR, albo wpisz sekret ręcznie.</p>`}
           <p class="small muted">otpauth URI</p>
           <pre class="code-block small">${url}</pre>
         </div>

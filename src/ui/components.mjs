@@ -4,6 +4,11 @@ import { icon } from './icons.mjs';
 
 export const h = html;
 
+export function pctClass(value) {
+  const n = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+  return `pct-${n}`;
+}
+
 export function pageHead(title, subtitle = '', actions = [], { tools = [] } = {}) {
   return html`<div class="page-head">
     <div class="page-head-text">
@@ -69,7 +74,7 @@ export function progress(used, total, { label = '', tone = '', showText = true }
   const p = pct(used, total);
   const cls = tone || (p > 90 ? 'danger' : p > 75 ? 'warn' : '');
   return html`<div class="progress-wrap">
-    <div class="progress ${cls}"><span style="width:${p}%"></span></div>
+    <div class="progress ${cls}"><span class="${pctClass(p)}"></span></div>
     ${showText ? html`<div class="progress-text"><span>${formatBytes(used)}</span><span>${total ? formatBytes(total) : 'unlimited'}${label ? ' · ' + label : ''}</span></div>` : ''}
   </div>`;
 }
@@ -120,7 +125,7 @@ export function table({
     <table class="data-table ${cls}">
       <thead><tr>
         ${selectable ? html`<th scope="col" class="col-check"><input type="checkbox" data-check-all aria-label="${selectAllLabel}"></th>` : ''}
-        ${columns.map((c) => html`<th scope="col" class="${c.align === 'right' ? 'ta-r' : ''}" ${c.width ? raw(`style="width:${e(c.width)}"`) : ''}>${c.label}</th>`)}
+        ${columns.map((c) => html`<th scope="col" class="${c.align === 'right' ? 'ta-r' : ''}">${c.label}</th>`)}
         ${actions.length ? html`<th scope="col" class="col-actions">${actionsLabel}</th>` : ''}
       </tr></thead>
       <tbody>
@@ -412,7 +417,7 @@ export function donut(segments, { size = 148, thickness = 16, center = '' } = {}
 }
 
 export function kvList(pairs, { cols = 2 } = {}) {
-  return html`<dl class="kv" style="--kv-cols:${cols}">${pairs.map(([k, v]) => html`<div class="kv-row"><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>`;
+  return html`<dl class="kv kv-cols-${Math.max(1, Math.min(4, Number(cols) || 2))}">${pairs.map(([k, v]) => html`<div class="kv-row"><dt>${k}</dt><dd>${v}</dd></div>`)}</dl>`;
 }
 
 export function modal(id, title, body, { footer = '', size = '', sub = '', closeLabel = 'Close dialog' } = {}) {
@@ -430,7 +435,7 @@ export function modal(id, title, body, { footer = '', size = '', sub = '', close
 
 export function drawer(id, title, body, { footer = '', side = 'right', width = '', closeLabel = 'Close panel' } = {}) {
   return html`<div class="drawer-backdrop" id="${id}" hidden data-drawer-side="${side}">
-    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="${id}-title" tabindex="-1" ${width ? raw(`style="--drawer-w:${e(width)}"`) : ''}>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="${id}-title" tabindex="-1">
       <header class="drawer-head">
         <h3 id="${id}-title">${title}</h3>
         <button class="icon-btn" type="button" data-close-drawer aria-label="${closeLabel}" title="${closeLabel}" data-i18n-aria-label="a11y.closePanel" data-i18n-title="a11y.closePanel">${icon('x', { size: 18 })}</button>
@@ -487,7 +492,7 @@ export function provisionStatus({ state = 'pending', title = 'Provisioning', det
     <div class="provision-copy">
       <strong>${title}</strong>
       ${detail ? html`<p>${detail}</p>` : ''}
-      ${progress !== null ? html`<div class="progress mt-10"><span style="width:${Math.max(0, Math.min(100, Number(progress) || 0))}%"></span></div>` : ''}
+      ${progress !== null ? html`<div class="progress mt-10"><span class="${pctClass(progress)}"></span></div>` : ''}
       ${steps.length ? html`<ul class="provision-steps">${steps.map((step) => {
         const s = typeof step === 'string' ? { label: step } : step;
         return html`<li class="provision-step is-${s.state || 'pending'}"><span class="status-dot"></span><span>${s.label}</span>${s.meta ? html`<small>${s.meta}</small>` : ''}</li>`;
@@ -497,8 +502,8 @@ export function provisionStatus({ state = 'pending', title = 'Provisioning', det
 }
 
 export function skeleton(lines = 3, { cls = '', width = '' } = {}) {
-  return html`<div class="skeleton-stack ${cls}" aria-hidden="true" ${width ? raw(`style="max-width:${e(width)}"`) : ''}>
-    ${Array.from({ length: Math.max(1, Number(lines) || 1) }, (_, i) => html`<span class="skeleton skeleton-line" style="width:${[92, 78, 86, 64][i % 4]}%"></span>`)}
+  return html`<div class="skeleton-stack ${cls}" aria-hidden="true">
+    ${Array.from({ length: Math.max(1, Number(lines) || 1) }, (_, i) => html`<span class="skeleton skeleton-line ${pctClass([92, 78, 86, 64][i % 4])}"></span>`)}
   </div>`;
 }
 

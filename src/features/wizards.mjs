@@ -76,8 +76,8 @@ function valuesFromBody(ctx) {
 }
 
 function subdomainRow(value = '', { removable = true } = {}) {
-  return h`<div class="row" data-subdomain-row style="align-items:flex-end">
-    <div class="field" style="flex:1;min-width:180px">
+  return h`<div class="row u-s89" data-subdomain-row>
+    <div class="field u-s90">
       <label class="field-label">Subdomena</label>
       <input name="subdomains[]" value="${value}" placeholder="blog" autocomplete="off">
     </div>
@@ -88,10 +88,10 @@ function subdomainRow(value = '', { removable = true } = {}) {
 function subdomainEditor(values) {
   const rows = values.subdomains.length ? values.subdomains : [''];
   return h`
-    <div style="display:flex;flex-direction:column;gap:8px" data-subdomain-rows>
+    <div class="u-s91" data-subdomain-rows>
       ${rows.map((name, i) => subdomainRow(name, { removable: i > 0 || rows.length > 1 }))}
     </div>
-    <button type="button" class="btn btn-secondary btn-sm" data-add-subdomain style="margin-top:10px">+ Dodaj subdomenę</button>
+    <button type="button" class="btn btn-secondary btn-sm u-s55" data-add-subdomain>+ Dodaj subdomenę</button>
     <p class="field-help">Domena główna dostaje certyfikat z kroku 2. Każda subdomena dostaje własny vhost i — jeśli strefa DNS jest włączona — rekord A. Limit wynika z pakietu; puste wiersze są ignorowane.</p>
     <noscript><p class="small muted">Bez JavaScriptu możesz dodać jedną subdomenę w tym kroku. Kolejne dodasz później na stronie Subdomeny.</p></noscript>
     <template id="oa-subdomain-template">${subdomainRow('', { removable: true })}</template>
@@ -190,7 +190,7 @@ function wizardForm(ctx, values) {
               ${(() => { try { return all('SELECT * FROM dns_templates ORDER BY name').map((t) => h`<option value="${t.id}" ${String(values.dnsTemplate || '') === String(t.id) ? 'selected' : ''}>${t.name}</option>`); } catch { return ''; } })()}
             </select>
           </div>
-          <div class="field field-full"><div class="row" style="gap:16px;flex-wrap:wrap">
+          <div class="field field-full"><div class="row u-s92">
             <label class="check-field"><input type="checkbox" name="check_delegation" value="1" ${values.checkDelegation ? 'checked' : ''}> <span>Sprawdź delegację DNS</span></label>
             <label class="check-field"><input type="checkbox" name="retry_ssl_after_dns" value="1" ${values.retrySslAfterDns ? 'checked' : ''}> <span>Ponów ACME po DNS</span></label>
             <label class="check-field"><input type="checkbox" name="create_backup" value="1" ${values.backup ? 'checked' : ''}> <span>Backup dzienny</span></label>
@@ -198,7 +198,7 @@ function wizardForm(ctx, values) {
           </div></div>
           <div class="field"><label class="field-label" for="site-mailbox">Skrzynka podstawowa</label>
             <input id="site-mailbox" name="mailbox_local" value="${values.mailboxLocal || 'postmaster'}" pattern="[a-z0-9][a-z0-9._-]{0,63}">
-            <label class="check-field" style="margin-top:6px"><input type="checkbox" name="create_mailbox" value="1" ${values.createMailbox ? 'checked' : ''}> <span>Utwórz skrzynkę</span></label></div>
+            <label class="check-field u-s24"><input type="checkbox" name="create_mailbox" value="1" ${values.createMailbox ? 'checked' : ''}> <span>Utwórz skrzynkę</span></label></div>
           <div class="field"><label class="field-label" for="site-mailbox-quota">Limit skrzynki (MB)</label>
             <input id="site-mailbox-quota" name="mailbox_quota_mb" type="number" min="0" value="${values.mailboxQuotaMb || 1024}"></div>
         </div>
@@ -294,9 +294,9 @@ function resultPage(ctx, result) {
       ${result.links.email ? h`<a class="btn btn-secondary" href="${result.links.email}">Dodaj pocztę</a>` : ''}
       ${result.links.domain ? h`<a class="btn btn-ghost" href="${result.links.domain}">Zarządzaj domeną</a>` : ''}
     </div>
-    <p class="small muted" style="margin-top:12px">Jeśli domena nie jest jeszcze delegowana do tego serwera, ustaw u niej rekordy lub NS. Poniżej domyślne rekordy panelu:</p>
+    <p class="small muted u-s27">Jeśli domena nie jest jeszcze delegowana do tego serwera, ustaw u niej rekordy lub NS. Poniżej domyślne rekordy panelu:</p>
     <pre class="code-block">${dnsInfo(result.domain)}</pre>
-    <div class="row" style="margin-top:12px">
+    <div class="row u-s27">
       <a class="btn btn-ghost" href="/user/websites/new">Dodaj kolejną stronę</a>
       <a class="btn btn-ghost" href="/user/domains">Wszystkie domeny</a>
     </div>`) : '';
@@ -312,7 +312,7 @@ function wizardPage(ctx, values = {}) {
   const domains = visibleDomains(ctx.user);
   return h`${alert(h`To uproszczony kreator strony. Pełny, jeden przepływ domeny (document root → DNS → delegacja → vhost → PHP → SSL z retry → poczta → aplikacja → backup/monitoring) znajdziesz w <a class="link" href="/user/domains/create">kreatorze domeny</a>.`, 'info')}
     ${wizardForm(ctx, values)}
-    ${domains.length ? card('Masz już domeny', h`${domains.map((d) => h`<div class="spread" style="padding:6px 0"><a class="link" href="/user/files?path=${encodeURIComponent(d.docroot || '/')}">${d.name}</a><span>${d.ssl ? badge('SSL', 'ok') : badge('bez SSL', 'warn')}</span></div>`)}`) : ''}`;
+    ${domains.length ? card('Masz już domeny', h`${domains.map((d) => h`<div class="spread u-s93"><a class="link" href="/user/files?path=${encodeURIComponent(d.docroot || '/')}">${d.name}</a><span>${d.ssl ? badge('SSL', 'ok') : badge('bez SSL', 'warn')}</span></div>`)}`) : ''}`;
 }
 
 /* ----------------------------------------------- account provisioning wizard */
@@ -405,13 +405,13 @@ export function renderAccountResult(status, { title = 'Wynik provisioningu konta
             : badge(step.optional ? 'ostrzeżenie' : 'błąd', step.optional ? 'warn' : 'danger')}
         </div>
         <div class="small muted">${step.detail || ''}</div>
-        ${Array.isArray(step.subSteps) && step.subSteps.length ? h`<ul class="doc-list" style="margin-top:6px">
+        ${Array.isArray(step.subSteps) && step.subSteps.length ? h`<ul class="doc-list u-s24">
           ${step.subSteps.map((sub) => h`<li data-site-step="${sub.key || ''}">${sub.ok ? badge(sub.skipped ? 'pominięte' : 'OK', sub.skipped ? 'muted' : 'ok') : badge('błąd', 'danger')} <span class="small">${sub.label || sub.key}: ${sub.detail || ''}</span></li>`)}
         </ul>` : ''}
       </li>`)}
     </ol>`, { sub: 'Kolejność rzeczywistych operacji — każda pozycja to prawdziwy wynik, nie deklaracja.' })}
     ${status.links && Object.keys(status.links).some((key) => key !== 'activation' && status.links[key]) ? card('Co dalej', h`
-      <div class="row" style="flex-wrap:wrap;gap:8px">
+      <div class="row u-s59">
         ${status.links.site ? h`<a class="btn btn-secondary btn-sm" href="${status.links.site}" target="_blank" rel="noopener">Otwórz stronę</a>` : ''}
         ${status.links.dns ? h`<a class="btn btn-secondary btn-sm" href="${status.links.dns}">Strefa DNS</a>` : ''}
         ${status.links.ssl ? h`<a class="btn btn-secondary btn-sm" href="${status.links.ssl}">Certyfikat SSL</a>` : ''}
@@ -492,8 +492,8 @@ export function renderUserProvisioningForm(ctx, {
             <p class="field-help">Pakiet wybiera limity domen, poczty, dysku i transferu. Zmiana pakietu nie usuwa danych.</p></div>
         </div>
         <div data-package-summary>${packageSummaryRows(summaries[selectedPackage] || {})}</div>
-        <details ${inlineOpen ? 'open' : ''} style="margin-top:14px"><summary>Nie ma odpowiedniego pakietu? Utwórz go inline bez utraty formularza</summary>
-          <div class="form-grid form-grid-3" style="margin-top:10px">
+        <details class="u-s52" ${inlineOpen ? 'open' : ''}><summary>Nie ma odpowiedniego pakietu? Utwórz go inline bez utraty formularza</summary>
+          <div class="form-grid form-grid-3 u-s55">
             <div class="field"><label class="field-label" for="oa-user-new-package">Nazwa nowego pakietu</label>
               <input id="oa-user-new-package" name="new_package_name" value="${asValue(values, 'new_package_name')}" pattern="[a-zA-Z0-9_.-]{2,40}"></div>
             <div class="field"><label class="field-label" for="oa-user-new-domains">Domeny</label><input id="oa-user-new-domains" name="new_limit_domains" type="number" min="0" value="${asValue(values, 'new_limit_domains', 10)}"></div>
@@ -538,7 +538,7 @@ export function renderUserProvisioningForm(ctx, {
             <p class="field-help">Let's Encrypt wymaga publicznego DNS i portu 80; panel pokaże fallback i może ponowić ACME po propagacji.</p></div>
           <div class="field"><label class="field-label" for="oa-user-mailbox">Skrzynka podstawowa</label>
             <input id="oa-user-mailbox" name="mailbox_local" value="${asValue(values, 'mailbox_local', defaults.mailboxLocal || 'postmaster')}" pattern="[a-z0-9][a-z0-9._-]{0,63}">
-            <label class="check-field" style="margin-top:6px"><input type="checkbox" name="create_mailbox" value="1" ${wantsMailbox ? 'checked' : ''}> <span>Utwórz tę skrzynkę</span></label></div>
+            <label class="check-field u-s24"><input type="checkbox" name="create_mailbox" value="1" ${wantsMailbox ? 'checked' : ''}> <span>Utwórz tę skrzynkę</span></label></div>
           <div class="field"><label class="field-label" for="oa-user-mailbox-quota">Limit skrzynki (MB)</label>
             <input id="oa-user-mailbox-quota" name="mailbox_quota_mb" type="number" min="0" value="${asValue(values, 'mailbox_quota_mb', defaults.mailboxQuotaMb || 1024)}"></div>
           <div class="field field-full"><label class="field-label" for="oa-user-app">Aplikacja</label>
@@ -549,7 +549,7 @@ export function renderUserProvisioningForm(ctx, {
           <div class="field"><label class="field-label" for="oa-user-app-user">Login administratora aplikacji</label><input id="oa-user-app-user" name="app_admin_user" value="${asValue(values, 'app_admin_user', 'admin')}" autocomplete="username"></div>
           <div class="field"><label class="field-label" for="oa-user-app-email">E-mail administratora aplikacji</label><input id="oa-user-app-email" name="app_admin_email" type="email" value="${asValue(values, 'app_admin_email')}" autocomplete="email"></div>
           <div class="field"><label class="field-label" for="oa-user-app-pass">Hasło administratora aplikacji</label><input id="oa-user-app-pass" name="app_admin_password" type="password" minlength="8" autocomplete="new-password" placeholder="min. 8 znaków — tylko przy instalacji"></div>
-          <div class="field field-full"><div class="row" style="gap:16px;flex-wrap:wrap">
+          <div class="field field-full"><div class="row u-s92">
             <label class="check-field"><input type="checkbox" name="docroot" value="1" ${asFlag(values, 'docroot', true) ? 'checked' : ''}> <span>Document root</span></label>
             <label class="check-field"><input type="checkbox" name="php_step" value="1" ${asFlag(values, 'php_step', true) ? 'checked' : ''}> <span>PHP runtime</span></label>
             <label class="check-field"><input type="checkbox" name="vhost" value="1" ${asFlag(values, 'vhost', true) ? 'checked' : ''}> <span>Vhost</span></label>
@@ -568,7 +568,7 @@ export function renderUserProvisioningForm(ctx, {
         <div class="form-grid">
           <div class="field"><label class="field-label" for="oa-user-password">Hasło (opcjonalnie)</label>
             <div class="field-control"><input id="oa-user-password" name="password" type="password" minlength="10" placeholder="Pozostaw puste, aby użyć linku aktywacyjnego">
-              <button class="btn btn-secondary btn-sm" type="button" data-genpass="#oa-user-password" style="margin-left:8px">Wygeneruj</button></div>
+              <button class="btn btn-secondary btn-sm u-s18" type="button" data-genpass="#oa-user-password">Wygeneruj</button></div>
             <p class="field-help">Hasło musi spełniać politykę panelu. Jeśli pozostanie puste, wygenerujemy silne hasło startowe (nigdy nie pokazywane) i jednorazowy link aktywacyjny.</p></div>
           <div class="field"><label class="check-field"><input type="checkbox" name="activation" value="1" ${activation ? 'checked' : ''}> <span>Wyślij/zapisz link aktywacyjny zamiast hasła</span></label>
             <p class="field-help">Link jest jednorazowy i wygasa po godzinie; hasło nie jest wysyłane w wiadomości.</p></div>
