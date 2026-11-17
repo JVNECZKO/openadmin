@@ -160,20 +160,20 @@ function loginPage({ error = '', email = '' }) {
   const mailboxes = all('SELECT local_part, domain FROM email_accounts WHERE suspended = 0 ORDER BY domain, local_part').slice(0, 40);
   const body = h`<div class="wm-login">
     <div class="wm-login-card">
-      <h1>Sign in to webmail</h1>
-      <p class="small muted">Use the mailbox address and password from your hosting panel.</p>
+      <h1>Zaloguj się do webmaila</h1>
+      <p class="small muted">Użyj adresu skrzynki i hasła z panelu hostingowego.</p>
       ${error ? h`<div class="alert alert-danger">${icon('alert', { size: 18 })}<div>${error}</div></div>` : ''}
       <form method="post" action="/webmail/login" class="oa-form">
-        <div class="field"><label class="field-label">E-mail address</label><input name="email" type="email" value="${email}" required autofocus placeholder="you@example.com"></div>
-        <div class="field"><label class="field-label">Password</label><input name="password" type="password" required></div>
-        <div class="form-actions"><button class="btn btn-primary btn-block" type="submit">Sign in</button></div>
+        <div class="field"><label class="field-label">Adres e-mail</label><input name="email" type="email" value="${email}" required autofocus placeholder="you@example.com"></div>
+        <div class="field"><label class="field-label">Hasło</label><input name="password" type="password" required></div>
+        <div class="form-actions"><button class="btn btn-primary btn-block" type="submit">Zaloguj się</button></div>
       </form>
-      <details class="wm-demo"><summary>Hosted mailboxes (demo)</summary>
-        <p class="small muted">${mailboxes.map((m) => `${m.local_part}@${m.domain}`).join(' · ') || 'No mailboxes yet'}</p>
+      <details class="wm-demo"><summary>Skrzynki na tym serwerze (demo)</summary>
+        <p class="small muted">${mailboxes.map((m) => `${m.local_part}@${m.domain}`).join(' · ') || 'Brak skrzynek'}</p>
       </details>
     </div>
   </div>`;
-  return layout({ title: 'Sign in', body });
+  return layout({ title: 'Logowanie', body });
 }
 
 function folderCounts(mailbox) {
@@ -188,7 +188,7 @@ function sidebar(mailbox, counts, active) {
   return h`<aside class="wm-side">
     ${FOLDERS.map((f) => h`<a class="wm-folder ${f === active ? 'active' : ''}" href="/webmail?folder=${encodeURIComponent(f)}">
       ${icon(f === 'INBOX' ? 'mail' : f === 'Sent' ? 'upload' : f === 'Drafts' ? 'file' : 'trash', { size: 17 })}
-      <span>${f === 'INBOX' ? 'Inbox' : f}</span>
+      <span>${f === 'INBOX' ? 'Odebrane' : f === 'Sent' ? 'Wysłane' : f === 'Drafts' ? 'Wersje robocze' : f === 'Trash' ? 'Kosz' : f}</span>
       <em>${counts[f] || 0}</em>
     </a>`)}
     <div class="wm-side-foot">
@@ -205,13 +205,13 @@ function listPane(mailbox, folder, rows, selectedId, q, page = 1, total = 0) {
       <form method="get" action="/webmail" class="wm-search">
         <input type="hidden" name="folder" value="${folder}">
         ${icon('search', { size: 15 })}
-        <input name="q" value="${q || ''}" placeholder="Search ${folder === 'INBOX' ? 'inbox' : folder.toLowerCase()}">
+        <input name="q" value="${q || ''}" placeholder="Szukaj w ${folder === 'INBOX' ? 'odebranych' : folder === 'Sent' ? 'wysłanych' : folder === 'Drafts' ? 'wersjach roboczych' : 'koszu'}">
       </form>
       <span class="small muted">${rows.length} of ${total} message(s)</span>
     </div>
     <div class="wm-rows">
       ${rows.length ? rows.map((m) => h`<a class="wm-row ${m.id === selectedId ? 'selected' : ''} ${m.seen ? '' : 'unread'}" href="/webmail?folder=${encodeURIComponent(folder)}&id=${m.id}">
-        <span class="wm-from">${folder === 'Sent' ? 'To: ' + m.to_addr : m.from_addr}</span>
+        <span class="wm-from">${folder === 'Sent' ? 'Do: ' + m.to_addr : m.from_addr}</span>
         <span class="wm-subj">${m.subject}</span>
         <span class="wm-date">${timeAgo(m.created_at)}</span>
       </a>`) : h`<div class="empty"><p>This folder is empty.</p></div>`}
@@ -228,13 +228,13 @@ function listPane(mailbox, folder, rows, selectedId, q, page = 1, total = 0) {
 
 function messagePane(m, mailbox, folder, { reply = false } = {}) {
   if (!m) {
-    return h`<section class="wm-read wm-empty"><div class="empty">${icon('mail', { size: 28 })}<h3>No message selected</h3><p>Choose a message from the list or compose a new one.</p><a class="btn btn-primary btn-sm" href="/webmail?compose=1">Compose</a></div></section>`;
+    return h`<section class="wm-read wm-empty"><div class="empty">${icon('mail', { size: 28 })}<h3>Nie wybrano wiadomości</h3><p>Wybierz wiadomość z listy lub utwórz nową.</p><a class="btn btn-primary btn-sm" href="/webmail?compose=1">Nowa wiadomość</a></div></section>`;
   }
   const body = h`<section class="wm-read">
     <header class="wm-read-head">
       <h2>${m.subject}</h2>
       <div class="wm-meta">
-        <span><strong>From</strong> ${m.from_addr}</span>
+        <span><strong>Od</strong> ${m.from_addr}</span>
         <span><strong>To</strong> ${m.to_addr}</span>
         <span><strong>Date</strong> ${formatDate(m.created_at, { time: true })}</span>
         ${m.cc ? h`<span><strong>Cc</strong> ${m.cc}</span>` : ''}
@@ -242,7 +242,7 @@ function messagePane(m, mailbox, folder, { reply = false } = {}) {
       <div class="wm-tools">
         <a class="btn btn-secondary btn-sm" href="/webmail?folder=${encodeURIComponent(folder)}&reply=${m.id}">${icon('arrowRight', { size: 14 })} Reply</a>
         <form method="post" action="/webmail/${m.id}/flag" class="inline"><input type="hidden" name="_csrf" value="${csrfFor(mailbox)}">
-          <button class="btn btn-ghost btn-sm" type="submit">${icon('star', { size: 14 })} ${m.flagged ? 'Unflag' : 'Flag'}</button></form>
+          <button class="btn btn-ghost btn-sm" type="submit">${icon('star', { size: 14 })} ${m.flagged ? 'Usuń oznaczenie' : 'Oznacz'}</button></form>
         <form method="post" action="/webmail/${m.id}/delete" class="inline"><input type="hidden" name="_csrf" value="${csrfFor(mailbox)}">
           <button class="btn btn-ghost btn-sm" type="submit">${icon('trash', { size: 14 })} Delete</button></form>
       </div>
@@ -262,7 +262,7 @@ function csrfFor(mailbox) {
   return crypto.createHash('sha256').update(`webmail:${s?.token || ''}`).digest('hex').slice(0, 32);
 }
 
-function composePane(mailbox, { to = '', subject = '', quote = '', error = '', draftId = '', sendLabel = 'Send message' } = {}) {
+function composePane(mailbox, { to = '', subject = '', quote = '', error = '', draftId = '', sendLabel = 'Wyślij wiadomość' } = {}) {
   return h`<section class="wm-read">
     <header class="wm-read-head"><h2>New message</h2></header>
     ${error ? h`<div class="alert alert-danger">${error}</div>` : ''}
@@ -270,8 +270,8 @@ function composePane(mailbox, { to = '', subject = '', quote = '', error = '', d
       <input type="hidden" name="_csrf" value="${csrfFor(mailbox)}">
       ${draftId ? h`<input type="hidden" name="draft_id" value="${draftId}">` : ''}
       <div class="field"><label class="field-label">To</label><input name="to" type="text" value="${to}" placeholder="one@example.com, two@example.com"></div>
-      <div class="field"><label class="field-label">Subject</label><input name="subject" value="${subject}" required></div>
-      <div class="field"><label class="field-label">Message</label><textarea name="body" rows="12">${quote}</textarea></div>
+      <div class="field"><label class="field-label">Temat</label><input name="subject" value="${subject}" required></div>
+      <div class="field"><label class="field-label">Wiadomość</label><textarea name="body" rows="12">${quote}</textarea></div>
       <div class="field">
         <label class="field-label">Attachments</label>
         <input type="file" multiple data-wm-attach>
@@ -280,7 +280,7 @@ function composePane(mailbox, { to = '', subject = '', quote = '', error = '', d
       </div>
       <div class="form-actions">
         <button class="btn btn-primary" type="submit">${icon('upload', { size: 16 })} ${sendLabel}</button>
-        <button class="btn btn-secondary" type="submit" formaction="/webmail/draft">Save draft</button>
+        <button class="btn btn-secondary" type="submit" formaction="/webmail/draft">Zapisz wersję roboczą</button>
         <a class="btn btn-ghost" href="/webmail">Discard</a></div>
     </form>
   </section>`;
@@ -307,7 +307,7 @@ export function register(router) {
     const draftMode = ctx.query.compose || (selected && selected.folder === 'Drafts');
     const pane = draftMode
       ? composePane(mailbox, selected && selected.folder === 'Drafts'
-        ? { to: selected.to_addr, subject: selected.subject, quote: selected.body, draftId: selected.id, sendLabel: 'Send draft' }
+        ? { to: selected.to_addr, subject: selected.subject, quote: selected.body, draftId: selected.id, sendLabel: 'Wyślij wersję roboczą' }
         : {})
       : replyTarget
         ? messagePane({ ...replyTarget, seen: 1 }, mailbox, folder, { reply: true })
@@ -317,7 +317,7 @@ export function register(router) {
       ${listPane(mailbox, folder, rows, selected?.id, q, page, total)}
       ${pane}
     </div>`;
-    return { status: 200, html: layout({ title: folder === 'INBOX' ? 'Inbox' : folder, mailbox, body, counts, active: folder, query: q }) };
+    return { status: 200, html: layout({ title: folder === 'INBOX' ? 'Odebrane' : folder === 'Sent' ? 'Wysłane' : folder === 'Drafts' ? 'Wersje robocze' : 'Kosz', mailbox, body, counts, active: folder, query: q }) };
   });
 
   router.post('/webmail/attach', (ctx) => {
@@ -393,7 +393,7 @@ export function register(router) {
     run(`INSERT INTO mail_messages(mailbox, uid, folder, from_addr, to_addr, subject, body, seen, size_kb, created_at)
          VALUES(?,?,?,?,?,?,?,?,?,?)`, mailbox, nextUid(mailbox, 'Drafts'), 'Drafts', mailbox, to, subject, text, 1,
       Math.max(1, Math.round(text.length / 1024)), nowIso());
-    return ctx.redirect('/webmail?folder=Drafts&flash=' + encodeURIComponent('Draft saved'));
+    return ctx.redirect('/webmail?folder=Drafts&flash=' + encodeURIComponent('Wersja robocza zapisana'));
   });
 
   router.post('/webmail/send', (ctx) => {

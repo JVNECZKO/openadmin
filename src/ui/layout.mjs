@@ -279,6 +279,7 @@ function topbar({ user, level, path, csrf, notifications, title, notifyUrl = '' 
       </div>
       <span class="topbar-divider" aria-hidden="true"></span>
       <button class="icon-btn topbar-search-btn" type="button" data-open-search aria-label="${pl ? 'Szukaj stron i poleceń' : 'Search pages and commands'}">${icon('search', { size: 18 })}</button>
+      <a class="icon-btn" href="/help" aria-label="${pl ? 'Pomoc i dokumentacja' : 'Help and documentation'}" title="${pl ? 'Pomoc i dokumentacja' : 'Help and documentation'}">${icon('info', { size: 18 })}</a>
       <a class="icon-btn bell-btn" href="/${level}/messages" data-bell
         aria-label="${pl ? 'Powiadomienia' : 'Notifications'}${count ? (pl ? ` (${count} nieprzeczytane)` : ` (${count} unread)`) : ''}"
         title="${pl ? 'Powiadomienia' : 'Notifications'}" data-badge="${count}"

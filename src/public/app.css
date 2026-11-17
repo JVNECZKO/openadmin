@@ -3742,3 +3742,18 @@ form.oa-form[data-wizard] { max-width: 1100px; margin: 0 auto; }
 .file-search .search { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
 .file-search .search .i { flex: none; color: var(--muted); }
 .file-search .search input[type="search"] { flex: 1; min-width: 0; height: 38px; border: 0; background: transparent; outline: none; }
+.stats-details > summary { cursor: pointer; padding: 4px 0 10px; color: var(--brand); font-size: var(--fs-sm); }
+
+/* Password reveal/copy controls are injected client-side, never as inline styles. */
+.password-tools { display: inline-flex; gap: 4px; align-items: center; margin-top: 4px; }
+.password-tools .icon-btn { min-height: 30px; padding: 0 8px; font-size: var(--fs-xs); }
+@media (max-width: 760px) { .password-tools { width: 100%; } .password-tools .icon-btn { flex: 1; min-height: 40px; } }
+.pagination { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 14px 8px 4px; }
+.pagination .chip { min-width: 32px; text-align: center; justify-content: center; }
+.section-details > summary { cursor: pointer; padding: 12px 16px; font-weight: 600; color: var(--brand); }
+.section-details[open] > summary { border-bottom: 1px solid var(--border); }
+.section-details > .table-wrap { margin: 0; }
+.password-tools .icon-btn { white-space: nowrap; }
+.password-tools .icon-btn { width: auto; min-width: 0; height: 30px; padding: 0 10px; border-color: var(--border); background: var(--surface); }
+.field-help-link { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 3px; border: 1px solid var(--border-strong); border-radius: 50%; color: var(--muted); font-size: 10px; font-weight: 700; text-decoration: none; vertical-align: middle; }
+.field-help-link:hover { color: var(--brand); border-color: var(--brand); }

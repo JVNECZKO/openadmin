@@ -6,7 +6,7 @@ import { html as h, raw, e, isEmail, formatBytes, formatDate, randomPassword } f
 import { page } from '../ui/respond.mjs';
 import { card, table, btn, badge, alert, emptyState, kvList, progress } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
-import { domainSelect, listCard } from '../ui/pages/list.mjs';
+import { domainSelect, listCard, paginate, pagination } from '../ui/pages/list.mjs';
 import { quota, visibleDomains, domainFor } from '../core/access.mjs';
 import { dovecotHash, syncMail } from '../mail.mjs';
 import { apply } from '../apply.mjs';
@@ -21,14 +21,14 @@ const MAIL_DOMAIN = (ctx, name) => domainFor(ctx.user, name) || visibleDomains(c
 function mailNav(ctx, active) {
   return h`<div class="tabs">
     <a class="tab ${active === 'accounts' ? 'active' : ''}" href="/user/email">Email accounts</a>
-    <a class="tab ${active === 'forwarders' ? 'active' : ''}" href="/user/email/forwarders">Forwarders</a>
-    <a class="tab ${active === 'autoresponders' ? 'active' : ''}" href="/user/email/autoresponders">Autoresponders</a>
-    <a class="tab ${active === 'vacation' ? 'active' : ''}" href="/user/email/vacation">Vacation messages</a>
+    <a class="tab ${active === 'forwarders' ? 'active' : ''}" href="/user/email/forwarders">Przekierowania</a>
+    <a class="tab ${active === 'autoresponders' ? 'active' : ''}" href="/user/email/autoresponders">Autoodpowiedzi</a>
+    <a class="tab ${active === 'vacation' ? 'active' : ''}" href="/user/email/vacation">Wiadomości urlopowe</a>
     <a class="tab ${active === 'catchall' ? 'active' : ''}" href="/user/email/catch-all">Catch-all</a>
-    <a class="tab ${active === 'lists' ? 'active' : ''}" href="/user/email/lists">Mailing lists</a>
-    <a class="tab ${active === 'spam' ? 'active' : ''}" href="/user/email/spam">Spam filters</a>
-    <a class="tab ${active === 'usage' ? 'active' : ''}" href="/user/email/usage">Usage</a>
-    <a class="tab ${active === 'setup' ? 'active' : ''}" href="/user/email/setup">Setup guide</a>
+    <a class="tab ${active === 'lists' ? 'active' : ''}" href="/user/email/lists">Listy mailingowe</a>
+    <a class="tab ${active === 'spam' ? 'active' : ''}" href="/user/email/spam">Filtry spamu</a>
+    <a class="tab ${active === 'usage' ? 'active' : ''}" href="/user/email/usage">Użycie</a>
+    <a class="tab ${active === 'setup' ? 'active' : ''}" href="/user/email/setup">Poradnik konfiguracji</a>
   </div>`;
 }
 
@@ -45,6 +45,8 @@ export function register(router) {
       ? all('SELECT * FROM email_accounts ORDER BY domain, local_part').filter((row) => domains.some((domain) => domain.name === row.domain))
       : (d ? all('SELECT * FROM email_accounts WHERE domain_id = ? ORDER BY local_part', d.id) : []);
     if (q) rows = rows.filter((row) => `${row.local_part}@${row.domain}`.toLowerCase().includes(q) || row.domain.toLowerCase().includes(q));
+    const pagedRows = paginate(rows, { page: ctx.query.page, perPage: 25 });
+    const pager = pagination({ base: '/user/email', query: `domain=${encodeURIComponent(selected)}${q ? `&q=${encodeURIComponent(q)}` : ''}`, page: pagedRows.page, pages: pagedRows.pages, label: 'Paginacja skrzynek' });
     const editing = ctx.query.edit ? get('SELECT * FROM email_accounts WHERE id = ?', Number(ctx.query.edit)) : null;
     const canEdit = editing && domainFor(ctx.user, editing.domain_id) ? editing : null;
     const lim = limitsFor(ctx.user);
@@ -63,14 +65,14 @@ export function register(router) {
         <button class="btn btn-secondary btn-sm" type="submit" data-confirm="Wykonać operację na zaznaczonych skrzynkach?">Wykonaj</button>
       </form>` : ''}
       ${listCard({
-        title: 'Skrzynki e-mail', sub: `${rows.length} ${rows.length === 1 ? 'skrzynka' : 'skrzynek'} ${allDomains ? 'we wszystkich domenach' : `na ${d?.name || '—'}`} · ${formatBytes(totalUsed)} zajęte${lim.emails ? ` · limit ${lim.emails}` : ''}`,
+        title: 'Skrzynki e-mail', sub: `${pagedRows.total} ${pagedRows.total === 1 ? 'skrzynka' : 'skrzynek'} ${allDomains ? 'we wszystkich domenach' : `na ${d?.name || '—'}`} · ${formatBytes(totalUsed)} zajęte${lim.emails ? ` · limit ${lim.emails}` : ''}`,
         columns: [
           ...(allDomains ? [{ label: 'Domena', dataLabel: 'Domena', render: (r) => h`<span class="cell-mono">${r.domain}</span>` }] : []),
           { label: 'Skrzynka', dataLabel: 'Skrzynka', render: (r) => h`<span class="cell-strong">${r.local_part}@${r.domain}</span><span class="cell-sub">${r.suspended ? 'Zawieszona' : 'Aktywna'}</span>` },
           { label: 'Limit', dataLabel: 'Limit', render: (r) => h`<div class="u-s67">${progress(r.used_mb, r.quota_mb || 1, { showText: false })}<span class="cell-sub">${formatBytes(r.used_mb)} / ${r.quota_mb ? formatBytes(r.quota_mb) : 'bez limitu'}</span></div>` },
           { label: 'Utworzono', dataLabel: 'Utworzono', render: (r) => formatDate(r.created_at) },
         ],
-        rows,
+        rows: pagedRows.items,
         createHref: d ? `/user/email/create?domain=${d.name}` : (domains.length ? '/user/email/create' : null),
         createLabel: 'Utwórz skrzynkę',
         empty: q ? 'Brak skrzynek pasujących do wyszukiwania.' : 'Brak skrzynek na tej domenie.',
@@ -85,7 +87,7 @@ export function register(router) {
           { label: (r) => r.suspended ? 'Wznów' : 'Zawieś', form: (r) => `/user/email/${r.id}/toggle`, icon: 'lock' },
           { label: 'Usuń', form: (r) => `/user/email/${r.id}/delete`, confirm: 'Usunąć skrzynkę i wszystkie jej wiadomości?', icon: 'trash', danger: true },
         ],
-        footer: h`<div class="row"><span class="small muted">${icon('info', { size: 14 })} Skrzynki używają tych samych zasad haseł co konta panelu. Webmail: <a class="link" href="/webmail">/webmail</a></span></div>`,
+        footer: h`${pager}<div class="row"><span class="small muted">${icon('info', { size: 14 })} Skrzynki używają tych samych zasad haseł co konta panelu. Webmail: <a class="link" href="/webmail">/webmail</a></span></div>`,
       })}
       ${canEdit ? card(`Edytuj skrzynkę · ${canEdit.local_part}@${canEdit.domain}`, h`<form method="post" action="/user/email/${canEdit.id}/update" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -105,24 +107,24 @@ export function register(router) {
     const q = quota(ctx.user, 'emails');
     const body = h`
       ${mailNav(ctx, 'accounts')}
-      ${!q.ok ? alert(`Mailbox limit reached (${q.used}/${q.limit}).`, 'warn') : ''}
-      ${card('Create mailbox', h`<form method="post" action="/user/email/create" class="oa-form">
+      ${!q.ok ? alert(`Osiągnięto limit skrzynek (${q.used}/${q.limit}).`, 'warn') : ''}
+      ${card('Dane skrzynki', h`<form method="post" action="/user/email/create" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <div class="form-grid">
-          <div class="field"><label class="field-label">Domain</label>
+          <div class="field"><label class="field-label">Domena</label>
             <select name="domain">${domains.map((x) => h`<option value="${x.name}" ${x.name === d?.name ? 'selected' : ''}>${x.name}</option>`)}</select></div>
-          <div class="field"><label class="field-label" for="local">Mailbox name <span class="req">*</span></label>
+          <div class="field"><label class="field-label" for="local">Nazwa skrzynki <span class="req">*</span></label>
             <div class="field-control"><input id="local" name="local_part" type="text" placeholder="info" required><span class="field-suffix">@${d?.name || 'domain'}</span></div>
             <p class="field-help">Letters, numbers, dots, hyphens and underscores.</p></div>
-          <div class="field"><label class="field-label" for="mpass">Password <span class="req">*</span></label>
-            <div class="field-control"><input id="mpass" name="password" type="password" required minlength="8" placeholder="At least 8 characters">
+          <div class="field"><label class="field-label" for="mpass">Hasło <span class="req">*</span></label>
+            <div class="field-control"><input id="mpass" name="password" type="password" required minlength="8" placeholder="Co najmniej 8 znaków">
               <button class="btn btn-secondary btn-sm u-s18" type="button" data-genpass="#mpass">Generate</button></div></div>
-          <div class="field"><label class="field-label">Quota (MB)</label><input name="quota_mb" type="number" min="0" value="1024"><p class="field-help">0 = unlimited.</p></div>
+          <div class="field"><label class="field-label">Limit (MB)</label><input name="quota_mb" type="number" min="0" value="1024"><p class="field-help">0 = unlimited.</p></div>
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit" ${!q.ok || !domains.length ? 'disabled' : ''}>${icon('plus', { size: 16 })} Create mailbox</button>
-          <a class="btn btn-ghost" href="/user/email">Cancel</a></div>
+          <a class="btn btn-ghost" href="/user/email">Anuluj</a></div>
       </form>`)}`;
-    return page(ctx, { title: 'Create Email Account', subtitle: 'Add a POP3/IMAP mailbox', body });
+    return page(ctx, { title: 'Dodaj skrzynkę e-mail', subtitle: 'Utwórz skrzynkę POP3/IMAP', body });
   });
 
   router.post('/user/email/create', (ctx) => {
@@ -202,17 +204,17 @@ export function register(router) {
     const body = h`
       ${mailNav(ctx, 'forwarders')}
       ${listCard({
-        title: 'Email forwarders', sub: `${rows.length} forwarder(s)`,
+        title: 'Przekierowania poczty', sub: `${rows.length} ${rows.length === 1 ? 'przekierowanie' : 'przekierowań'}`,
         columns: [
-          { label: 'Source', render: (r) => h`<span class="cell-mono">${r.source}@${r.domain}</span>` },
-          { label: 'Destination', render: (r) => h`<span class="cell-mono">${r.dest}</span>` },
-          { label: 'Keep copy', render: (r) => (r.keep_copy ? badge('Yes', 'ok') : badge('No', 'muted')) },
-          { label: 'Created', render: (r) => formatDate(r.created_at) },
+          { label: 'Źródło', dataLabel: 'Źródło', render: (r) => h`<span class="cell-mono">${r.source}@${r.domain}</span>` },
+          { label: 'Cel', dataLabel: 'Cel', render: (r) => h`<span class="cell-mono">${r.dest}</span>` },
+          { label: 'Zachowaj kopię', dataLabel: 'Kopia', render: (r) => (r.keep_copy ? badge('Tak', 'ok') : badge('Nie', 'muted')) },
+          { label: 'Utworzono', dataLabel: 'Utworzono', render: (r) => formatDate(r.created_at) },
         ],
         rows, empty: 'No forwarders configured.',
         actions: [
-          { label: 'Edit', href: (r) => `/user/email/forwarders?edit=${r.id}`, icon: 'edit' },
-          { label: 'Delete', form: (r) => `/user/email/forwarders/${r.id}/delete`, confirm: 'Usunąć przekierowanie poczty?', icon: 'trash', danger: true },
+          { label: 'Edytuj', href: (r) => `/user/email/forwarders?edit=${r.id}`, icon: 'edit' },
+          { label: 'Usuń', form: (r) => `/user/email/forwarders/${r.id}/delete`, confirm: 'Usunąć przekierowanie poczty?', icon: 'trash', danger: true },
         ],
         footer: h`<form class="u-s31" method="post" action="/user/email/forwarders/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -231,9 +233,9 @@ export function register(router) {
           <div class="field"><label class="field-label">Destination</label><input name="dest" type="email" value="${editing.dest}" required></div>
           <div class="field"><label class="check-field"><input type="checkbox" name="keep_copy" value="1" ${editing.keep_copy ? 'checked' : ''}> <span>Keep copy</span></label></div>
         </div>
-        <div class="form-actions"><button class="btn btn-primary" type="submit">Save forwarder</button><a class="btn btn-ghost" href="/user/email/forwarders">Cancel</a></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz przekierowanie</button><a class="btn btn-ghost" href="/user/email/forwarders">Anuluj</a></div>
       </form>`) : ''}`;
-    return page(ctx, { title: 'Email Forwarders', subtitle: 'Forward mail to another address', body });
+    return page(ctx, { title: 'Przekierowania poczty', subtitle: 'Przekazuj pocztę na inny adres', body });
   });
 
   router.post('/user/email/forwarders/create', (ctx) => {
@@ -276,13 +278,13 @@ export function register(router) {
       ${listCard({
         title: 'Autoresponders', sub: 'Automatically reply to incoming mail',
         columns: [
-          { label: 'Email', render: (r) => h`<span class="cell-mono">${r.email}</span>` },
-          { label: 'Subject', render: (r) => r.subject },
-          { label: 'Status', render: (r) => (r.enabled ? badge('Enabled', 'ok') : badge('Disabled', 'muted')) },
-          { label: 'Actions', render: (r) => h`<a class="link small" href="/user/email/autoresponders/${r.id}">Edit</a>` },
+          { label: 'E-mail', dataLabel: 'E-mail', render: (r) => h`<span class="cell-mono">${r.email}</span>` },
+          { label: 'Temat', dataLabel: 'Temat', render: (r) => r.subject },
+          { label: 'Status', dataLabel: 'Status', render: (r) => (r.enabled ? badge('Włączona', 'ok') : badge('Wyłączona', 'muted')) },
+          { label: 'Akcje', dataLabel: 'Akcje', render: (r) => h`<a class="link small" href="/user/email/autoresponders/${r.id}">Edytuj</a>` },
         ],
         rows, empty: 'No autoresponders yet.',
-        actions: [{ label: 'Delete', form: (r) => `/user/email/autoresponders/${r.id}/delete`, confirm: 'Usunąć autoresponder?', icon: 'trash', danger: true }],
+        actions: [{ label: 'Usuń', form: (r) => `/user/email/autoresponders/${r.id}/delete`, confirm: 'Usunąć autoresponder?', icon: 'trash', danger: true }],
         footer: h`<form class="u-s31" method="post" action="/user/email/autoresponders/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <select name="domain">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
@@ -291,7 +293,7 @@ export function register(router) {
           <button class="btn btn-primary btn-sm" type="submit">${icon('plus', { size: 14 })} Add autoresponder</button>
         </form>`,
       })}`;
-    return page(ctx, { title: 'Autoresponders', subtitle: 'Send automatic replies from a mailbox', body });
+    return page(ctx, { title: 'Autoodpowiedzi', subtitle: 'Wysyłaj automatyczne odpowiedzi ze skrzynki', body });
   });
 
   router.post('/user/email/autoresponders/create', (ctx) => {
@@ -319,7 +321,7 @@ export function register(router) {
           <div class="field field-full"><label class="field-label">Message</label><textarea name="body" rows="7">${a.body}</textarea></div>
           <div class="field field-full"><label class="check-field"><input type="checkbox" name="enabled" value="1" ${a.enabled ? 'checked' : ''}> <span>Enabled</span></label></div>
         </div>
-        <div class="form-actions"><button class="btn btn-primary" type="submit">Save</button><a class="btn btn-ghost" href="/user/email/autoresponders">Cancel</a></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Save</button><a class="btn btn-ghost" href="/user/email/autoresponders">Anuluj</a></div>
       </form>`)}`;
     return page(ctx, { title: 'Edit Autoresponder', subtitle: a.email, body });
   });
@@ -351,7 +353,7 @@ export function register(router) {
         title: 'Vacation messages', sub: 'Automatic replies while you are away',
         columns: [
           { label: 'Mailbox', render: (r) => h`<span class="cell-mono">${r.email}</span>` },
-          { label: 'Subject', render: (r) => r.subject },
+          { label: 'Temat', dataLabel: 'Temat', render: (r) => r.subject },
           { label: 'Period', render: (r) => r.start_date || r.end_date ? h`${formatDate(r.start_date)} → ${formatDate(r.end_date)}` : 'Always' },
           { label: 'Status', render: (r) => (r.enabled ? badge('Active', 'ok') : badge('Off', 'muted')) },
         ],
@@ -384,7 +386,7 @@ export function register(router) {
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/email/vacation?domain=${encodeURIComponent(editing.domain)}">Anuluj</a></div>
       </form>`) : ''}`;
-    return page(ctx, { title: 'Vacation Messages', subtitle: 'Schedule automatic out-of-office replies', body });
+    return page(ctx, { title: 'Wiadomości urlopowe', subtitle: 'Zaplanuj automatyczne odpowiedzi nieobecności', body });
   });
 
   router.post('/user/email/vacation/create', (ctx) => {
@@ -442,7 +444,7 @@ export function register(router) {
         ${row ? h`<form class="u-s55" method="post" action="/user/email/catch-all/delete"><input type="hidden" name="_csrf" value="${ctx.csrf}">
           <input type="hidden" name="domain" value="${d.name}"><button class="btn btn-quiet-danger btn-sm" type="submit">Remove catch-all</button></form>` : ''}
       `) : ''}`;
-    return page(ctx, { title: 'Catch-All Email', subtitle: 'Deliver unknown recipients to one mailbox', body });
+    return page(ctx, { title: 'Catch-all', subtitle: 'Dostarczaj nieznanych odbiorców do jednej skrzynki', body });
   });
 
   router.post('/user/email/catch-all/save', (ctx) => {
@@ -476,7 +478,7 @@ export function register(router) {
         columns: [
           { label: 'List', render: (r) => h`<span class="cell-strong">${r.name}@${r.domain}</span><span class="cell-sub">${(r.members || '').split(',').filter(Boolean).length} subscriber(s)</span>` },
           { label: 'Members', render: (r) => h`<span class="truncate u-s30">${r.members || '—'}</span>` },
-          { label: 'Created', render: (r) => formatDate(r.created_at) },
+          { label: 'Utworzono', dataLabel: 'Utworzono', render: (r) => formatDate(r.created_at) },
         ],
         rows, empty: 'No mailing lists yet.',
         actions: [
@@ -499,7 +501,7 @@ export function register(router) {
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/email/lists">Anuluj</a></div>
       </form>`) : ''}`;
-    return page(ctx, { title: 'Mailing Lists', subtitle: 'Create announcement and discussion lists', body });
+    return page(ctx, { title: 'Listy mailingowe', subtitle: 'Twórz listy ogłoszeń i dyskusji', body });
   });
 
   router.post('/user/email/lists/create', (ctx) => {
@@ -588,7 +590,7 @@ export function register(router) {
         </form>
         ${dkim.exists ? h`<pre class="code-block small mt-12">${dkim.selector}._domainkey.${d.name} IN TXT "${dkim.public_key}"</pre>` : ''}` : ''}`;
       })())}`
-    return page(ctx, { title: 'Spam Filters', subtitle: 'Block unwanted mail at the domain level', body });
+    return page(ctx, { title: 'Filtry spamu', subtitle: 'Blokuj niechcianą pocztę na poziomie domeny', body });
   });
 
   router.post('/user/email/dkim', (ctx) => {
@@ -646,7 +648,7 @@ export function register(router) {
         ],
         rows,
       })}`;
-    return page(ctx, { title: 'Email Usage', subtitle: 'Mailbox storage and quotas', body });
+    return page(ctx, { title: 'Użycie poczty', subtitle: 'Miejsce i limity skrzynek', body });
   });
 
   /* --------------------------------------------------------- mail onboarding */
@@ -665,7 +667,7 @@ export function register(router) {
     const qr = qrSvg(autoUrl, { size: 180 });
     const auth = dnsAuthHealth(account.domain);
     return page(ctx, {
-      title: 'Mail setup guide',
+      title: 'Poradnik konfiguracji poczty',
       subtitle: `${account.local_part}@${account.domain}`,
       body: h`${mailNav(ctx, 'setup')}
         ${extra ? alert(extra, extra.includes('✅') ? 'ok' : 'warn') : ''}

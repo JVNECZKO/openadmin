@@ -1610,6 +1610,65 @@
     syncUnlimited();
   }
 
+
+  function initPasswordTools() {
+    const pl = document.documentElement.lang !== 'en';
+    $$('input[type="password"]').forEach((input) => {
+      if (input.disabled || input.readOnly || input.dataset.passwordTools === '1') return;
+      input.dataset.passwordTools = '1';
+      const tools = document.createElement('span');
+      tools.className = 'password-tools';
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'icon-btn password-toggle';
+      toggle.setAttribute('aria-label', pl ? 'Pokaż hasło' : 'Show password');
+      toggle.textContent = pl ? 'Pokaż' : 'Show';
+      toggle.addEventListener('click', () => {
+        const visible = input.type === 'text';
+        input.type = visible ? 'password' : 'text';
+        toggle.textContent = visible ? (pl ? 'Pokaż' : 'Show') : (pl ? 'Ukryj' : 'Hide');
+        toggle.setAttribute('aria-label', visible ? (pl ? 'Pokaż hasło' : 'Show password') : (pl ? 'Ukryj hasło' : 'Hide password'));
+      });
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'icon-btn password-copy';
+      copy.setAttribute('aria-label', pl ? 'Kopiuj hasło' : 'Copy password');
+      copy.textContent = pl ? 'Kopiuj' : 'Copy';
+      copy.addEventListener('click', async () => {
+        if (!input.value) { toast(pl ? 'Pole hasła jest puste' : 'Password field is empty', { variant: 'warn' }); return; }
+        const ok = await copyText(input.value);
+        toast(ok ? (pl ? 'Hasło skopiowane' : 'Password copied') : (pl ? 'Nie udało się skopiować' : 'Could not copy'), { variant: ok ? 'success' : 'error' });
+      });
+      tools.append(toggle, copy);
+      const control = input.closest('.field-control') || input;
+      control.insertAdjacentElement('afterend', tools);
+    });
+  }
+
+  function initDirtyGuard() {
+    const dirty = new WeakSet();
+    const pl = document.documentElement.lang !== 'en';
+    document.addEventListener('input', (event) => {
+      const form = event.target.closest('form');
+      if (form && String(form.method).toLowerCase() === 'post' && !form.dataset.noDirtyGuard) dirty.add(form);
+    });
+    document.addEventListener('change', (event) => {
+      const form = event.target.closest('form');
+      if (form && String(form.method).toLowerCase() === 'post' && !form.dataset.noDirtyGuard) dirty.add(form);
+    });
+    document.addEventListener('submit', (event) => {
+      const form = event.target.closest('form');
+      if (form) form.dataset.submitted = '1';
+    }, true);
+    window.addEventListener('beforeunload', (event) => {
+      const forms = $$('form').filter((form) => dirty.has(form) && form.dataset.submitted !== '1');
+      if (!forms.length) return;
+      event.preventDefault();
+      event.returnValue = pl ? 'Masz niezapisane zmiany. Opuścić stronę?' : 'You have unsaved changes. Leave the page?';
+      return event.returnValue;
+    });
+  }
+
   function init() {
     root.classList.add('is-ready');
     initSidebar();
@@ -1633,6 +1692,8 @@
     initUpload();
     initWizard();
     initPackageBuilder();
+    initPasswordTools();
+    initDirtyGuard();
     initTerminal();
     updateAutoRefreshUi();
 

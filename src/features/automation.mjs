@@ -120,7 +120,7 @@ export function register(router) {
         field({ name: 'interval_seconds', label: L(ctx, 'Interval'), value: String(editing.interval_seconds), required: true, help: L(ctx, 'Seconds or a suffix such as 30s, 15m, 24h. Minimum 15 seconds, maximum 30 days.') }),
         field({ name: 'enabled', label: L(ctx, 'Enabled'), type: 'checkbox', value: editing.enabled, help: L(ctx, 'Disabled jobs stay in the list and keep their history.') }),
       ], { action: `${A}/jobs/${encodeURIComponent(editing.key)}`, csrf: ctx.csrf, submit: L(ctx, 'Save job'), cancel: A })) : ''}
-      ${card(L(ctx, 'Jobs'), table({
+      ${card('Zadania', h`<details class="section-details"><summary>Pokaż zadania (${status.jobs.length})</summary>${table({
         cls: 'responsive-table',
         columns: [
           { label: L(ctx, 'Job'), dataLabel: 'Zadanie', render: (job) => h`<strong>${ctx.user?.language === 'pl' ? (JOB_LABEL_PL[job.key] || job.label) : job.label}</strong><div class="small muted">${ctx.user?.language === 'pl' ? (JOB_PL[job.key] || job.description) : job.description}</div>` },
@@ -132,8 +132,8 @@ export function register(router) {
         ],
         rows: status.jobs,
         empty: L(ctx, 'No automation jobs are seeded yet.'),
-      }), { padded: false, sub: L(ctx, 'Every action is a normal POST form with a CSRF token and works without client JavaScript.') })}
-      ${card(L(ctx, 'Recent runs'), table({
+      })}</details>`, { padded: false, sub: 'Każda akcja to zwykły formularz POST z tokenem CSRF; działa też bez JavaScriptu.' })}
+      ${card('Ostatnie uruchomienia', h`<details class="section-details"><summary>Pokaż historię uruchomień (${status.lastRuns.length})</summary>${table({
         cls: 'responsive-table',
         columns: [
           { label: L(ctx, 'Job'), dataLabel: 'Zadanie', render: (run) => h`${JOB_LABEL_PL[run.job_key] || run.job_key}` },
@@ -145,7 +145,7 @@ export function register(router) {
         ],
         rows: status.lastRuns,
         empty: L(ctx, 'No automation runs recorded yet.'),
-      }), { padded: false, actions: [clearForm] })}
+      })}</details>`, { padded: false, actions: [clearForm] })}
       <details class="technical-details"><summary>Informacje techniczne</summary><p class="small muted">${L(ctx, 'Scheduler tick source: src/scheduler.mjs. Job definitions and run history are stored in automation_jobs and automation_runs.')}</p></details>`;
     return page(ctx, { title: L(ctx, 'Automation'), subtitle: L(ctx, 'Scheduled jobs, run history and global controls'), body, wide: true });
   });

@@ -46,27 +46,27 @@ export function userDomains(ctx) {
   const body = h`
     ${alert(h`Domeny używają katalogu <strong>/home/${ctx.user.username}/domains/&lt;domena&gt;/public_html</strong> jako document root — tak jak w DirectAdmin.`, 'info')}
     ${listCard({
-      title: 'Domains', sub: `${rows.length} domain${rows.length === 1 ? '' : 's'}${lim.domains ? ` of ${lim.domains} allowed` : ' · unlimited'}`,
+      title: 'Domeny', sub: `${rows.length} ${rows.length === 1 ? 'domena' : 'domen'}${lim.domains ? ` z ${lim.domains} dozwolonych` : ' · bez limitu'}`,
       columns: [
-        { label: 'Domain', render: (r) => h`<a class="cell-strong" href="/user/dns?domain=${r.name}">${r.name}</a><span class="cell-sub">${r.docroot || ''}</span>` },
-        { label: 'Engine', render: (r) => h`<span class="cell-sub">${r.engineLabel}</span>` },
-        { label: 'PHP', key: 'php_version' },
-        { label: 'Subdomains', render: (r) => r.subCount },
-        { label: 'Mailboxes', render: (r) => r.mailCount },
-        { label: 'SSL', render: (r) => (r.ssl ? badge('Enabled', 'ok') : badge('Off', 'muted')) },
-        { label: 'Disk', render: (r) => formatBytes(r.disk_mb), align: 'right' },
+        { label: 'Domena', dataLabel: 'Domena', render: (r) => h`<a class="cell-strong" href="/user/dns?domain=${r.name}">${r.name}</a><span class="cell-sub">${r.docroot || ''}</span>` },
+        { label: 'Silnik', dataLabel: 'Silnik', render: (r) => h`<span class="cell-sub">${r.engineLabel}</span>` },
+        { label: 'PHP', dataLabel: 'PHP', key: 'php_version' },
+        { label: 'Subdomeny', dataLabel: 'Subdomeny', render: (r) => r.subCount },
+        { label: 'Skrzynki', dataLabel: 'Skrzynki', render: (r) => r.mailCount },
+        { label: 'SSL', dataLabel: 'SSL', render: (r) => (r.ssl ? badge('Włączony', 'ok') : badge('Wyłączony', 'muted')) },
+        { label: 'Dysk', dataLabel: 'Dysk', render: (r) => formatBytes(r.disk_mb), align: 'right' },
       ],
       rows,
       createHref: '/user/domains/create',
       createLabel: 'Add domain',
       actions: [
         { label: 'DNS', href: (r) => `/user/dns?domain=${r.name}`, icon: 'dns' },
-        { label: 'Files', href: (r) => `/user/files?path=${encodeURIComponent(r.docroot || '/')}`, icon: 'folder' },
+        { label: 'Pliki', href: (r) => `/user/files?path=${encodeURIComponent(r.docroot || '/')}`, icon: 'folder' },
         { label: 'SSL', href: (r) => `/user/ssl?domain=${r.name}`, icon: 'lock' },
         { label: 'Edytuj', href: (r) => `/user/domains/${r.id}/edit`, icon: 'edit' },
         { label: 'Otwórz', href: (r) => `http://${r.name}/`, icon: 'globe' },
         { label: 'Logi', href: (r) => `/user/domains/${r.id}/logs`, icon: 'file' },
-        { label: 'Delete', href: '#', icon: 'trash', danger: true, form: (r) => `/user/domains/${r.id}/delete`, confirm: 'Usunąć domenę wraz ze strefą DNS, pocztą i bazami?', icon: 'trash' },
+        { label: 'Usuń', href: '#', icon: 'trash', danger: true, form: (r) => `/user/domains/${r.id}/delete`, confirm: 'Usunąć domenę wraz ze strefą DNS, pocztą i bazami?', icon: 'trash' },
       ],
       empty: 'No domains yet. Add your first domain to get started.',
       responsive: true,
@@ -392,7 +392,7 @@ export function registerDomainsPost(router) {
           <button class="btn btn-secondary btn-sm" type="submit">${icon('refresh', { size: 14 })} Sprawdź teraz</button>
           <a class="btn btn-ghost btn-sm" href="/user/backups">Profil backupu w Backup Center</a>
         </form>`, { sub: 'Realny test HTTP; profil monitoringu jest zapisany dla tej domeny.' }) : ''}`;
-    return page(ctx, { title: 'Edit domain', subtitle: d.name, body, wide: true });
+    return page(ctx, { title: 'Edytuj domenę', subtitle: d.name, body, wide: true });
   });
 
   router.post('/user/domains/:id/update', (ctx) => {
@@ -719,18 +719,18 @@ export function register(router) {
     const body = h`
       ${domains.length ? domainSelect(domains, d?.name, { action: '/user/subdomains' }) : alert('Add a domain before creating subdomains.', 'warn')}
       ${listCard({
-        title: 'Subdomains', sub: d ? `For ${d.name}` : '',
+        title: 'Subdomeny', sub: d ? `Dla ${d.name}` : '',
         columns: [
-          { label: 'Subdomain', render: (r) => h`<span class="cell-strong">${r.name}.${d?.name}</span><span class="cell-sub">${r.docroot}</span>` },
+          { label: 'Subdomena', dataLabel: 'Subdomena', render: (r) => h`<span class="cell-strong">${r.name}.${d?.name}</span><span class="cell-sub">${r.docroot}</span>` },
           { label: 'PHP', render: (r) => r.php_version || d?.php_version },
-          { label: 'Created', render: (r) => formatDate(r.created_at) },
+          { label: 'Utworzono', dataLabel: 'Utworzono', render: (r) => formatDate(r.created_at) },
         ],
         rows,
         empty: 'No subdomains for this domain yet.',
         actions: [
           { label: 'Edytuj', href: (r) => `/user/subdomains?domain=${encodeURIComponent(d?.name || '')}&edit=${r.id}`, icon: 'edit' },
-          { label: 'Files', href: (r) => `/user/files?path=${encodeURIComponent(r.docroot || '/')}`, icon: 'folder' },
-          { label: 'Delete', form: (r) => `/user/subdomains/${r.id}/delete`, confirm: 'Usunąć tę subdomenę?', icon: 'trash', danger: true },
+          { label: 'Pliki', href: (r) => `/user/files?path=${encodeURIComponent(r.docroot || '/')}`, icon: 'folder' },
+          { label: 'Usuń', form: (r) => `/user/subdomains/${r.id}/delete`, confirm: 'Usunąć tę subdomenę?', icon: 'trash', danger: true },
         ],
         footer: d ? h`<form method="post" action="/user/subdomains/create" class="inline-form">
           <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}">
@@ -747,7 +747,7 @@ export function register(router) {
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/subdomains?domain=${encodeURIComponent(d?.name || '')}">Anuluj</a></div>
       </form>`) : ''}`;
-    return page(ctx, { title: 'Subdomains', subtitle: 'Create and manage subdomains on your domains', body });
+    return page(ctx, { title: 'Subdomeny', subtitle: 'Twórz subdomeny i zarządzaj nimi', body });
   });
 
   router.get('/user/dns', (ctx) => {
@@ -882,7 +882,7 @@ export function register(router) {
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('plus', { size: 16 })} Add record</button></div>
       </form>`) : ''}`;
-    return page(ctx, { title: 'DNS Management', subtitle: d ? `Zone for ${d.name}` : 'Manage DNS records', body, wide: true });
+    return page(ctx, { title: 'Zarządzanie DNS', subtitle: d ? `Strefa ${d.name}` : 'Zarządzaj rekordami DNS', body, wide: true });
   });
 
   router.get('/user/pointers', (ctx) => {
@@ -893,11 +893,11 @@ export function register(router) {
     const body = h`
       ${alert('A domain pointer makes an additional domain serve the same content as an existing domain. Add the pointer, then create an A record for it in its own DNS zone.', 'info')}
       ${listCard({
-        title: 'Domain pointers', sub: `${pointers.length} pointer(s)`,
+        title: 'Aliasy domen', sub: `${pointers.length} pointer(s)`,
         columns: [
           { label: 'Pointer domain', render: (r) => h`<span class="cell-strong">${r.value}</span>` },
           { label: 'Points to', render: (r) => r.domain },
-          { label: 'Created', render: (r) => formatDate(r.created_at) },
+          { label: 'Utworzono', dataLabel: 'Utworzono', render: (r) => formatDate(r.created_at) },
         ],
         rows: pointers,
         empty: 'No domain pointers yet.',
@@ -931,7 +931,7 @@ export function register(router) {
           { label: 'From', render: (r) => h`<span class="cell-mono">${r.domain}${r.from_path}</span>` },
           { label: 'To', render: (r) => h`<span class="cell-mono">${r.to_url}</span>` },
           { label: 'Type', render: (r) => badge(r.type, 'brand') },
-          { label: 'Created', render: (r) => formatDate(r.created_at) },
+          { label: 'Utworzono', dataLabel: 'Utworzono', render: (r) => formatDate(r.created_at) },
         ],
         rows,
         empty: 'No redirects configured.',

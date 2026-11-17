@@ -414,6 +414,7 @@ export function userDashboard(ctx) {
         </div>`, { sub: L('Based on your package ', 'Na podstawie pakietu ') + (u.package || 'default'), actions: [h`<a class="link small" href="/user/statistics">${L('Usage report', 'Raport użycia')} →</a>`] })}
     </div>
 
+    <details class="section-details dashboard-details"><summary>${L('Account details', 'Szczegóły konta')} — ${L('domains, mailboxes, activity', 'domeny, skrzynki, aktywność')}</summary>
     <div class="grid grid-2">
       ${card(L('Your domains', 'Twoje domeny'), h`${domains.length ? h`<table class="data-table table-compact">
         <thead><tr><th>${L('Domain', 'Domena')}</th><th>SSL</th><th>${L('Disk', 'Dysk')}</th><th></th></tr></thead>
@@ -438,6 +439,7 @@ export function userDashboard(ctx) {
 
       ${automationCard(u, L, locale)}
     </div>
+    </details>
 
   `;
 

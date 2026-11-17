@@ -396,7 +396,7 @@ export function renderAccountResult(status, { title = 'Wynik provisioningu konta
       : 'Wdrożenie zgłosiło błędy. Przejrzyj kroki i komunikaty poniżej.', 'danger')}
     ${warnings.length ? alert(h`${warnings.map((warning) => h`<div>${warning}</div>`)}`, 'warn', { title: 'Ostrzeżenia' }) : ''}
     ${(status.errors || []).length ? alert(h`<ul class="doc-list">${status.errors.map((error) => h`<li><strong>${error.code || 'error'}:</strong> ${error.message || error}</li>`)}</ul>`, 'danger', { title: 'Błędy' }) : ''}
-    ${activationLink ? alert(h`Link aktywacyjny: <code>${activationLink}</code><div class="small muted">Hasło nie jest nigdzie wyświetlane ani wysyłane w plaintext.</div>`, 'info', { title: 'Aktywacja konta' }) : ''}
+    ${activationLink ? alert(h`Link aktywacyjny: <code>${activationLink}</code><div class="row mt-8"><button class="btn btn-secondary btn-sm" type="button" data-copy="${activationLink}" data-copy-label="Skopiowano link aktywacyjny">Kopiuj link</button></div><div class="small muted">Hasło nie jest nigdzie wyświetlane ani wysyłane w plaintext.</div>`, 'info', { title: 'Aktywacja konta' }) : ''}
     ${status.checks?.length ? preflightPanel(status.checks) : ''}
     ${card(title, h`<ol class="doc-list" data-account-steps>
       ${steps.map((step) => h`<li data-account-step="${step.key || ''}">

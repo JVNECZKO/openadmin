@@ -8,7 +8,7 @@ import { html as h, isDomain, isEmail, isUsername, formatBytes, formatDate, safe
 import { page } from '../ui/respond.mjs';
 import { card, table, btn, badge, alert, emptyState, kvList, progress, form } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
-import { listCard, domainSelect } from '../ui/pages/list.mjs';
+import { listCard, domainSelect, paginate, pagination } from '../ui/pages/list.mjs';
 import { visibleUsers, canManageUser, visibleDomains, ownedUsernames, quota } from '../core/access.mjs';
 import { passwordPolicyError } from '../security.mjs';
 import {
@@ -50,27 +50,27 @@ export function packagesPage(ctx, { owner = null, type = 'user', path = '/resell
     : all('SELECT * FROM packages WHERE type = ? ORDER BY name', type);
   const counts = new Map(all('SELECT package, COUNT(*) n FROM users GROUP BY package').map((r) => [r.package, r.n]));
   const body = h`${listCard({
-    title: type === 'reseller' ? 'Reseller packages' : 'User packages',
-    sub: `${rows.length} package(s) · shared limits for every account that uses them`,
+    title: type === 'reseller' ? 'Pakiety resellera' : 'Pakiety użytkowników',
+    sub: `${rows.length} ${rows.length === 1 ? 'pakiet' : 'pakietów'} · wspólne limity dla kont, które ich używają`,
     columns: [
-      { label: 'Package', render: (p) => h`<span class="cell-strong">${p.name}</span>${p.owner ? h`<span class="cell-sub">owned by ${p.owner}</span>` : h`<span class="cell-sub">global</span>`}` },
-      { label: 'Domains', render: (p) => fmtLimit(safeJson(p.limits, {}).domains) },
-      { label: 'Email', render: (p) => fmtLimit(safeJson(p.limits, {}).emails) },
-      { label: 'Disk', render: (p) => fmtLimit(safeJson(p.limits, {}).disk_mb, ' MB') },
-      { label: 'Bandwidth', render: (p) => fmtLimit(safeJson(p.limits, {}).bandwidth_mb, ' MB') },
-      { label: 'Accounts', render: (p) => String(counts.get(p.name) || 0) },
+      { label: 'Pakiet', dataLabel: 'Pakiet', render: (p) => h`<span class="cell-strong">${p.name}</span>${p.owner ? h`<span class="cell-sub">właściciel: ${p.owner}</span>` : h`<span class="cell-sub">globalny</span>`}` },
+      { label: 'Domeny', dataLabel: 'Domeny', render: (p) => fmtLimit(safeJson(p.limits, {}).domains) },
+      { label: 'E-mail', dataLabel: 'E-mail', render: (p) => fmtLimit(safeJson(p.limits, {}).emails) },
+      { label: 'Dysk', dataLabel: 'Dysk', render: (p) => fmtLimit(safeJson(p.limits, {}).disk_mb, ' MB') },
+      { label: 'Transfer', dataLabel: 'Transfer', render: (p) => fmtLimit(safeJson(p.limits, {}).bandwidth_mb, ' MB') },
+      { label: 'Konta', dataLabel: 'Konta', render: (p) => String(counts.get(p.name) || 0) },
     ],
     rows,
     createHref: `${path}/create`,
-    createLabel: 'Create package',
-    empty: 'No packages yet.',
+    createLabel: 'Utwórz pakiet',
+    empty: 'Nie ma jeszcze pakietów.',
     actions: [
-      { label: 'Edit', href: (p) => `${path}/${encodeURIComponent(p.name)}`, icon: 'edit' },
-      { label: 'Copy', form: (p) => `${path}/${encodeURIComponent(p.name)}/copy`, icon: 'copy' },
-      { label: 'Delete', form: (p) => `${path}/${encodeURIComponent(p.name)}/delete`, confirm: 'Usunąć ten pakiet?', icon: 'trash', danger: true, show: (p) => !(counts.get(p.name) > 0) },
+      { label: 'Edytuj', href: (p) => `${path}/${encodeURIComponent(p.name)}`, icon: 'edit' },
+      { label: 'Kopiuj', form: (p) => `${path}/${encodeURIComponent(p.name)}/copy`, icon: 'copy' },
+      { label: 'Usuń', form: (p) => `${path}/${encodeURIComponent(p.name)}/delete`, confirm: 'Usunąć ten pakiet?', icon: 'trash', danger: true, show: (p) => !(counts.get(p.name) > 0) },
     ],
   })}`;
-  return page(ctx, { title: type === 'reseller' ? 'Reseller Packages' : 'User Packages', subtitle: 'Define storage, feature and account limits', body });
+  return page(ctx, { title: type === 'reseller' ? 'Pakiety resellera' : 'Pakiety użytkowników', subtitle: 'Limity miejsca, funkcji i kont', body });
 }
 
 function copySkeleton(username) {
@@ -122,7 +122,7 @@ export function packageForm(ctx, { path, type, existing = null }) {
     ? { users: 50, domains: 500, subdomains: 1000, emails: 1000, databases: 200, bandwidth_mb: 0, disk_mb: 102400, ips: 2, packages: 20, php: ['8.3'], dns_control: 1, cpu_percent: 0, memory_mb: 0, io_read_mbps: 0, io_write_mbps: 0, max_processes: 200 }
     : { domains: 10, subdomains: 25, emails: 50, ftp: 10, databases: 10, bandwidth_mb: 102400, disk_mb: 10240, cron: 5, ssl: 10, php: ['8.3'], dns_control: 0, cpu_percent: 0, memory_mb: 0, io_read_mbps: 0, io_write_mbps: 0, max_processes: 100 });
   const fields = LIMIT_FIELDS.filter(([k]) => type === 'reseller' || !['users', 'ips', 'packages'].includes(k));
-  const body = h`${card(existing ? `Edytuj pakiet · ${existing.name}` : 'Nowy pakiet', h`
+  const body = h`${card(existing ? `Konfiguracja pakietu · ${existing.name}` : 'Konfiguracja pakietu', h`
     <form method="post" action="${path}${existing ? '/' + encodeURIComponent(existing.name) : '/create'}" class="oa-form package-form" data-package-form>
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
       <div class="form-grid">
@@ -200,7 +200,7 @@ export function savePackage(ctx, { type, owner, path }) {
 }
 
 /* ------------------------------------------------------------------ users */
-export function usersPage(ctx, { path = '/reseller/users', level = 'user', suspended = null, title = 'Users' } = {}) {
+export function usersPage(ctx, { path = '/reseller/users', level = 'user', suspended = null, title = 'Użytkownicy' } = {}) {
   const rows = visibleUsers(ctx.user, { level, suspended });
   const withStats = rows.map((u) => ({
     ...u,
@@ -208,28 +208,41 @@ export function usersPage(ctx, { path = '/reseller/users', level = 'user', suspe
     disk: get('SELECT COALESCE(SUM(disk_mb),0) d FROM domains WHERE user_id = ?', u.id).d,
   }));
   const lim = limitsFor(ctx.user);
-  const body = h`${listCard({
-    title, sub: `${withStats.length} account(s)${level === 'user' && lim.users ? ` of ${lim.users}` : ''}`,
+  const paged = paginate(withStats, { page: ctx.query.page, perPage: 25 });
+  const pager = pagination({ base: path, page: paged.page, pages: paged.pages, label: 'Paginacja kont' });
+  const bulkBase = path.startsWith('/admin') ? '/admin/bulk' : '/reseller/bulk';
+  const body = h`${paged.total ? h`<form id="usersBulkForm" method="post" action="${bulkBase}/preview" class="file-bulkbar">
+    <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="objectType" value="users">
+    <span class="small muted">Zaznacz konta, aby przygotować operację masową.</span>
+    <select name="action" aria-label="Operacja masowa"><option value="suspend">Zawieś zaznaczone</option><option value="activate">Aktywuj zaznaczone</option></select>
+    <button class="btn btn-secondary btn-sm" type="submit">Pokaż podgląd</button>
+  </form>` : ''}${listCard({
+    title, sub: `${paged.total} ${paged.total === 1 ? 'konto' : 'kont'}${level === 'user' && lim.users ? ` z ${lim.users}` : ''}`,
     columns: [
-      { label: 'Username', render: (u) => h`<a class="cell-strong" href="${path}/${u.id}">${u.username}</a><span class="cell-sub">${u.email || '—'}</span>` },
-      { label: 'Domain', render: (u) => (u.domain ? h`<span class="cell-mono">${u.domain}</span>` : '—') },
-      { label: 'Package', render: (u) => badge(u.package || 'default', 'brand') },
-      { label: 'Domains', render: (u) => u.domainCount, align: 'right' },
-      { label: 'Disk', render: (u) => formatBytes(u.disk), align: 'right' },
-      { label: 'Status', render: (u) => (u.suspended ? badge('Suspended', 'danger', { dot: true }) : badge('Active', 'ok', { dot: true })) },
-      { label: 'Last login', render: (u) => (u.last_login ? formatDate(u.last_login) : 'never') },
+      { label: 'Login', dataLabel: 'Login', render: (u) => h`<a class="cell-strong" href="${path}/${u.id}">${u.username}</a><span class="cell-sub">${u.email || '—'}</span>` },
+      { label: 'Domena', dataLabel: 'Domena', render: (u) => (u.domain ? h`<span class="cell-mono">${u.domain}</span>` : '—') },
+      { label: 'Pakiet', dataLabel: 'Pakiet', render: (u) => badge(u.package || 'default', 'brand') },
+      { label: 'Domeny', dataLabel: 'Domeny', render: (u) => u.domainCount, align: 'right' },
+      { label: 'Dysk', dataLabel: 'Dysk', render: (u) => formatBytes(u.disk), align: 'right' },
+      { label: 'Status', dataLabel: 'Status', render: (u) => (u.suspended ? badge('Zawieszony', 'danger', { dot: true }) : badge('Aktywny', 'ok', { dot: true })) },
+      { label: 'Ostatnie logowanie', dataLabel: 'Ostatnie logowanie', render: (u) => (u.last_login ? formatDate(u.last_login) : 'nigdy') },
     ],
-    rows: withStats,
-    empty: 'No accounts yet.',
-    toolbarLeft: level === 'user' ? [h`<a class="chip ${suspended === null ? 'active' : ''}" href="${path}">All</a><a class="chip ${suspended === 0 ? 'active' : ''}" href="${path}/suspended">Active</a>`] : [],
+    rows: paged.items,
+    empty: 'Nie ma jeszcze kont.',
+    responsive: true,
+    selectable: true,
+    selectForm: 'usersBulkForm',
+    actionsMenu: true,
+    toolbarLeft: level === 'user' ? [h`<a class="chip ${suspended === null ? 'active' : ''}" href="${path}">Wszystkie</a><a class="chip ${suspended === 0 ? 'active' : ''}" href="${path}/suspended">Aktywne</a>`] : [],
     actions: [
-      { label: 'Login as', form: (u) => `${path}/${u.id}/login-as`, icon: 'logout', show: (u) => ctx.user.level === 'admin' && level === 'user' },
-      { label: 'Edit', href: (u) => `${path}/${u.id}`, icon: 'edit' },
-      { label: 'Suspend', form: (u) => `${path}/${u.id}/suspend`, icon: 'lock' },
-      { label: 'Delete', form: (u) => `${path}/${u.id}/delete`, confirm: 'Permanently delete this account and all its data?', icon: 'trash', danger: true },
+      { label: 'Zaloguj jako', form: (u) => `${path}/${u.id}/login-as`, icon: 'logout', show: (u) => ctx.user.level === 'admin' && level === 'user' },
+      { label: 'Edytuj', href: (u) => `${path}/${u.id}`, icon: 'edit' },
+      { label: 'Zawieś', form: (u) => `${path}/${u.id}/suspend`, icon: 'lock' },
+      { label: 'Usuń', form: (u) => `${path}/${u.id}/delete`, confirm: 'Trwale usunąć konto i wszystkie jego dane?', icon: 'trash', danger: true },
     ],
+    footer: pager,
   })}`;
-  return page(ctx, { title, subtitle: 'Zarządzaj kontami hostingowymi', body, actions: [btn('Szybkie konto', { href: `${path}/quick`, variant: 'secondary', icon: 'plus' }), btn('Pełny kreator', { href: `${path}/create`, icon: 'plus' })] });
+  return page(ctx, { title, subtitle: 'Zarządzaj kontami hostingowymi', body, actions: [btn('Szybkie konto', { href: `${path}/quick`, variant: 'secondary', icon: 'plus' }), btn('Pełny kreator', { href: `${path}/create`, icon: 'plus' }), btn('Operacje masowe', { href: `${ctx.user.level === 'admin' ? '/admin/bulk' : '/reseller/bulk'}?type=users`, variant: 'ghost', icon: 'sliders' })] });
 }
 
 function visiblePackageRows(ctx) {
@@ -246,7 +259,7 @@ export function quickUserForm(ctx, { path, packages = [], values = {}, preflight
   const resellerRows = ctx.user.level === 'admin' ? all("SELECT username FROM users WHERE level = 'reseller' ORDER BY username") : [];
   const body = h`${error ? alert(error, 'danger') : ''}
     ${preflight && (preflight.errors?.length || preflight.checks?.length) ? alert(h`<ul class="doc-list">${(preflight.errors || []).map((entry) => h`<li><strong>${entry.code || 'Błąd'}:</strong> ${entry.message || entry}</li>`)}</ul>`, 'danger', { title: 'Popraw pola i spróbuj ponownie' }) : ''}
-    ${card('Szybkie konto klienta', h`<form method="post" action="${path}/quick" class="oa-form" autocomplete="off">
+    ${card('Dane klienta', h`<form method="post" action="${path}/quick" class="oa-form" autocomplete="off">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
       <div class="form-grid">
         <div class="field"><label class="field-label" for="quick-username">Login klienta <span class="req">*</span></label>

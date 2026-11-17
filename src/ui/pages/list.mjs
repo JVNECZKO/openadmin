@@ -65,3 +65,23 @@ export function dateCell(iso) {
   return h`<span class="small">${formatDate(iso)}</span>`;
 }
 void e;
+
+export function paginate(rows, { page = 1, perPage = 25 } = {}) {
+  const total = rows.length;
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  const current = Math.max(1, Math.min(pages, Number(page) || 1));
+  const start = (current - 1) * perPage;
+  return { total, pages, page: current, perPage, items: rows.slice(start, start + perPage), from: total ? start + 1 : 0, to: Math.min(total, start + perPage) };
+}
+
+export function pagination({ base, page = 1, pages = 1, query = '', label = 'Paginacja' } = {}) {
+  if (pages <= 1) return '';
+  const href = (n) => `${base}${base.includes('?') ? '&' : '?'}${query ? `${query}&` : ''}page=${n}`;
+  const nums = [];
+  for (let n = Math.max(1, page - 2); n <= Math.min(pages, page + 2); n += 1) nums.push(n);
+  return h`<nav class="pagination" aria-label="${label}">
+    ${page > 1 ? h`<a class="btn btn-ghost btn-sm" href="${href(page - 1)}">← Poprzednia</a>` : ''}
+    ${nums.map((n) => h`<a class="chip ${n === page ? 'active' : ''}" href="${href(n)}" ${n === page ? raw('aria-current="page"') : ''}>${n}</a>`)}
+    ${page < pages ? h`<a class="btn btn-ghost btn-sm" href="${href(page + 1)}">Następna →</a>` : ''}
+  </nav>`;
+}

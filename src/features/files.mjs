@@ -10,7 +10,7 @@ import { html as h, formatBytes, formatDate, e, randomPassword, isEmail } from '
 import { page } from '../ui/respond.mjs';
 import { card, table, badge, alert, emptyState, kvList, progress, pctClass } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
-import { listCard } from '../ui/pages/list.mjs';
+import { listCard, paginate, pagination } from '../ui/pages/list.mjs';
 import { quota } from '../core/access.mjs';
 import { createUserBackup, restoreUserBackup, createUserBackupJob, enqueueUserRestore, spawnJobRunner, jobView } from '../backups.mjs';
 import { validateJob, rebuildCrontab, installCrontab, cronMeta } from '../cron.mjs';
@@ -273,7 +273,7 @@ export function writeTenantFile(username, requested, content, { create = false, 
   catch (error) {
     if (error.code === 'ELOOP') throw tenantError('FINAL_SYMLINK', 'Refusing to write through a symbolic link');
     if (error.code === 'EEXIST') throw tenantError('ALREADY_EXISTS', 'File already exists', 409);
-    if (error.code === 'ENOENT') throw tenantError('PARENT_MISSING', 'Parent directory does not exist', 404);
+    if (error.code === 'ENOENT') throw tenantError('PARENT_MISSING', 'Katalog nadrzędny does not exist', 404);
     throw error;
   }
   try { fs.writeFileSync(fd, content); } finally { try { fs.closeSync(fd); } catch { /* ignore */ } }
@@ -382,6 +382,8 @@ export function register(router) {
         if (sortBy === 'mtime') return sortDir * (new Date(a.mtime) - new Date(b.mtime));
         return sortDir * (Number(b.dir) - Number(a.dir)) || a.name.localeCompare(b.name);
       });
+    const pagedEntries = paginate(entries, { page: ctx.query.page, perPage: 50 });
+    const pager = pagination({ base: '/user/files', query: `path=${encodeURIComponent(display)}${q ? `&q=${encodeURIComponent(q)}` : ''}&sort=${encodeURIComponent(sortBy)}&dir=${sortDir === -1 ? 'desc' : 'asc'}`, page: pagedEntries.page, pages: pagedEntries.pages, label: 'Paginacja plików' });
     const disk = checkDisk(ctx.user);
     const diskPct = disk.limit ? Math.min(100, Math.round((disk.used / disk.limit) * 100)) : 0;
 
@@ -451,8 +453,8 @@ export function register(router) {
         <div class="table-wrap"><table class="data-table file-table responsive-table">
           <thead><tr><th class="col-check"><input type="checkbox" data-check-all form="fileBulkForm" aria-label="Zaznacz wszystkie pliki"></th><th>Nazwa</th><th>Rozmiar</th><th>Uprawnienia</th><th>Zmodyfikowano</th><th class="col-actions">Akcje</th></tr></thead>
           <tbody>
-            ${display !== `/home/${username}` ? h`<tr><td colspan="6"><a class="link" href="/user/files?path=${encodeURIComponent(display.split('/').slice(0, -1).join('/') || '/home/' + username)}">${icon('arrowRight', { size: 14 })} Parent directory</a></td></tr>` : ''}
-            ${entries.length ? entries.map((f) => h`<tr>
+            ${display !== `/home/${username}` ? h`<tr><td colspan="6"><a class="link" href="/user/files?path=${encodeURIComponent(display.split('/').slice(0, -1).join('/') || '/home/' + username)}">${icon('arrowRight', { size: 14 })} Katalog nadrzędny</a></td></tr>` : ''}
+            ${pagedEntries.items.length ? pagedEntries.items.map((f) => h`<tr>
               <td class="col-check" data-label="Wybór"><input type="checkbox" name="selected" value="${f.name}" form="fileBulkForm" aria-label="Zaznacz ${f.name}" ${f.unsafe ? 'disabled' : ''}></td>
               <td data-label="Nazwa"><div class="file-name">${icon(f.dir ? 'folder' : 'file', { size: 16 })}
                 ${f.unsafe ? h`<span title="Symbolic link escapes the account home">${f.name}</span>${badge('blocked', 'danger')}`
@@ -460,7 +462,7 @@ export function register(router) {
               <td data-label="Rozmiar">${f.dir ? '—' : formatBytes(f.size / 1024 / 1024)}</td>
               <td class="cell-mono" data-label="Uprawnienia">${f.perms}</td>
               <td class="small" data-label="Data">${formatDate(f.mtime, { time: true })}</td>
-              <td class="col-actions" data-label="Akcje">${f.unsafe ? h`<span class="small muted">blocked</span>` : h`<div class="row-actions">
+              <td class="col-actions" data-label="Akcje">${f.unsafe ? h`<span class="small muted">zablokowany</span>` : h`<div class="row-actions">
                 ${f.dir
                   ? h`<a class="btn btn-secondary btn-sm" href="/user/files?path=${encodeURIComponent(display + '/' + f.name)}">Otwórz</a>`
                   : f.editable
@@ -477,19 +479,20 @@ export function register(router) {
                   </div>
                 </details>
               </div>`}</td>
-            </tr>`) : h`<tr><td colspan="6">${emptyState('Ten katalog jest pusty.')}</td></tr>`}
+            </tr>`) : h`<tr><td colspan="6">${emptyState(q ? 'Brak plików pasujących do wyszukiwania.' : 'Ten katalog jest pusty.')}</td></tr>`}
           </tbody>
         </table></div>
+        ${pager}
       `, { padded: false })}
 
-      ${ctx.query.new ? card(ctx.query.new === 'dir' ? 'New folder' : 'New file', h`<form method="post" action="/user/files/create" class="oa-form u-s82">
+      ${ctx.query.new ? card(ctx.query.new === 'dir' ? 'Nowy katalog' : 'Nowy plik', h`<form method="post" action="/user/files/create" class="oa-form u-s82">
         <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="path" value="${display}">
         <input type="hidden" name="kind" value="${ctx.query.new === 'dir' ? 'dir' : 'file'}">
         <div class="form-grid">
-          <div class="field"><label class="field-label">Name</label><input name="name" required placeholder="${ctx.query.new === 'dir' ? 'assets' : 'index.html'}"></div>
-          ${ctx.query.new === 'dir' ? '' : h`<div class="field"><label class="field-label">Content</label><textarea name="content" rows="4" placeholder="Optional initial content"></textarea></div>`}
+          <div class="field"><label class="field-label">Nazwa</label><input name="name" required placeholder="${ctx.query.new === 'dir' ? 'assets' : 'index.html'}"></div>
+          ${ctx.query.new === 'dir' ? '' : h`<div class="field"><label class="field-label">Treść</label><textarea name="content" rows="4" placeholder="Opcjonalna treść początkowa"></textarea></div>`}
         </div>
-        <div class="form-actions"><button class="btn btn-primary" type="submit">Create</button><a class="btn btn-ghost" href="/user/files?path=${encodeURIComponent(display)}">Cancel</a></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Utwórz</button><a class="btn btn-ghost" href="/user/files?path=${encodeURIComponent(display)}">Anuluj</a></div>
       </form>`) : ''}
       ${preview ? card(`Podgląd · ${preview.name}`, preview.kind === 'image'
         ? h`<img class="file-preview-image" src="${preview.href}" alt="${preview.name}">`
@@ -499,35 +502,35 @@ export function register(router) {
         <input type="hidden" name="path" value="${display}"><input type="hidden" name="name" value="${editing.name}">
         <p class="small muted mb-12">${display}/${editing.name} · ${formatBytes(editing.size / 1024 / 1024)}</p>
         <textarea name="content" rows="22" spellcheck="false" class="code-editor">${editorContent}</textarea>
-        <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('save', { size: 16 })} Save file</button>
-          <a class="btn btn-ghost" href="/user/files?path=${encodeURIComponent(display)}">Close</a></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('save', { size: 16 })} Zapisz plik</button>
+          <a class="btn btn-ghost" href="/user/files?path=${encodeURIComponent(display)}">Zamknij</a></div>
       </form>`) : ''}
 
       <div class="modal-backdrop" id="uploadModal" hidden>
         <div class="modal">
-          <header class="modal-head"><h3>Upload files</h3><button class="icon-btn" type="button" data-close-modal>${icon('x', { size: 18 })}</button></header>
+          <header class="modal-head"><h3>Wgraj pliki</h3><button class="icon-btn" type="button" data-close-modal>${icon('x', { size: 18 })}</button></header>
           <div class="modal-body">
             <div class="dropzone" id="fileUpload" data-path="${display}" data-max-upload-bytes="${config.limits.maxUploadMb * 1024 * 1024}">
               ${icon('upload', { size: 26 })}
-              <p><strong>Drop files here</strong> or click to browse</p>
+              <p><strong>Przeciągnij pliki tutaj</strong> lub kliknij, aby wybrać</p>
               <input type="file" id="fileInput" multiple hidden>
-              <span class="small muted">Maximum ${config.limits.maxUploadMb} MB per file · strumieniowo z możliwością wznowienia</span>
+              <span class="small muted">Maksymalnie ${config.limits.maxUploadMb} MB na plik · strumieniowo z możliwością wznowienia</span>
               <div class="progress-track u-s83" aria-hidden="true"><div class="progress-fill u-s84" data-upload-progress></div></div>
             </div>
           </div>
         </div>
       </div>
       ${entries.filter((f) => f.name).map((f) => h`<div class="modal-backdrop" id="rename-${encodeURIComponent(f.name)}" hidden>
-        <div class="modal"><header class="modal-head"><h3>Rename</h3><button class="icon-btn" type="button" data-close-modal>${icon('x', { size: 18 })}</button></header>
+        <div class="modal"><header class="modal-head"><h3>Zmień nazwę</h3><button class="icon-btn" type="button" data-close-modal>${icon('x', { size: 18 })}</button></header>
           <div class="modal-body"><form method="post" action="/user/files/rename" class="oa-form" id="rn-${encodeURIComponent(f.name)}">
             <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="path" value="${display}"><input type="hidden" name="old" value="${f.name}">
-            <div class="field"><label class="field-label">New name</label><input name="new" value="${f.name}" required></div>
+            <div class="field"><label class="field-label">Nowa nazwa</label><input name="new" value="${f.name}" required></div>
           </form></div>
-          <footer class="modal-foot"><button class="btn btn-ghost" type="button" data-close-modal>Cancel</button>
-            <button class="btn btn-primary" type="submit" form="rn-${encodeURIComponent(f.name)}">Rename</button></footer>
+          <footer class="modal-foot"><button class="btn btn-ghost" type="button" data-close-modal>Anuluj</button>
+            <button class="btn btn-primary" type="submit" form="rn-${encodeURIComponent(f.name)}">Zmień nazwę</button></footer>
         </div>
       </div>`)}`;
-    return page(ctx, { title: 'File Manager', subtitle: display, body, wide: true });
+    return page(ctx, { title: 'Menedżer plików', subtitle: display, body, wide: true });
   });
 
   router.post('/user/files/create', (ctx) => {
@@ -690,19 +693,19 @@ export function register(router) {
     const body = h`
       ${alert('FTP accounts can be restricted to any directory inside your home. Anonymous FTP can be enabled per domain under FTP Settings.', 'info')}
       ${listCard({
-        title: 'FTP accounts', sub: `${rows.length} of ${lim.ftp || '∞'} accounts`,
+        title: 'Konta FTP', sub: `${rows.length} z ${lim.ftp || '∞'} kont`,
         columns: [
-          { label: 'Username', render: (r) => h`<span class="cell-strong">${r.username}</span>${r.anonymous ? badge('anonymous', 'warn') : ''}` },
-          { label: 'Directory', render: (r) => h`<span class="cell-mono">${r.path}</span>` },
-          { label: 'Quota', render: (r) => (r.quota_mb ? formatBytes(r.quota_mb) : 'Unlimited') },
-          { label: 'Status', render: (r) => (r.suspended ? badge('Suspended', 'danger') : badge('Active', 'ok')) },
+          { label: 'Użytkownik', dataLabel: 'Użytkownik', render: (r) => h`<span class="cell-strong">${r.username}</span>${r.anonymous ? badge('anonimowe', 'warn') : ''}` },
+          { label: 'Katalog', dataLabel: 'Katalog', render: (r) => h`<span class="cell-mono">${r.path}</span>` },
+          { label: 'Limit', dataLabel: 'Limit', render: (r) => (r.quota_mb ? formatBytes(r.quota_mb) : 'Bez limitu') },
+          { label: 'Status', dataLabel: 'Status', render: (r) => (r.suspended ? badge('Zawieszone', 'danger') : badge('Aktywne', 'ok')) },
         ],
         rows, empty: 'No FTP accounts yet.',
         createHref: '/user/ftp/create', createLabel: 'Create FTP account',
         actions: [
           { label: 'Edytuj', href: (r) => `/user/ftp?edit=${r.id}`, icon: 'edit' },
-          { label: 'Toggle', form: (r) => `/user/ftp/${r.id}/toggle`, icon: 'lock' },
-          { label: 'Delete', form: (r) => `/user/ftp/${r.id}/delete`, confirm: 'Usunąć konto FTP?', icon: 'trash', danger: true },
+          { label: 'Zawieś / wznów', form: (r) => `/user/ftp/${r.id}/toggle`, icon: 'lock' },
+          { label: 'Usuń', form: (r) => `/user/ftp/${r.id}/delete`, confirm: 'Usunąć konto FTP?', icon: 'trash', danger: true },
         ],
       })}
       ${editing ? card(`Edytuj FTP · ${editing.username}`, h`<form method="post" action="/user/ftp/${editing.id}/update" class="oa-form">
@@ -715,7 +718,7 @@ export function register(router) {
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz</button><a class="btn btn-ghost" href="/user/ftp">Anuluj</a></div>
       </form>`) : ''}`;
-    return page(ctx, { title: 'FTP Accounts', subtitle: 'Manage file transfer users', body });
+    return page(ctx, { title: 'Konta FTP', subtitle: 'Zarządzaj użytkownikami transferu plików', body });
   });
 
   router.get('/user/ftp/create', (ctx) => {
@@ -728,7 +731,7 @@ export function register(router) {
         <div class="field field-full"><label class="field-label">Directory</label><input name="path" value="/home/${ctx.user.username}" required></div>
         <div class="field"><label class="field-label">Quota (MB)</label><input name="quota_mb" type="number" min="0" value="0"><p class="field-help">0 = unlimited</p></div>
       </div>
-      <div class="form-actions"><button class="btn btn-primary" type="submit">Create FTP account</button><a class="btn btn-ghost" href="/user/ftp">Cancel</a></div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Create FTP account</button><a class="btn btn-ghost" href="/user/ftp">Anuluj</a></div>
     </form>`)}`;
     return page(ctx, { title: 'Create FTP Account', subtitle: 'Add a file transfer user', body });
   });

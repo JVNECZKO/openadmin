@@ -10,7 +10,7 @@ import { html as h, raw, formatBytes, pct } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, table, btn, badge, alert, emptyState, kvList, progress, statCard, sparkline, pctClass } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
-import { domainSelect } from '../ui/pages/list.mjs';
+import { domainSelect, paginate, pagination } from '../ui/pages/list.mjs';
 import { countForNav, visibleUsers, visibleDomains, canManageUser, domainFor } from '../core/access.mjs';
 import { usersPage, userForm, quickUserForm, createQuickUser, createUser, updateUser, userDetailPage, toggleSuspend, deleteUser, packagesPage, packageForm, savePackage } from '../features/user-admin.mjs';
 import { rebuildZone } from '../dns.mjs';
@@ -534,7 +534,7 @@ function resellerDashboard(ctx) {
     action: btn('Otwórz katalog aplikacji', { href: '/reseller/apps', icon: 'cart' }),
   }), {
     sub: `${snapshot.apps.length} ${plural(snapshot.apps.length, 'instalacja', 'instalacje', 'instalacji')}${appsFailed ? ` · ${appsFailed} z błędem` : ''}`,
-    actions: [h`<a class="link small" href="/reseller/apps">Katalog aplikacji</a>`],
+    actions: [h`<a class="link small" href="/reseller/apps">Katalog aplikacji</a>`, h`<a class="link small" href="/reseller/bulk?type=domains">Operacje masowe</a>`],
   });
 
   const automation = card('Automatyzacja i kondycja', h`<div class="stack u-s51">
@@ -769,6 +769,8 @@ function resellerDomains(ctx) {
   else if (status === 'ssl') rows = rows.filter((domain) => Number(domain.ssl));
   else if (status === 'no-ssl') rows = rows.filter((domain) => !Number(domain.ssl));
   else if (status === 'apps') rows = rows.filter((domain) => appCount(domain) > 0);
+  const paged = paginate(rows, { page: ctx.query.page, perPage: 25 });
+  const pager = pagination({ base: '/reseller/domains', query: `${query ? `q=${encodeURIComponent(query)}&` : ''}${status !== 'all' ? `status=${encodeURIComponent(status)}` : ''}`, page: paged.page, pages: paged.pages, label: 'Paginacja domen' });
 
   const chip = (key, label, count) => h`<a class="chip ${status === key ? 'active' : ''}" href="/reseller/domains?status=${key === 'all' ? '' : key}${query ? '&q=' + encodeURIComponent(query) : ''}">${label} <span class="small muted">${count}</span></a>`;
   const counts = {
@@ -780,11 +782,12 @@ function resellerDomains(ctx) {
     apps: allRows.filter((domain) => appCount(domain) > 0).length,
   };
 
-  const tableRows = rows.map((domain) => {
+  const tableRows = paged.items.map((domain) => {
     const installed = appCount(domain);
     const canLogin = !domain.user_suspended;
     const canInstallApp = canLogin && domain.status === 'active';
     return h`<tr>
+      <td class="col-check" data-label="Wybór"><input type="checkbox" name="selected[]" value="${domain.id}" form="resellerDomainsBulk" aria-label="Zaznacz ${domain.name}"></td>
       <td data-label="Domena"><a class="cell-strong" href="/reseller/dns?domain=${encodeURIComponent(domain.name)}">${domain.name}</a><span class="cell-sub">${domain.docroot || 'brak katalogu'}</span></td>
       <td data-label="Klient"><a class="link" href="/reseller/users/${domain.user_id}">${domain.username}</a></td>
       <td data-label="Pakiet">${badge(domain.package || 'default', 'brand')}</td>
@@ -825,13 +828,19 @@ function resellerDomains(ctx) {
     </div>
   </form>`;
 
-  const domainsCard = card('Domeny klientów', h`${filterForm}${rows.length ? h`<div id="resellerDomains" class="table-wrap"><table class="data-table responsive-table">
-    <thead><tr><th>Domena</th><th>Klient</th><th>Pakiet</th><th>Status</th><th>PHP</th><th>SSL</th><th>Dysk</th><th>Aplikacje</th><th class="col-actions">Akcje</th></tr></thead>
+  const domainsCard = card('Domeny klientów', h`${filterForm}${rows.length ? h`<form id="resellerDomainsBulk" method="post" action="/reseller/bulk/preview" class="file-bulkbar">
+    <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="objectType" value="domains">
+    <span class="small muted">Zaznacz domeny, aby przygotować operację masową.</span>
+    <select name="action" aria-label="Operacja masowa"><option value="ssl">Wystaw certyfikaty SSL</option><option value="php">Zmień wersję PHP</option></select>
+    <select name="value" aria-label="Wersja PHP"><option value="8.4">PHP 8.4</option><option value="8.3">PHP 8.3</option><option value="8.2">PHP 8.2</option></select>
+    <button class="btn btn-secondary btn-sm" type="submit">Pokaż podgląd</button>
+  </form><div id="resellerDomains" class="table-wrap"><table class="data-table responsive-table">
+    <thead><tr><th class="col-check"><input type="checkbox" data-check-all form="resellerDomainsBulk" aria-label="Zaznacz wszystkie domeny"></th><th>Domena</th><th>Klient</th><th>Pakiet</th><th>Status</th><th>PHP</th><th>SSL</th><th>Dysk</th><th>Aplikacje</th><th class="col-actions">Akcje</th></tr></thead>
     <tbody>${tableRows}</tbody>
-  </table></div>` : h`<div id="resellerDomains">${emptyState(emptyMessage, { icon: 'globe', action: emptyAction })}</div>`}`, {
+  </table></div>${pager}` : h`<div id="resellerDomains">${emptyState(emptyMessage, { icon: 'globe', action: emptyAction })}</div>`}`, {
     sub: `${rows.length} z ${allRows.length} ${plural(allRows.length, 'domena', 'domeny', 'domen')} · lista obejmuje wyłącznie Twoich klientów`,
     padded: false,
-    actions: [h`<a class="link small" href="/reseller/apps">Katalog aplikacji</a>`],
+    actions: [h`<a class="link small" href="/reseller/apps">Katalog aplikacji</a>`, h`<a class="link small" href="/reseller/bulk?type=domains">Operacje masowe</a>`],
   });
 
   const body = h`
@@ -1049,7 +1058,7 @@ export function registerResellerRoutes(router) {
   });
 
   router.get('/reseller/users', (ctx) => usersPage(ctx, { path: `${R}/users` }));
-  router.get('/reseller/users/suspended', (ctx) => usersPage(ctx, { path: `${R}/users`, suspended: 1, title: 'Suspended Users' }));
+  router.get('/reseller/users/suspended', (ctx) => usersPage(ctx, { path: `${R}/users`, suspended: 1, title: 'Zawieszeni użytkownicy' }));
   router.get('/reseller/users/quick', (ctx) => quickUserForm(ctx, { path: `${R}/users`, packages: all("SELECT * FROM packages WHERE type = 'user'") }));
   router.post('/reseller/users/quick', (ctx) => createQuickUser(ctx, { path: `${R}/users`, level: 'user', owner: ctx.user.username }));
   router.get('/reseller/users/create', (ctx) => userForm(ctx, { path: `${R}/users`, packages: all("SELECT * FROM packages WHERE type = 'user'") }));

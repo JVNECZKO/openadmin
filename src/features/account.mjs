@@ -71,12 +71,12 @@ export function register(router) {
       ${bwPct >= 80 ? alert(`Transfer zajęty w ${bwPct}% limitu.${bwPct >= 90 ? ' Stan krytyczny.' : ''}`, bwPct >= 90 ? 'danger' : 'warn') : ''}
       ${!series.length ? alert('Brak danych pomiarowych. Admin może uruchomić zbieranie w Administracja → Statystyki.', 'info') : ''}
       <div class="stat-grid">
-        <div class="stat-card"><div class="stat-icon">${icon('chart', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Transfer (30 dni)</span><strong class="stat-value">${formatBytes(bw)}</strong><span class="stat-sub">${lim.bandwidth_mb ? 'of ' + formatBytes(lim.bandwidth_mb) : 'unlimited'}</span></div></div>
+        <div class="stat-card"><div class="stat-icon">${icon('chart', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Transfer (30 dni)</span><strong class="stat-value">${formatBytes(bw)}</strong><span class="stat-sub">${lim.bandwidth_mb ? 'z ' + formatBytes(lim.bandwidth_mb) : 'unlimited'}</span></div></div>
         <div class="stat-card"><div class="stat-icon tone-ok">${icon('database', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Zajęty dysk</span><strong class="stat-value">${formatBytes(storage.used)}</strong><span class="stat-sub">${storage.files} inodes</span></div></div>
-        <div class="stat-card"><div class="stat-icon tone-warn">${icon('mail', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Poczta wysłana/odebrana</span><strong class="stat-value">${emails.toLocaleString()}</strong><span class="stat-sub">last 30 days</span></div></div>
+        <div class="stat-card"><div class="stat-icon tone-warn">${icon('mail', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Poczta wysłana/odebrana</span><strong class="stat-value">${emails.toLocaleString()}</strong><span class="stat-sub">ostatnie 30 dni</span></div></div>
         <div class="stat-card"><div class="stat-icon">${icon('globe', { size: 20 })}</div><div class="stat-body"><span class="stat-label">Żądania HTTP</span><strong class="stat-value">${series.reduce((a, r) => a + (r.requests || 0), 0).toLocaleString()}</strong><span class="stat-sub">across ${domains.length} domain(s)</span></div></div>
       </div>
-      ${usageChartCard(series, { title: 'Bandwidth', sub: 'Daily transfer, last 30 days' })}
+      ${usageChartCard(series, { title: 'Transfer', sub: 'Dzienny transfer, ostatnie 30 dni' })}
       <div class="grid grid-2">
         ${card('Zużycie według domeny', h`${table({
           cls: 'responsive-table',
@@ -88,7 +88,7 @@ export function register(router) {
           ],
           rows: domains, empty: 'Brak domen.',
         })}`)}
-        ${card('Dziennik dzienny', h`${table({
+        ${card('Dziennik dzienny', h`<details class="stats-details"><summary>Pokaż dziennik (12 dni)</summary>${table({
           cls: 'responsive-table',
           columns: [
             { label: 'Dzień', dataLabel: 'Dzień', key: 'day' },
@@ -96,7 +96,7 @@ export function register(router) {
             { label: 'Żądania', dataLabel: 'Żądania', render: (r) => Number(r.requests || 0).toLocaleString(), align: 'right' },
           ],
           rows: series.slice(-12).reverse(),
-        })}`, { sub: 'Ostatnie 12 dni' })}
+        })}</details>`, { sub: 'Ostatnie 12 dni' })}
       </div>
       ${card('Zużycie dysku według typu', h`${table({
         cls: 'responsive-table',
@@ -113,15 +113,15 @@ export function register(router) {
         ],
       })}<p class="small muted mt-12">Pomiar: ${formatDate(measuredAt, { time: true })} · źródło: metadane panelu + ${storage.files} inode. Prognoza transferu na 30 dni: <strong>${formatBytes(forecast)}</strong>.</p>
       <div class="row mt-12"><a class="btn btn-secondary btn-sm" href="/user/statistics/export?format=csv">Eksport CSV</a><a class="btn btn-secondary btn-sm" href="/user/statistics/export?format=json">Eksport JSON</a></div>`)}
-      ${card('Package limits', h`${kvList([
-        ['Package', ctx.user.package || 'default'],
-        ['Domains', `${domains.length} / ${lim.domains || '∞'}`],
-        ['Email accounts', `${get('SELECT COUNT(*) n FROM email_accounts WHERE domain IN (SELECT name FROM domains WHERE user_id = ?)', ctx.user.id).n} / ${lim.emails || '∞'}`],
-        ['Databases', `${get('SELECT COUNT(*) n FROM databases WHERE user_id = ?', ctx.user.id).n} / ${lim.databases || '∞'}`],
-        ['Disk', `${formatBytes(storage.used)} / ${lim.disk_mb ? formatBytes(lim.disk_mb) : 'unlimited'}`],
-        ['Bandwidth', `${formatBytes(bw)} / ${lim.bandwidth_mb ? formatBytes(lim.bandwidth_mb) : 'unlimited'}`],
+      ${card('Limity pakietu', h`${kvList([
+        ['Pakiet', ctx.user.package || 'default'],
+        ['Domeny', `${domains.length} / ${lim.domains || '∞'}`],
+        ['Skrzynki e-mail', `${get('SELECT COUNT(*) n FROM email_accounts WHERE domain IN (SELECT name FROM domains WHERE user_id = ?)', ctx.user.id).n} / ${lim.emails || '∞'}`],
+        ['Bazy danych', `${get('SELECT COUNT(*) n FROM databases WHERE user_id = ?', ctx.user.id).n} / ${lim.databases || '∞'}`],
+        ['Dysk', `${formatBytes(storage.used)} / ${lim.disk_mb ? formatBytes(lim.disk_mb) : 'bez limitu'}`],
+        ['Transfer', `${formatBytes(bw)} / ${lim.bandwidth_mb ? formatBytes(lim.bandwidth_mb) : 'bez limitu'}`],
       ])}`)}`;
-    return page(ctx, { title: 'Statistics', subtitle: 'Bandwidth, disk and resource usage', body });
+    return page(ctx, { title: 'Statystyki', subtitle: 'Transfer, dysk i wykorzystanie zasobów', body });
   });
 
   /* ------------------------------------------------------------- messages */
@@ -244,7 +244,7 @@ export function register(router) {
       ])}`)}
       <div class="grid grid-2">
         ${card('Your resources', h`${kvList([
-          ['Package', ctx.user.package || 'default'],
+          ['Pakiet', ctx.user.package || 'default'],
           ['Disk', `${formatBytes(storage.used)} of ${lim.disk_mb ? formatBytes(lim.disk_mb) : 'unlimited'}`],
           ['Domains', `${visibleDomains(ctx.user).length} of ${lim.domains || '∞'}`],
           ['PHP versions', (lim.php || []).join(', ')],

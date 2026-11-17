@@ -107,7 +107,7 @@ SHOW DATABASES;</pre>
   router.get('/user/databases/create', (ctx) => {
     const q = quota(ctx.user, 'databases');
     const mst = detect();
-    const body = h`${card('Dodaj bazę danych', h`<form method="post" action="/user/databases/create" class="oa-form">
+    const body = h`${card('Parametry bazy danych', h`<form method="post" action="/user/databases/create" class="oa-form">
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
       ${!q.ok ? alert(`Osiągnięto limit baz (${q.used}/${q.limit}).`, 'warn') : ''}
       ${!mst.connected ? alert('Brak połączenia z MariaDB: baza zostanie zapisana, ale nie utworzona na serwerze.', 'warn') : ''}

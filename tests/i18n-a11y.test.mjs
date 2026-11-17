@@ -966,3 +966,15 @@ test('UX stage 2: package unlimited toggle persists as zero (unlimited)', async 
   assert.equal(limits.emails, 5);
   db.run('DELETE FROM packages WHERE name = ?', name);
 });
+
+test('UX stage 3: core screens do not leak untranslated English labels in pl', async () => {
+  const cookie = await loginAs('demoadmin');
+  const forbidden = [/\bEmail Accounts\b/, /\bCreate mailbox\b/, /\bCreate package\b/, /\bFile Manager\b/, /\bParent directory\b/, /\bUpload files\b/, /\bGetting started\b/, /\bKeyboard shortcuts\b/, /\bSearch pages and commands\b/, /\bLast login\b/, /\bNo accounts yet\b/];
+  const user = await loginAs('demouser');
+  for (const [route, routeCookie] of [['/admin', cookie], ['/admin/users', cookie], ['/admin/user-packages', cookie], ['/admin/security', cookie], ['/help', cookie], ['/user/email', user], ['/user/files', user]]) {
+    const { res, html } = await page(route, routeCookie);
+    assert.equal(res.status, 200, route);
+    const visible = html.replace(/<script[^>]*id="oa-(nav|entity)-index"[^>]*>[\s\S]*?<\/script>/g, '');
+    for (const pattern of forbidden) assert.doesNotMatch(visible, pattern, `${route}: ${pattern}`);
+  }
+});

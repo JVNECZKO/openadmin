@@ -640,9 +640,9 @@ test('mailbox webmail action shows a pre-login password notice and never promise
 test('webmail still asks for the mailbox password (no hidden SSO hand-off)', async () => {
   const { res, html } = await getPage('/webmail?email=' + encodeURIComponent('info@example.com'), userCookie);
   assert.equal(res.status, 200);
-  assert.match(html, /Sign in to webmail/);
+  assert.match(html, /Zaloguj się do webmaila|Sign in to webmail/);
   assert.match(html, /type="password"/);
-  assert.match(html, /mailbox address and password/i);
+  assert.match(html, /adresu skrzynki i hasła|mailbox address and password/i);
 });
 
 test('admin web apps page states the webmail password requirement explicitly', async () => {

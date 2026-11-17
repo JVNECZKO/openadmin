@@ -275,7 +275,7 @@ export function field(f) {
   ].filter(Boolean).join(' ');
   commonAttrs = applyDescribedBy(commonAttrs, describedBy);
 
-  const help = f.help ? html`<p class="field-help" id="${helpId}">${f.help}</p>` : '';
+  const help = f.help ? html`<p class="field-help" id="${helpId}">${f.help} <a class="field-help-link" href="/help" aria-label="Pomoc i dokumentacja">?</a></p>` : '';
   const error = f.error ? html`<p class="field-error" id="${errorId}" role="alert">${f.error}</p>` : '';
   const requiredMark = required ? html`<span class="req" aria-hidden="true">*</span>` : '';
 
