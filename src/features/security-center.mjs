@@ -65,31 +65,31 @@ export function register(router) {
             ['Zablokowane IP', String(s.blocks)],
             ['Kraje', String(s.countries)],
             ['Ograniczenia SMTP', statusLine(s.smtp, 'włączone', 'wyłączone')],
-          ])}<a class="btn btn-secondary btn-sm" href="${A}?tab=firewall">Zarządzaj</a></div>`)}
+          ], { cols: 1 })}<a class="btn btn-secondary btn-sm" href="${A}?tab=firewall">Zarządzaj</a></div>`)}
           ${card('SSH', h`<div class="stack">${kvList([
             ['sshd', statusLine(s.caps.ssh)],
             ['Port', String(ssh.port)],
             ['Hasło', statusLine(ssh.password_authentication, 'włączone', 'wyłączone')],
             ['Root login', ssh.permit_root_login],
-          ])}<a class="btn btn-secondary btn-sm" href="${A}?tab=ssh">Zarządzaj</a></div>`)}
+          ], { cols: 1 })}<a class="btn btn-secondary btn-sm" href="${A}?tab=ssh">Zarządzaj</a></div>`)}
           ${card('Klucze roota', h`<div class="stack">${kvList([
             ['Klucze', String(keys.length)],
             ['Ostatni', keys[0] ? `${keys[0].name} · ${formatDate(keys[0].created_at)}` : 'brak'],
-          ])}<a class="btn btn-secondary btn-sm" href="${A}?tab=keys">Zarządzaj</a></div>`)}
+          ], { cols: 1 })}<a class="btn btn-secondary btn-sm" href="${A}?tab=keys">Zarządzaj</a></div>`)}
           ${card('Polityka haseł', h`<div class="stack">${kvList([
             ['Min. długość', String(policy.minlen)],
             ['Klasy znaków', String(policy.minclass)],
-          ])}<a class="btn btn-secondary btn-sm" href="${A}?tab=policy">Zarządzaj</a></div>`)}
+          ], { cols: 1 })}<a class="btn btn-secondary btn-sm" href="${A}?tab=policy">Zarządzaj</a></div>`)}
           ${card('Fork bomb', h`<div class="stack">${kvList([
             ['Status', statusLine(fork.enabled, 'włączone', 'wyłączone')],
             ['nproc', String(fork.nproc)],
             ['nofile', String(fork.nofile)],
-          ])}<a class="btn btn-secondary btn-sm" href="${A}?tab=groups">Zarządzaj</a></div>`)}
+          ], { cols: 1 })}<a class="btn btn-secondary btn-sm" href="${A}?tab=groups">Zarządzaj</a></div>`)}
           ${card('ModSecurity', h`<div class="stack">${kvList([
             ['Apache', statusLine(s.caps.apache)],
             ['mod_security2', statusLine(mod.supported)],
             ['Engine', mod.engine],
-          ])}<a class="btn btn-secondary btn-sm" href="${A}?tab=waf">Zarządzaj</a></div>`)}
+          ], { cols: 1 })}<a class="btn btn-secondary btn-sm" href="${A}?tab=waf">Zarządzaj</a></div>`)}
         </div>`;
     }
 

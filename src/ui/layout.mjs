@@ -229,34 +229,34 @@ function topbar({ user, level, path, csrf, notifications, title, notifyUrl = '' 
   const pl = (user.language || 'pl') !== 'en';
   return html`<header class="topbar" data-topbar>
     <div class="topbar-left">
-      <button class="icon-btn only-mobile" type="button" data-sidebar-open aria-label="Open menu" aria-controls="sidebar" aria-expanded="false">${icon('menu', { size: 20 })}</button>
+      <button class="icon-btn only-mobile" type="button" data-sidebar-open aria-label="${pl ? 'Otwórz menu' : 'Open menu'}" aria-controls="sidebar" aria-expanded="false">${icon('menu', { size: 20 })}</button>
       ${breadcrumbs({ level, path, title, lang: user.language || 'pl' })}
     </div>
     <div class="topbar-center">
       <button class="search-trigger" type="button" data-open-search aria-keyshortcuts="Control+K Meta+K">
-        ${icon('search', { size: 16 })}<span>Search pages and commands…</span><kbd data-shortcut>⌘K</kbd>
+        ${icon('search', { size: 16 })}<span>${pl ? 'Szukaj stron i poleceń…' : 'Search pages and commands…'}</span><kbd data-shortcut>⌘K</kbd>
       </button>
     </div>
     <div class="topbar-right">
-      <div class="live-pill" role="status" data-live-pill data-live-url="/healthz" data-live-interval="60" title="Live status — checks /healthz">
+      <div class="live-pill" role="status" data-live-pill data-live-url="/healthz" data-live-interval="60" title="${pl ? 'Status na żywo — sprawdza /healthz' : 'Live status — checks /healthz'}">
         <span class="live-dot" aria-hidden="true"></span>
-        <span class="live-label" data-live-label>Live</span>
-        <span class="live-meta" data-live-meta>checking…</span>
+        <span class="live-label" data-live-label>${pl ? 'Online' : 'Live'}</span>
+        <span class="live-meta" data-live-meta>${pl ? 'sprawdzanie…' : 'checking…'}</span>
       </div>
       <span class="topbar-divider" aria-hidden="true"></span>
-      <button class="icon-btn topbar-search-btn" type="button" data-open-search aria-label="Search pages and commands">${icon('search', { size: 18 })}</button>
+      <button class="icon-btn topbar-search-btn" type="button" data-open-search aria-label="${pl ? 'Szukaj stron i poleceń' : 'Search pages and commands'}">${icon('search', { size: 18 })}</button>
       <a class="icon-btn bell-btn" href="/${level}/messages" data-bell
-        aria-label="Notifications${count ? ` (${count} unread)` : ''}"
-        title="Notifications" data-badge="${count}"
+        aria-label="${pl ? 'Powiadomienia' : 'Notifications'}${count ? (pl ? ` (${count} nieprzeczytane)` : ` (${count} unread)`) : ''}"
+        title="${pl ? 'Powiadomienia' : 'Notifications'}" data-badge="${count}"
         data-badge-url="${notifyUrl || '/api/v1/notifications?limit=1'}" data-badge-interval="30">
         ${icon('bell', { size: 19 })}
         <span class="notify-count" data-badge-count ${count ? '' : raw('hidden')}>${count > 99 ? '99+' : count}</span>
       </a>
       <button class="icon-btn theme-toggle" type="button" data-toggle-theme data-no-theme-label-mobile
-        aria-pressed="false" aria-label="Switch to dark mode" title="Switch to dark mode">
+        aria-pressed="false" aria-label="${pl ? 'Przełącz na tryb ciemny' : 'Switch to dark mode'}" title="${pl ? 'Przełącz na tryb ciemny' : 'Switch to dark mode'}">
         <span class="theme-ico" data-theme-icon="moon">${icon('moon', { size: 19 })}</span>
         <span class="theme-ico" data-theme-icon="sun" hidden>${icon('sun', { size: 19 })}</span>
-        <span class="theme-label" data-theme-label>Dark</span>
+        <span class="theme-label" data-theme-label>${pl ? 'Ciemny' : 'Dark'}</span>
       </button>
       <div class="menu">
         <button class="avatar-btn" type="button" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-controls="user-menu">
@@ -300,6 +300,7 @@ export function renderPage({
   actions = [], counts = null, storage = null, wide = false, searchIndex = [], notifyUrl = '',
 }) {
   const path = active || '/';
+  const pl = (user.language || 'pl') !== 'en';
   const viewLevel = layoutLevelFor(path, level, user);
   const navIndex = viewLevel === level ? searchIndex : searchIndexForLevel(viewLevel, caps, user);
   const docTitle = title ? `${title} · ${setting('brand_name', 'OpenAdmin')}` : setting('brand_name', 'OpenAdmin');
@@ -317,7 +318,7 @@ export function renderPage({
   <script>try{var m=localStorage.getItem('oa_theme');if(m==='dark'||(!m&&window.matchMedia('(prefers-color-scheme: dark)').matches&&localStorage.getItem('oa_theme')!=='light'))document.documentElement.dataset.mode='dark';}catch(e){}</script>
 </head>
 <body class="app-body" data-page="${path}" data-level="${viewLevel}">
-  <a class="skip-link" href="#main-content">Skip to content</a>
+  <a class="skip-link" href="#main-content">${pl ? 'Przejdź do treści' : 'Skip to content'}</a>
   ${impersonationBanner({ user, csrf })}
   <div class="app-shell">
     ${sidebar({ user, level: viewLevel, caps, path, counts, storage, version: VERSION })}
@@ -345,16 +346,16 @@ export function renderPage({
       </main>
       <footer class="app-footer">
         <span>${setting('brand_footer', `OpenAdmin ${VERSION} · free & open source (AGPL-3.0) · unlimited accounts`)}</span>
-        <span class="footer-links"><a href="/api/v1/openapi.json">API</a><a href="/help">Documentation</a><a href="/admin/license">License</a></span>
+        <span class="footer-links"><a href="/api/v1/openapi.json">API</a><a href="/help">${pl ? 'Dokumentacja' : 'Documentation'}</a><a href="/admin/license">${pl ? 'Licencja' : 'License'}</a></span>
       </footer>
     </div>
   </div>
-  <button class="sidebar-scrim" type="button" data-sidebar-close aria-label="Close navigation" hidden></button>
+  <button class="sidebar-scrim" type="button" data-sidebar-close aria-label="${pl ? 'Zamknij nawigację' : 'Close navigation'}" hidden></button>
   <div class="cmd-palette" id="cmdPalette" hidden>
-    <div class="cmd-box" role="dialog" aria-modal="true" aria-label="Command palette">
-      <div class="cmd-input">${icon('search', { size: 18 })}<input type="text" id="cmdInput" placeholder="Search pages, settings and commands…" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cmdResults" aria-haspopup="listbox"><kbd>esc</kbd></div>
-      <div class="cmd-results" id="cmdResults" role="listbox" aria-label="Commands and pages"></div>
-      <div class="cmd-foot"><span><kbd>↑</kbd><kbd>↓</kbd> navigate</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>
+    <div class="cmd-box" role="dialog" aria-modal="true" aria-label="${pl ? 'Paleta poleceń' : 'Command palette'}">
+      <div class="cmd-input">${icon('search', { size: 18 })}<input type="text" id="cmdInput" placeholder="${pl ? 'Szukaj stron, ustawień i poleceń…' : 'Search pages, settings and commands…'}" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cmdResults" aria-haspopup="listbox"><kbd>esc</kbd></div>
+      <div class="cmd-results" id="cmdResults" role="listbox" aria-label="${pl ? 'Polecenia i strony' : 'Commands and pages'}"></div>
+      <div class="cmd-foot"><span><kbd>↑</kbd><kbd>↓</kbd> ${pl ? 'nawiguj' : 'navigate'}</span><span><kbd>↵</kbd> ${pl ? 'otwórz' : 'open'}</span><span><kbd>esc</kbd> ${pl ? 'zamknij' : 'close'}</span></div>
     </div>
   </div>
   <div class="toast-stack" id="toasts" aria-live="polite" aria-atomic="false"></div>

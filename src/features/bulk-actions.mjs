@@ -296,7 +296,7 @@ function previewPage(ctx, B, result) {
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
       <input type="hidden" name="token" value="${result.token}">
       <div class="form-actions">
-        <button class="btn btn-primary" type="submit" ${canApply ? '' : 'disabled'} data-confirm="Apply this bulk action to ${preview.eligible} eligible object(s)? Each object is processed independently and a per-object report is returned.">
+        <button class="btn btn-primary" type="submit" ${canApply ? '' : 'disabled'} data-confirm="Zastosować tę operację do ${preview.eligible} kwalifikujących się obiektów? Każdy obiekt jest przetwarzany osobno, a raport pokaże wynik dla każdego z nich.">
           ${icon('check', { size: 16 })}<span>Apply to ${preview.eligible} eligible object(s)</span>
         </button>
         <a class="btn btn-ghost" href="${B}?type=${preview.objectType}">Cancel and change selection</a>

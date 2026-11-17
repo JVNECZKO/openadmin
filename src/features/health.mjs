@@ -48,7 +48,7 @@ export function register(router) {
             <button class="btn btn-ghost btn-sm" type="submit">Wyślij test poczty</button></form>
         </div>`)}
         ${card('Szybkie naprawy', h`<div class="stack u-s49">
-          <form method="post" action="/admin/health/fix"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="action" value="apply">
+          <form method="post" action="/admin/health/fix" data-confirm="Wdrożyć ponownie vhosty, DNS i pocztę dla wszystkich domen? Operacja może chwilowo przerwać usługi."><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="action" value="apply">
             <button class="btn btn-primary" type="submit">Wdróż wszystko ponownie</button></form>
           <form method="post" action="/admin/health/fix"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="action" value="web">
             <button class="btn btn-secondary" type="submit">Wdróż strony (vhosty + PHP)</button></form>

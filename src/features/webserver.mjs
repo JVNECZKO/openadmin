@@ -125,7 +125,7 @@ export function register(router) {
           <form method="post" action="/admin/web-server/test" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
             <button class="btn btn-secondary btn-sm" type="submit">${icon('check', { size: 14 })} Validate</button></form>
           <form method="post" action="/admin/web-server/deploy" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-            <button class="btn btn-secondary btn-sm" type="submit" data-confirm="Deploy to system paths and reload?">${icon('upload', { size: 14 })} Deploy</button></form>
+            <button class="btn btn-secondary btn-sm" type="submit" data-confirm="Wdrożyć do katalogów systemowych i przeładować usługi?">${icon('upload', { size: 14 })} Deploy</button></form>
         </div>`)}
       </div>
       ${ctx.query.output ? card('Validation output', h`<pre class="code-block">${ctx.query.output}</pre>`) : ''}

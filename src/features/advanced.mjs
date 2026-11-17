@@ -227,7 +227,7 @@ export function register(router) {
       rows, empty: 'No protected directories.',
       actions: [
         { label: 'Edytuj', href: (r) => `/user/protected-directories?edit=${r.id}`, icon: 'edit' },
-        { label: 'Remove', form: (r) => `/user/protected-directories/${r.id}/delete`, confirm: 'Remove protection?', icon: 'trash', danger: true },
+        { label: 'Remove', form: (r) => `/user/protected-directories/${r.id}/delete`, confirm: 'Usunąć ochronę katalogu?', icon: 'trash', danger: true },
       ],
       footer: h`<form class="u-s31" method="post" action="/user/protected-directories/create">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -448,7 +448,7 @@ export function register(router) {
           { label: 'Created', render: (r) => formatDate(r.created) },
         ],
         rows: repos, empty: 'No repositories yet.',
-        actions: [{ label: 'Delete', form: (r) => `/user/git/${r.id}/delete`, confirm: 'Delete repository?', icon: 'trash', danger: true }],
+        actions: [{ label: 'Delete', form: (r) => `/user/git/${r.id}/delete`, confirm: 'Usunąć repozytorium?', icon: 'trash', danger: true }],
         footer: h`<form class="u-s31" method="post" action="/user/git/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <input class="u-s44" name="name" placeholder="my-app" required>

@@ -82,7 +82,7 @@ export function register(router) {
         actions: [
           { label: 'Start', form: (a) => `/user/apps/${a.id}/start`, icon: 'play' },
           { label: 'Stop', form: (a) => `/user/apps/${a.id}/stop`, icon: 'x' },
-          { label: 'Remove', form: (a) => `/user/apps/${a.id}/delete`, icon: 'trash', danger: true, confirm: 'Remove this application?' },
+          { label: 'Remove', form: (a) => `/user/apps/${a.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć tę aplikację?' },
         ],
         footer: h`<form class="u-s31" method="post" action="/user/apps/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">

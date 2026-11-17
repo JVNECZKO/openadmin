@@ -161,6 +161,17 @@ function postIcon(ctx, action, iconName, label, confirmText = '') {
   </form>`;
 }
 
+function menuLink(href, iconName, label) {
+  return h`<a class="menu-item" href="${href}">${icon(iconName, { size: 15 })} ${label}</a>`;
+}
+
+function menuPost(ctx, action, iconName, label, confirmText = '') {
+  return h`<form method="post" action="${action}" class="inline" ${confirmText ? raw(`data-confirm="${String(confirmText).replace(/"/g, '&quot;')}"`) : ''}>
+    <input type="hidden" name="_csrf" value="${ctx.csrf}">
+    <button class="menu-item" type="submit">${icon(iconName, { size: 15 })} ${label}</button>
+  </form>`;
+}
+
 function limitRow(label, used, limit, usedLabel, limitLabel, health) {
   return h`<div>
     <div class="spread small"><span>${label}</span><span>${usedLabel} / ${Number(limit) ? limitLabel : '∞'} ${healthBadge(health)}</span></div>
@@ -463,17 +474,6 @@ function resellerDashboard(ctx) {
     sub: 'Na podstawie pakietu ' + (ctx.user.package || 'reseller'),
     actions: [h`<a class="link small" href="/reseller/settings">Ustawienia</a>`],
   });
-
-  const quickActions = card('Szybkie akcje', h`<div class="quick-grid">
-    ${quickTile('/reseller/users/create', 'plus', 'Nowy klient', 'Konto + domena + pakiet')}
-    ${quickTile('/reseller/domains', 'globe', 'Domeny klientów', `${domains.length} ${plural(domains.length, 'domena', 'domeny', 'domen')}`)}
-    ${quickTile('/reseller/apps', 'cart', 'Aplikacje', 'WordPress, sklep, chmura')}
-    ${quickTile('/reseller/packages/create', 'archive', 'Nowy pakiet', 'Limity i funkcje')}
-    ${quickTile('/reseller/dns', 'dns', 'DNS klientów', 'Strefy i rekordy')}
-    ${quickTile('/reseller/backups', 'archive', 'Kopie zapasowe', `${snapshot.backups.length} ${plural(snapshot.backups.length, 'archiwum', 'archiwa', 'archiwów')}`)}
-    ${quickTile('/reseller/tickets', 'ticket', 'Zgłoszenia', `${openTickets.length} ${plural(openTickets.length, 'otwarte', 'otwarte', 'otwartych')}`)}
-    ${quickTile('/reseller/ip-manager', 'network', 'Adresy IP', `${ipsUsed} ${plural(ipsUsed, 'adres', 'adresy', 'adresów')}`)}
-  </div>`, { sub: 'Najczęstsze zadania resellera' });
 
   const customerRows = customers.slice(0, 10).map((user) => {
     const firstDomain = user.domains.find((domain) => !domain.user_suspended && domain.status === 'active')?.name
@@ -785,20 +785,20 @@ function resellerDomains(ctx) {
     const canLogin = !domain.user_suspended;
     const canInstallApp = canLogin && domain.status === 'active';
     return h`<tr>
-      <td><a class="cell-strong" href="/reseller/dns?domain=${encodeURIComponent(domain.name)}">${domain.name}</a><span class="cell-sub">${domain.docroot || 'brak katalogu'}</span></td>
-      <td><a class="link" href="/reseller/users/${domain.user_id}">${domain.username}</a></td>
-      <td>${badge(domain.package || 'default', 'brand')}</td>
-      <td>${domainStateBadge(domain)}</td>
-      <td>${domain.php_version || '—'}</td>
-      <td>${Number(domain.ssl) ? badge('SSL', 'ok', { dot: true }) : badge('brak', 'muted')}</td>
-      <td>${formatBytes(domain.disk_mb)}</td>
-      <td>${installed ? h`<a class="link" href="/reseller/apps?domain=${encodeURIComponent(domain.name)}">${badge(`${installed} ${plural(installed, 'aplikacja', 'aplikacje', 'aplikacji')}`, 'brand')}</a>` : badge('brak', 'muted')}</td>
-      <td class="col-actions"><div class="row-actions">
-        ${iconLink(`/reseller/dns?domain=${encodeURIComponent(domain.name)}`, 'dns', 'Edytuj DNS')}
-        ${canInstallApp ? iconLink(`/reseller/apps?domain=${encodeURIComponent(domain.name)}`, 'cart', 'Zainstaluj aplikację') : ''}
-        ${iconLink(`/reseller/users/${domain.user_id}`, 'user', 'Panel klienta')}
-        ${canLogin ? postIcon(ctx, `${R}/users/${domain.user_id}/login-as`, 'logout', 'Zaloguj jako klienta', 'Zalogować się jako ten klient?') : ''}
-      </div></td>
+      <td data-label="Domena"><a class="cell-strong" href="/reseller/dns?domain=${encodeURIComponent(domain.name)}">${domain.name}</a><span class="cell-sub">${domain.docroot || 'brak katalogu'}</span></td>
+      <td data-label="Klient"><a class="link" href="/reseller/users/${domain.user_id}">${domain.username}</a></td>
+      <td data-label="Pakiet">${badge(domain.package || 'default', 'brand')}</td>
+      <td data-label="Status">${domainStateBadge(domain)}</td>
+      <td data-label="PHP">${domain.php_version || '—'}</td>
+      <td data-label="SSL">${Number(domain.ssl) ? badge('SSL', 'ok', { dot: true }) : badge('brak', 'muted')}</td>
+      <td data-label="Dysk">${formatBytes(domain.disk_mb)}</td>
+      <td data-label="Aplikacje">${installed ? h`<a class="link" href="/reseller/apps?domain=${encodeURIComponent(domain.name)}">${badge(`${installed} ${plural(installed, 'aplikacja', 'aplikacje', 'aplikacji')}`, 'brand')}</a>` : badge('brak', 'muted')}</td>
+      <td class="col-actions"><div class="row-actions"><details class="more-menu"><summary class="btn btn-ghost btn-sm" role="button">Więcej</summary><div class="more-menu-list">
+        ${menuLink(`/reseller/dns?domain=${encodeURIComponent(domain.name)}`, 'dns', 'Edytuj DNS')}
+        ${canInstallApp ? menuLink(`/reseller/apps?domain=${encodeURIComponent(domain.name)}`, 'cart', 'Zainstaluj aplikację') : ''}
+        ${menuLink(`/reseller/users/${domain.user_id}`, 'user', 'Panel klienta')}
+        ${canLogin ? menuPost(ctx, `${R}/users/${domain.user_id}/login-as`, 'logout', 'Zaloguj jako klienta', 'Zalogować się jako ten klient?') : ''}
+      </div></details></div></td>
     </tr>`;
   });
 
@@ -825,7 +825,7 @@ function resellerDomains(ctx) {
     </div>
   </form>`;
 
-  const domainsCard = card('Domeny klientów', h`${filterForm}${rows.length ? h`<div id="resellerDomains" class="table-wrap"><table class="data-table">
+  const domainsCard = card('Domeny klientów', h`${filterForm}${rows.length ? h`<div id="resellerDomains" class="table-wrap"><table class="data-table responsive-table">
     <thead><tr><th>Domena</th><th>Klient</th><th>Pakiet</th><th>Status</th><th>PHP</th><th>SSL</th><th>Dysk</th><th>Aplikacje</th><th class="col-actions">Akcje</th></tr></thead>
     <tbody>${tableRows}</tbody>
   </table></div>` : h`<div id="resellerDomains">${emptyState(emptyMessage, { icon: 'globe', action: emptyAction })}</div>`}`, {
@@ -836,13 +836,7 @@ function resellerDomains(ctx) {
 
   const body = h`
     ${alert('To domeny Twoich klientów. DNS edytujesz bezpośrednio, aplikacje instalujesz jednym kliknięciem, a konto klienta otworzysz w jego panelu.', 'info')}
-    ${domainsCard}
-    ${card('Szybkie akcje', h`<div class="quick-grid">
-      ${quickTile('/reseller/users/create', 'plus', 'Nowy klient', 'Konto + domena')}
-      ${quickTile('/reseller/apps', 'cart', 'Zainstaluj aplikację', 'Tylko domeny klientów')}
-      ${quickTile('/reseller/dns', 'dns', 'Zarządzaj DNS', 'Strefy i rekordy')}
-      ${quickTile('/reseller/packages/create', 'archive', 'Nowy pakiet', 'Limity i funkcje')}
-    </div>`, { sub: 'Domena powstaje razem z kontem klienta w kreatorze użytkownika' })}`;
+    ${domainsCard}`;
   return page(ctx, {
     title: 'Domeny klientów',
     subtitle: 'Wszystkie domeny w Twoim resellerze — wyszukuj, filtruj i zarządzaj',

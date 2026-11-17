@@ -84,7 +84,7 @@ export function register(router) {
         createHref: '/user/databases/create', createLabel: 'Dodaj bazę',
         actions: [
           { label: 'Hasło', href: (r) => (r.id ? `/user/databases/${r.id}/password` : '#'), icon: 'key', show: (r) => !!r.id },
-          { label: 'Usuń', form: (r) => `/user/databases/${r.id}/delete`, confirm: 'Delete this database and all its tables?', icon: 'trash', danger: true, show: (r) => !!r.id },
+          { label: 'Usuń', form: (r) => `/user/databases/${r.id}/delete`, confirm: 'Usunąć tę bazę i wszystkie jej tabele?', icon: 'trash', danger: true, show: (r) => !!r.id },
         ],
       })}
       <div class="grid grid-2">

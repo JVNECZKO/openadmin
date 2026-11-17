@@ -66,7 +66,7 @@ export function userDomains(ctx) {
         { label: 'Edytuj', href: (r) => `/user/domains/${r.id}/edit`, icon: 'edit' },
         { label: 'Otwórz', href: (r) => `http://${r.name}/`, icon: 'globe' },
         { label: 'Logi', href: (r) => `/user/domains/${r.id}/logs`, icon: 'file' },
-        { label: 'Delete', href: '#', icon: 'trash', danger: true, form: (r) => `/user/domains/${r.id}/delete`, confirm: 'Delete this domain and its DNS zone, mail and databases?', icon: 'trash' },
+        { label: 'Delete', href: '#', icon: 'trash', danger: true, form: (r) => `/user/domains/${r.id}/delete`, confirm: 'Usunąć domenę wraz ze strefą DNS, pocztą i bazami?', icon: 'trash' },
       ],
       empty: 'No domains yet. Add your first domain to get started.',
       responsive: true,
@@ -730,7 +730,7 @@ export function register(router) {
         actions: [
           { label: 'Edytuj', href: (r) => `/user/subdomains?domain=${encodeURIComponent(d?.name || '')}&edit=${r.id}`, icon: 'edit' },
           { label: 'Files', href: (r) => `/user/files?path=${encodeURIComponent(r.docroot || '/')}`, icon: 'folder' },
-          { label: 'Delete', form: (r) => `/user/subdomains/${r.id}/delete`, confirm: 'Delete this subdomain?', icon: 'trash', danger: true },
+          { label: 'Delete', form: (r) => `/user/subdomains/${r.id}/delete`, confirm: 'Usunąć tę subdomenę?', icon: 'trash', danger: true },
         ],
         footer: d ? h`<form method="post" action="/user/subdomains/create" class="inline-form">
           <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}">
@@ -789,7 +789,7 @@ export function register(router) {
             <td class="col-actions"><div class="row-actions">
               <a class="icon-btn" href="/user/dns?domain=${encodeURIComponent(d.name)}&edit=${r.id}" title="Edit">${icon('edit', { size: 16 })}</a>
               <form method="post" action="/user/dns/${r.id}/delete" class="inline"><input type="hidden" name="_csrf" value="${ctx.csrf}">
-                <button class="icon-btn danger" type="submit" title="Delete" data-confirm="Delete this record?">${icon('trash', { size: 16 })}</button></form>
+                <button class="icon-btn danger" type="submit" title="Delete" data-confirm="Usunąć ten rekord DNS?">${icon('trash', { size: 16 })}</button></form>
             </div></td>
           </tr>`)}
           </tbody>
@@ -937,7 +937,7 @@ export function register(router) {
         empty: 'No redirects configured.',
         actions: [
           { label: 'Edytuj', href: (r) => `/user/redirects?edit=${r.id}`, icon: 'edit' },
-          { label: 'Delete', form: (r) => `/user/redirects/${r.id}/delete`, confirm: 'Delete redirect?', icon: 'trash', danger: true },
+          { label: 'Delete', form: (r) => `/user/redirects/${r.id}/delete`, confirm: 'Usunąć przekierowanie?', icon: 'trash', danger: true },
         ],
         footer: h`<form class="u-s60" method="post" action="/user/redirects/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">

@@ -112,6 +112,8 @@ export function table({
   selectAllLabel = 'Zaznacz wszystkie wiersze',
   selectRowLabel = 'Zaznacz wiersz',
   cls = '',
+  actionsMenu = false,
+  menuLabel = 'Więcej',
 }) {
   if (!rows.length) {
     const message = safeEmptyMessage(empty);
@@ -132,9 +134,17 @@ export function table({
         ${rows.map((row, rowIndex) => html`<tr>
           ${selectable ? html`<td class="col-check"><input type="checkbox" name="selected[]" value="${row[rowKey]}" aria-label="${selectRowLabel} ${rowIndex + 1}"></td>` : ''}
           ${columns.map((c) => html`<td class="${c.align === 'right' ? 'ta-r' : ''} ${c.cls || ''}" data-label="${e(c.dataLabel || c.label || '')}">${tableCell(c.render ? c.render(row) : row[c.key])}</td>`)}
-          ${actions.length ? html`<td class="col-actions"><div class="row-actions">${actions.map((a) => {
+          ${actions.length ? html`<td class="col-actions">${actionsMenu ? html`<div class="row-actions"><details class="more-menu"><summary class="btn btn-ghost btn-sm" role="button" aria-label="${menuLabel}">${menuLabel}</summary><div class="more-menu-list">${actions.map((a) => {
             if (a.show && !a.show(row)) return '';
-            const actionLabel = a.label || actionsLabel;
+            const actionLabel = typeof a.label === 'function' ? a.label(row) : (a.label || actionsLabel);
+            if (a.form) {
+              const confirmText = typeof a.confirm === 'function' ? a.confirm(row) : a.confirm;
+              return html`<form method="post" action="${a.form(row)}" class="inline" ${confirmText ? raw(`data-confirm="${e(confirmText)}"`) : ''}><button type="submit" class="menu-item ${a.danger ? 'danger' : ''}">${icon(a.icon || 'trash', { size: 15 })} ${e(actionLabel)}</button></form>`;
+            }
+            return html`<a class="menu-item${a.danger ? ' danger' : ''}" href="${typeof a.href === 'function' ? a.href(row) : a.href}">${icon(a.icon || 'edit', { size: 15 })} ${e(actionLabel)}</a>`;
+          })}</div></details></div>` : html`<div class="row-actions">${actions.map((a) => {
+            if (a.show && !a.show(row)) return '';
+            const actionLabel = typeof a.label === 'function' ? a.label(row) : (a.label || actionsLabel);
             if (a.form) {
               const confirmText = typeof a.confirm === 'function' ? a.confirm(row) : a.confirm;
               return html`<form method="post" action="${a.form(row)}" class="inline" ${confirmText ? raw(`data-confirm="${e(confirmText)}"`) : ''}>
@@ -142,7 +152,7 @@ export function table({
               </form>`;
             }
             return html`<a class="icon-btn${a.danger ? ' danger' : ''}" href="${typeof a.href === 'function' ? a.href(row) : a.href}" title="${actionLabel}" aria-label="${actionLabel}">${icon(a.icon || 'edit', { size: 16 })}<span class="action-text">${e(actionLabel)}</span></a>`;
-          })}</div></td>` : ''}
+          })}</div>`}</td>` : ''}
         </tr>`)}
       </tbody>
     </table>

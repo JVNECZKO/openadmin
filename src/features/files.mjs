@@ -615,7 +615,7 @@ export function register(router) {
         actions: [
           { label: 'Edytuj', href: (r) => `/user/ftp?edit=${r.id}`, icon: 'edit' },
           { label: 'Toggle', form: (r) => `/user/ftp/${r.id}/toggle`, icon: 'lock' },
-          { label: 'Delete', form: (r) => `/user/ftp/${r.id}/delete`, confirm: 'Delete FTP account?', icon: 'trash', danger: true },
+          { label: 'Delete', form: (r) => `/user/ftp/${r.id}/delete`, confirm: 'Usunąć konto FTP?', icon: 'trash', danger: true },
         ],
       })}
       ${editing ? card(`Edytuj FTP · ${editing.username}`, h`<form method="post" action="/user/ftp/${editing.id}/update" class="oa-form">
@@ -748,7 +748,7 @@ export function register(router) {
         ${card('Restore', h`<p class="small muted mb-12">Restore a previous backup over your current account. Existing files with the same name are replaced.</p>
           <form method="post" action="/user/backups/restore" class="row"><input type="hidden" name="_csrf" value="${ctx.csrf}">
             <select name="id">${rows.map((r) => h`<option value="${r.id}">${r.filename}</option>`)}</select>
-            <button class="btn btn-secondary" type="submit" data-confirm="Restore this backup?">Restore backup</button></form>`)}
+            <button class="btn btn-secondary" type="submit" data-confirm="Przywrócić tę kopię zapasową?">Restore backup</button></form>`)}
       </div>
       ${listCard({
         title: 'Backup history', sub: `${rows.length} archive(s)`,
@@ -763,7 +763,7 @@ export function register(router) {
         empty: 'No backups created yet.',
         actions: [
           { label: 'Download', href: (r) => `/api/v1/backups/${r.id}/download`, icon: 'download' },
-          { label: 'Delete', form: (r) => `/user/backups/${r.id}/delete`, confirm: 'Delete this backup?', icon: 'trash', danger: true },
+          { label: 'Delete', form: (r) => `/user/backups/${r.id}/delete`, confirm: 'Usunąć tę kopię zapasową?', icon: 'trash', danger: true },
         ],
       })}`;
     return page(ctx, { title: 'Backups', subtitle: 'Create and restore account backups', body });
@@ -828,7 +828,7 @@ export function register(router) {
         rows, empty: 'No cron jobs yet.',
         actions: [
           { label: 'Edytuj', href: (r) => `/user/cron?edit=${r.id}`, icon: 'edit' },
-          { label: 'Delete', form: (r) => `/user/cron/${r.id}/delete`, confirm: 'Delete cron job?', icon: 'trash', danger: true },
+          { label: 'Delete', form: (r) => `/user/cron/${r.id}/delete`, confirm: 'Usunąć zadanie cron?', icon: 'trash', danger: true },
         ],
         footer: h`<form method="post" action="/user/cron/create" class="cron-form">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">

@@ -302,18 +302,21 @@ export function registerAuthRoutes(router) {
   });
 
   router.get('/help', (ctx) => {
+    if (!ctx.user) return ctx.redirect('/login?next=%2Fhelp');
+    const pl = (ctx.user?.language || 'pl') !== 'en';
+    const L = (en, polish) => pl ? polish : en;
     const body = h`<div class="grid grid-2">
-      ${card('Getting started', h`<ol class="doc-list">
-        <li><strong>Sign in</strong> with your panel account. Admins can switch between Admin, Reseller and User views from the sidebar.</li>
-        <li><strong>Create a package</strong> under Admin → User Packages to define limits (domains, email, disk, bandwidth).</li>
-        <li><strong>Create a user</strong> under Reseller → Create User, or Admin → Create User. A home directory and primary domain are provisioned automatically.</li>
-        <li><strong>Point DNS</strong> at your server, then issue a certificate under SSL/TLS Certificates.</li>
+      ${card(L('Getting started', 'Pierwsze kroki'), h`<ol class="doc-list">
+        <li>${L('Sign in with your panel account. Use the role switch in the top bar to open the Admin, Reseller or User view.', 'Zaloguj się kontem panelu. Przełącznikiem w górnym pasku otwórz widok Administratora, Resellera lub Użytkownika.')}</li>
+        <li>${L('Create a package under Admin → User packages to define domains, e-mail, disk and bandwidth limits.', 'Utwórz pakiet w Administrator → Pakiety użytkowników, aby określić limity domen, poczty, dysku i transferu.')}</li>
+        <li>${L('Create a customer in Reseller → Create user or Admin → Create user. The home directory and primary domain are provisioned automatically.', 'Utwórz klienta w Reseller → Utwórz użytkownika lub Administrator → Utwórz użytkownika. Katalog domowy i domena główna powstaną automatycznie.')}</li>
+        <li>${L('Point DNS at the server, then issue a certificate under SSL/TLS certificates.', 'Skonfiguruj DNS na serwer, następnie wystaw certyfikat w Certyfikaty SSL/TLS.')}</li>
       </ol>`)}
-      ${card('Compatibility', h`<p class="small muted">OpenAdmin implements the DirectAdmin command surface: <code>/CMD_API_*</code> endpoints, the <code>error=0</code> response convention, and the three-level permission model. See <a href="/api/v1/openapi.json">the OpenAPI document</a> for the REST API.</p>
-        ${kvList([['Panel port', String(config.port)], ['API auth', 'HTTP Basic'], ['Response format', 'URL-encoded / JSON'], ['License', 'AGPL-3.0, unlimited']])}`)}
+      ${card(L('Compatibility', 'Zgodność'), h`<p class="small muted">${L('OpenAdmin implements the DirectAdmin command surface: /CMD_API_* endpoints, the error=0 response convention and the three-level permission model. See the OpenAPI document for the REST API.', 'OpenAdmin obsługuje powierzchnię poleceń DirectAdmin: endpointy /CMD_API_*, konwencję odpowiedzi error=0 i trójpoziomowy model uprawnień. Dokument OpenAPI opisuje REST API.')} <a href="/api/v1/openapi.json">${L('the OpenAPI document', 'Dokument OpenAPI')}</a>.</p>
+        ${kvList([[L('Panel port', 'Port panelu'), String(config.port)], [L('API auth', 'Uwierzytelnianie API'), 'HTTP Basic'], [L('Response format', 'Format odpowiedzi'), 'URL-encoded / JSON'], [L('License', 'Licencja'), 'AGPL-3.0, unlimited']])}`)}
     </div>
-    ${card('Keyboard shortcuts', h`${kvList([['Command palette', '⌘K / Ctrl+K'], ['Close dialogs', 'Esc'], ['Navigate results', '↑ / ↓'], ['Open result', 'Enter']])}`)}`;
-    return page(ctx, { title: 'Documentation', subtitle: 'OpenAdmin help and reference', body });
+    ${card(L('Keyboard shortcuts', 'Skróty klawiszowe'), h`${kvList([[L('Command palette', 'Paleta poleceń'), '⌘K / Ctrl+K'], [L('Close dialogs', 'Zamknij okna'), 'Esc'], [L('Navigate results', 'Nawiguj po wynikach'), '↑ / ↓'], [L('Open result', 'Otwórz wynik'), 'Enter']])}`)}`;
+    return page(ctx, { title: L('Documentation', 'Dokumentacja'), subtitle: L('OpenAdmin help and reference', 'Pomoc i dokumentacja OpenAdmin'), body });
   });
 
   // SEC-018: skin preference is stored state; mutations must use POST + CSRF.

@@ -47,24 +47,26 @@ export function register(router) {
       ${mailNav(ctx, 'accounts')}
       ${domains.length ? domainSelect(domains, d?.name, { action: '/user/email' }) : alert('Add a domain before creating mailboxes.', 'warn')}
       ${listCard({
-        title: 'Email accounts', sub: `${rows.length} mailbox(es) on ${d?.name || '—'} · ${formatBytes(totalUsed)} stored${lim.emails ? ` · ${lim.emails} allowed` : ''}`,
+        title: 'Skrzynki e-mail', sub: `${rows.length} ${rows.length === 1 ? 'skrzynka' : 'skrzynek'} na ${d?.name || '—'} · ${formatBytes(totalUsed)} zajęte${lim.emails ? ` · limit ${lim.emails}` : ''}`,
         columns: [
-          { label: 'Mailbox', render: (r) => h`<span class="cell-strong">${r.local_part}@${r.domain}</span><span class="cell-sub">${r.suspended ? 'Suspended' : 'Active'}</span>` },
-          { label: 'Quota', render: (r) => h`<div class="u-s67">${progress(r.used_mb, r.quota_mb || 1, { showText: false })}<span class="cell-sub">${formatBytes(r.used_mb)} / ${r.quota_mb ? formatBytes(r.quota_mb) : 'unlimited'}</span></div>` },
-          { label: 'Created', render: (r) => formatDate(r.created_at) },
+          { label: 'Skrzynka', dataLabel: 'Skrzynka', render: (r) => h`<span class="cell-strong">${r.local_part}@${r.domain}</span><span class="cell-sub">${r.suspended ? 'Zawieszona' : 'Aktywna'}</span>` },
+          { label: 'Limit', dataLabel: 'Limit', render: (r) => h`<div class="u-s67">${progress(r.used_mb, r.quota_mb || 1, { showText: false })}<span class="cell-sub">${formatBytes(r.used_mb)} / ${r.quota_mb ? formatBytes(r.quota_mb) : 'bez limitu'}</span></div>` },
+          { label: 'Utworzono', dataLabel: 'Utworzono', render: (r) => formatDate(r.created_at) },
         ],
         rows,
         createHref: d ? `/user/email/create?domain=${d.name}` : null,
-        createLabel: 'Create mailbox',
-        empty: 'No mailboxes on this domain yet.',
+        createLabel: 'Utwórz skrzynkę',
+        empty: 'Brak skrzynek na tej domenie.',
+        responsive: true,
+        actionsMenu: true,
         actions: [
-          { label: 'Edit', href: (r) => `/user/email?domain=${encodeURIComponent(r.domain)}&edit=${r.id}`, icon: 'edit' },
+          { label: 'Edytuj', href: (r) => `/user/email?domain=${encodeURIComponent(r.domain)}&edit=${r.id}`, icon: 'edit' },
           { label: 'Webmail', href: (r) => `/webmail?email=${encodeURIComponent(r.local_part + '@' + r.domain)}`, icon: 'mail' },
-          { label: 'Setup', href: (r) => `/user/email/${r.id}/setup`, icon: 'settings' },
-          { label: 'Suspend / enable', form: (r) => `/user/email/${r.id}/toggle`, icon: 'lock' },
-          { label: 'Delete', form: (r) => `/user/email/${r.id}/delete`, confirm: 'Delete this mailbox and all its messages?', icon: 'trash', danger: true },
+          { label: 'Ustawienia klienta', href: (r) => `/user/email/${r.id}/setup`, icon: 'settings' },
+          { label: (r) => r.suspended ? 'Wznów' : 'Zawieś', form: (r) => `/user/email/${r.id}/toggle`, icon: 'lock' },
+          { label: 'Usuń', form: (r) => `/user/email/${r.id}/delete`, confirm: 'Usunąć skrzynkę i wszystkie jej wiadomości?', icon: 'trash', danger: true },
         ],
-        footer: h`<div class="row"><span class="small muted">${icon('info', { size: 14 })} Mailboxes use the same password rules as panel accounts. Webmail: <a class="link" href="/webmail">/webmail</a></span></div>`,
+        footer: h`<div class="row"><span class="small muted">${icon('info', { size: 14 })} Skrzynki używają tych samych zasad haseł co konta panelu. Webmail: <a class="link" href="/webmail">/webmail</a></span></div>`,
       })}
       ${canEdit ? card(`Edit mailbox · ${canEdit.local_part}@${canEdit.domain}`, h`<form method="post" action="/user/email/${canEdit.id}/update" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -75,7 +77,7 @@ export function register(router) {
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Save mailbox</button><a class="btn btn-ghost" href="/user/email?domain=${encodeURIComponent(canEdit.domain)}">Cancel</a></div>
       </form>`) : ''}`;
-    return page(ctx, { title: 'Email Accounts', subtitle: 'Create and manage POP3/IMAP mailboxes', body });
+    return page(ctx, { title: 'Skrzynki e-mail', subtitle: 'Twórz skrzynki POP3/IMAP i zarządzaj nimi', body });
   });
 
   router.get('/user/email/create', (ctx) => {
@@ -175,7 +177,7 @@ export function register(router) {
         rows, empty: 'No forwarders configured.',
         actions: [
           { label: 'Edit', href: (r) => `/user/email/forwarders?edit=${r.id}`, icon: 'edit' },
-          { label: 'Delete', form: (r) => `/user/email/forwarders/${r.id}/delete`, confirm: 'Delete forwarder?', icon: 'trash', danger: true },
+          { label: 'Delete', form: (r) => `/user/email/forwarders/${r.id}/delete`, confirm: 'Usunąć przekierowanie poczty?', icon: 'trash', danger: true },
         ],
         footer: h`<form class="u-s31" method="post" action="/user/email/forwarders/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -245,7 +247,7 @@ export function register(router) {
           { label: 'Actions', render: (r) => h`<a class="link small" href="/user/email/autoresponders/${r.id}">Edit</a>` },
         ],
         rows, empty: 'No autoresponders yet.',
-        actions: [{ label: 'Delete', form: (r) => `/user/email/autoresponders/${r.id}/delete`, confirm: 'Delete autoresponder?', icon: 'trash', danger: true }],
+        actions: [{ label: 'Delete', form: (r) => `/user/email/autoresponders/${r.id}/delete`, confirm: 'Usunąć autoresponder?', icon: 'trash', danger: true }],
         footer: h`<form class="u-s31" method="post" action="/user/email/autoresponders/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <select name="domain">${domains.map((d) => h`<option value="${d.name}">${d.name}</option>`)}</select>
@@ -322,7 +324,7 @@ export function register(router) {
         actions: [
           { label: 'Edytuj', href: (r) => `/user/email/vacation?domain=${encodeURIComponent(d?.name || '')}&edit=${r.id}`, icon: 'edit' },
           { label: 'Toggle', form: (r) => `/user/email/vacation/${r.id}/toggle`, icon: 'refresh' },
-          { label: 'Delete', form: (r) => `/user/email/vacation/${r.id}/delete`, confirm: 'Delete vacation message?', icon: 'trash', danger: true },
+          { label: 'Delete', form: (r) => `/user/email/vacation/${r.id}/delete`, confirm: 'Usunąć wiadomość urlopową?', icon: 'trash', danger: true },
         ],
         footer: d ? h`<form method="post" action="/user/email/vacation/create" class="oa-form u-s69">
           <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${d.name}">
@@ -444,7 +446,7 @@ export function register(router) {
         rows, empty: 'No mailing lists yet.',
         actions: [
           { label: 'Edytuj', href: (r) => `/user/email/lists?edit=${r.id}`, icon: 'edit' },
-          { label: 'Delete', form: (r) => `/user/email/lists/${r.id}/delete`, confirm: 'Delete mailing list?', icon: 'trash', danger: true },
+          { label: 'Delete', form: (r) => `/user/email/lists/${r.id}/delete`, confirm: 'Usunąć listę mailingową?', icon: 'trash', danger: true },
         ],
         footer: h`<form class="u-s31" method="post" action="/user/email/lists/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
@@ -508,7 +510,7 @@ export function register(router) {
           rows: filters,
           actions: [
             { label: 'Edytuj', href: (r) => `/user/email/spam?domain=${encodeURIComponent(d?.name || '')}&edit=${r.id}`, icon: 'edit' },
-            { label: 'Delete', form: (r) => `/user/email/spam/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Delete rule?' },
+            { label: 'Delete', form: (r) => `/user/email/spam/${r.id}/delete`, icon: 'trash', danger: true, confirm: 'Usunąć regułę?' },
           ],
         }) : emptyState('No spam rules for this domain.')}
         <form class="u-s73" method="post" action="/user/email/spam/create">

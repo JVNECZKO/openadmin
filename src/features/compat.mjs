@@ -272,7 +272,7 @@ export function register(router) {
         actions: [{ label: 'Delete', form: (r) => `/compat/admin/mail-queue/${r.id}`, icon: 'trash', danger: true, confirm: 'Remove this message from the queue?' }],
       }) : emptyState('The mail queue is empty.', { icon: 'mail' })}`, { padded: false, actions: [h`<form method="post" action="/compat/admin/mail-queue/purge" class="inline">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <button class="btn btn-secondary btn-sm" type="submit" data-confirm="Purge every queued message?">${icon('trash', { size: 14 })} Purge queue</button>
+        <button class="btn btn-secondary btn-sm" type="submit" data-confirm="Usunąć wszystkie wiadomości z kolejki?">${icon('trash', { size: 14 })} Purge queue</button>
       </form>`] })}
       ${card('Outbound MTA', h`${kvList([['MTA', mtaStatus().bin || 'not installed'], ['Status', mtaStatus().available ? badge('available', 'ok') : badge('missing', 'warn')]])}
         <div class="row mt-18">

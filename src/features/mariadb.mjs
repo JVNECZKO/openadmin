@@ -52,7 +52,7 @@ export function register(router) {
         ],
         rows: dbs,
         empty: st.connected ? 'No user databases yet.' : 'Connect MariaDB to list databases.',
-        actions: [{ label: 'Drop', form: (d) => `/admin/mariadb/${encodeURIComponent(d)}/drop`, icon: 'trash', danger: true, confirm: 'Drop this database permanently?' }],
+        actions: [{ label: 'Drop', form: (d) => `/admin/mariadb/${encodeURIComponent(d)}/drop`, icon: 'trash', danger: true, confirm: 'Trwale usunąć tę bazę danych?' }],
       })}
       ${card('SQL console', h`
         <form method="post" action="/admin/mariadb/sql" class="oa-form">

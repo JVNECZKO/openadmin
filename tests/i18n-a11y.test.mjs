@@ -809,3 +809,44 @@ test('admin navigation is translated in Polish, not mixed English labels', async
     assert.equal(hit, null, `untranslated text on ${path}: ${hit && hit[0]}`);
   }
 });
+
+test('UX stage 1: e-mail is a mobile card list with labelled quota and action menu', async () => {
+  const cookie = await loginAs('demouser');
+  const { res, html } = await page('/user/email', cookie);
+  assert.equal(res.status, 200);
+  assert.match(html, /class="data-table responsive-table"/);
+  assert.match(html, /data-label="Limit"/);
+  assert.match(html, /data-label="Skrzynka"/);
+  assert.match(html, /class="more-menu"/);
+  assert.match(html, /Więcej/);
+  assert.doesNotMatch(html, /Email Accounts|Create mailbox|Delete this mailbox/);
+});
+
+test('UX stage 1: topbar and help render Polish for the default locale', async () => {
+  const admin = await loginAs('demoadmin');
+  const panel = await page('/admin', admin);
+  assert.match(panel.html, /Szukaj stron i poleceń/);
+  assert.doesNotMatch(panel.html, /Search pages and commands/);
+  const help = await page('/help', admin);
+  assert.match(help.html, /Pierwsze kroki|Dokumentacja/);
+  assert.doesNotMatch(help.html, /Getting started|Keyboard shortcuts/);
+});
+
+test('UX stage 1: reseller domains are cards with a labelled action menu', async () => {
+  const cookie = await loginAs('demoreseller');
+  const { res, html } = await page('/reseller/domains', cookie);
+  assert.equal(res.status, 200);
+  assert.match(html, /data-table responsive-table/);
+  assert.match(html, /data-label="Domena"/);
+  assert.match(html, /more-menu/);
+  assert.match(html, /Edytuj DNS/);
+  assert.match(html, /Panel klienta/);
+  assert.doesNotMatch(html, /Szybkie akcje/);
+});
+
+test('UX stage 1: Security Center summary cards use one definition column', async () => {
+  const cookie = await loginAs('demoadmin');
+  const { res, html } = await page('/admin/security', cookie);
+  assert.equal(res.status, 200);
+  assert.match(html, /class="kv kv-cols-1"/);
+});

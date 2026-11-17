@@ -67,7 +67,7 @@ export function packagesPage(ctx, { owner = null, type = 'user', path = '/resell
     actions: [
       { label: 'Edit', href: (p) => `${path}/${encodeURIComponent(p.name)}`, icon: 'edit' },
       { label: 'Copy', form: (p) => `${path}/${encodeURIComponent(p.name)}/copy`, icon: 'copy' },
-      { label: 'Delete', form: (p) => `${path}/${encodeURIComponent(p.name)}/delete`, confirm: 'Delete this package?', icon: 'trash', danger: true, show: (p) => !(counts.get(p.name) > 0) },
+      { label: 'Delete', form: (p) => `${path}/${encodeURIComponent(p.name)}/delete`, confirm: 'Usunąć ten pakiet?', icon: 'trash', danger: true, show: (p) => !(counts.get(p.name) > 0) },
     ],
   })}`;
   return page(ctx, { title: type === 'reseller' ? 'Reseller Packages' : 'User Packages', subtitle: 'Define storage, feature and account limits', body });
@@ -480,7 +480,7 @@ export function userDetailPage(ctx, { path, target }) {
     ${provision ? card('Wynik provisioningu konta', h`${renderAccountResult(provision, { title: 'Kroki wykonania' })}`,
     { sub: `${formatDate(provision.at, { time: true })} · ${provision.rolledBack ? 'rollback wykonany' : provision.ok ? 'sukces' : 'częściowy wynik'}` }) : ''}`;
   return page(ctx, { title: target.username, subtitle: `${target.level} account · ${target.email || ''}`, body, actions: [
-    btn('Sign in as user', { href: `${path}/${target.id}/login-as`, variant: 'secondary', icon: 'logout', attrs: 'data-confirm="Open this account in a new session?"' }),
+    btn('Sign in as user', { href: `${path}/${target.id}/login-as`, variant: 'secondary', icon: 'logout', attrs: 'data-confirm="Otworzyć to konto w nowej sesji?"' }),
   ] });
 }
 
@@ -554,7 +554,7 @@ export function resellersPage(ctx, path = '/admin/resellers') {
     actions: [
       { label: 'Edit', href: (r) => `${path}/${r.id}`, icon: 'edit' },
       { label: 'Suspend', form: (r) => `${path}/${r.id}/suspend`, icon: 'lock' },
-      { label: 'Delete', form: (r) => `${path}/${r.id}/delete`, confirm: 'Delete this reseller?', icon: 'trash', danger: true },
+      { label: 'Delete', form: (r) => `${path}/${r.id}/delete`, confirm: 'Usunąć tego resellera?', icon: 'trash', danger: true },
     ],
   })}`;
   return page(ctx, { title: 'Resellers', subtitle: 'Manage reseller accounts and their limits', body });

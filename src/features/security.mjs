@@ -82,7 +82,7 @@ export function register(router) {
             { label: 'Status', render: (r) => badge(r.status, r.status === 'active' ? 'ok' : 'muted') },
           ],
           rows: certs, empty: 'No certificates yet.',
-          actions: [{ label: 'Delete', form: (r) => `/user/ssl/${r.id}/delete`, confirm: 'Delete certificate?', icon: 'trash', danger: true }],
+          actions: [{ label: 'Delete', form: (r) => `/user/ssl/${r.id}/delete`, confirm: 'Usunąć certyfikat?', icon: 'trash', danger: true }],
         })}` : ''}
 
       ${tab === 'acme' ? card("ACME / Let's Encrypt settings", h`
@@ -254,7 +254,7 @@ export function register(router) {
           { label: 'Last used', render: (r) => (r.last_used ? formatDate(r.last_used, { time: true }) : 'Never') },
         ],
         rows, empty: 'No login keys yet.',
-        actions: [{ label: 'Revoke', form: (r) => `/user/login-keys/${r.id}/delete`, confirm: 'Revoke this key?', icon: 'trash', danger: true }],
+        actions: [{ label: 'Revoke', form: (r) => `/user/login-keys/${r.id}/delete`, confirm: 'Unieważnić ten klucz?', icon: 'trash', danger: true }],
         footer: h`<form class="u-s31" method="post" action="/user/login-keys/create">
           <input type="hidden" name="_csrf" value="${ctx.csrf}">
           <input class="u-s32" name="name" placeholder="deploy-script">
@@ -299,7 +299,7 @@ export function register(router) {
         { label: 'Added', render: (r) => formatDate(r.created_at) },
       ],
       rows, empty: 'No SSH keys added.',
-      actions: [{ label: 'Delete', form: (r) => `/user/ssh-keys/${r.id}/delete`, confirm: 'Remove this key?', icon: 'trash', danger: true }],
+      actions: [{ label: 'Delete', form: (r) => `/user/ssh-keys/${r.id}/delete`, confirm: 'Usunąć ten klucz?', icon: 'trash', danger: true }],
       footer: h`<form class="u-s31" method="post" action="/user/ssh-keys/create">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <input class="u-s34" name="name" placeholder="laptop">

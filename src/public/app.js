@@ -120,15 +120,16 @@
 
   function syncThemeUi() {
     const dark = currentMode() === 'dark';
+    const pl = document.documentElement.lang !== 'en';
     $$('[data-toggle-theme]').forEach((button) => {
       button.setAttribute('aria-pressed', String(dark));
-      button.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
-      button.setAttribute('title', dark ? 'Switch to light mode' : 'Switch to dark mode');
+      button.setAttribute('aria-label', dark ? (pl ? 'Przełącz na jasny motyw' : 'Switch to light mode') : (pl ? 'Przełącz na ciemny motyw' : 'Switch to dark mode'));
+      button.setAttribute('title', dark ? (pl ? 'Przełącz na jasny motyw' : 'Switch to light mode') : (pl ? 'Przełącz na ciemny motyw' : 'Switch to dark mode'));
       const moon = $('[data-theme-icon="moon"]', button);
       const sun = $('[data-theme-icon="sun"]', button);
       if (moon) moon.hidden = dark;
       if (sun) sun.hidden = !dark;
-      $$('[data-theme-label]', button).forEach((label) => { label.textContent = dark ? 'Light' : 'Dark'; });
+      $$('[data-theme-label]', button).forEach((label) => { label.textContent = dark ? (pl ? 'Jasny' : 'Light') : (pl ? 'Ciemny' : 'Dark'); });
     });
     const meta = $('meta[name="theme-color"]');
     if (meta) {
@@ -725,13 +726,14 @@
     if (!el) return;
     el.classList.remove('is-online', 'is-offline', 'is-checking');
     if (state) el.classList.add(`is-${state}`);
+    const pl = document.documentElement.lang !== 'en';
     const label = $('[data-live-label]', el);
-    if (label) label.textContent = state === 'offline' ? 'Offline' : state === 'checking' ? 'Checking' : 'Live';
+    if (label) label.textContent = state === 'offline' ? (pl ? 'Offline' : 'Offline') : state === 'checking' ? (pl ? 'Sprawdzanie' : 'Checking') : (pl ? 'Online' : 'Live');
     const meta = $('[data-live-meta]', el);
     if (meta) {
-      if (state === 'offline') meta.textContent = 'retrying…';
-      else if (state === 'online') meta.textContent = detail.meta || `checked ${formatClock().slice(0, 5)}`;
-      else meta.textContent = 'checking…';
+      if (state === 'offline') meta.textContent = pl ? 'ponawiam…' : 'retrying…';
+      else if (state === 'online') meta.textContent = detail.meta || (pl ? `sprawdzono ${formatClock().slice(0, 5)}` : `checked ${formatClock().slice(0, 5)}`);
+      else meta.textContent = pl ? 'sprawdzanie…' : 'checking…';
     }
     el.dispatchEvent(new CustomEvent('oa:live', { bubbles: true, detail: { state, ...detail } }));
   }
@@ -808,7 +810,8 @@
         countEl.textContent = count > 99 ? '99+' : String(count);
         countEl.hidden = count <= 0;
       }
-      bell.setAttribute('aria-label', `Notifications${count ? ` (${count} unread)` : ''}`);
+      const pl = document.documentElement.lang !== 'en';
+      bell.setAttribute('aria-label', `${pl ? 'Powiadomienia' : 'Notifications'}${count ? (pl ? ` (${count} nieprzeczytane)` : ` (${count} unread)`) : ''}`);
     });
   }
 
@@ -934,7 +937,7 @@
             countEl.textContent = count > 99 ? '99+' : String(count);
             countEl.hidden = count <= 0;
           }
-          el.setAttribute('aria-label', `Notifications${count ? ` (${count} unread)` : ''}`);
+          el.setAttribute('aria-label', `${document.documentElement.lang === 'en' ? 'Notifications' : 'Powiadomienia'}${count ? (document.documentElement.lang === 'en' ? ` (${count} unread)` : ` (${count} nieprzeczytane)`) : ''}`);
           if (count > previous) announce(`${count} unread notification${count === 1 ? '' : 's'}`);
         } catch { /* keep the last server-rendered count */ }
       };
@@ -1105,7 +1108,7 @@
         return;
       }
       if (form.hasAttribute('data-confirm') && form.dataset.oaConfirmed !== '1') {
-        if (!window.confirm(form.getAttribute('data-confirm') || 'Are you sure?')) {
+        if (!window.confirm(form.getAttribute('data-confirm') || (document.documentElement.lang === 'en' ? 'Are you sure?' : 'Kontynuować?'))) {
           event.preventDefault();
           return;
         }
@@ -1557,7 +1560,7 @@
       const target = event.target;
       const confirmEl = target.closest('[data-confirm]');
       if (confirmEl && confirmEl.tagName !== 'FORM' && confirmEl.dataset.oaConfirmed !== '1') {
-        if (!window.confirm(confirmEl.getAttribute('data-confirm') || 'Are you sure?')) {
+        if (!window.confirm(confirmEl.getAttribute('data-confirm') || (document.documentElement.lang === 'en' ? 'Are you sure?' : 'Kontynuować?'))) {
           event.preventDefault();
           event.stopImmediatePropagation();
           return;
