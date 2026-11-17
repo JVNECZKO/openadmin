@@ -4,7 +4,8 @@ import { icon } from './icons.mjs';
 import { navFor, isActive, breadcrumbFor } from './nav.mjs';
 import { VERSION } from '../config.mjs';
 import { htmlLang, t } from '../i18n.mjs';
-import { setting } from '../db.mjs';
+import { all, setting } from '../db.mjs';
+import { visibleUsers, visibleDomains } from '../core/access.mjs';
 import { pctClass } from './components.mjs';
 
 const LEVEL_LABEL = { admin: 'Admin', reseller: 'Reseller', user: 'User' };
@@ -36,6 +37,39 @@ function searchIndexForLevel(viewLevel, caps, user) {
     lang: user.language || 'pl', mode: user.ui_mode || 'simple',
   });
   return groups.flatMap((g) => g.items.map((i) => ({ label: i.label, href: i.href, icon: i.icon, group: g.title })));
+}
+
+function entityIndexFor(user) {
+  if (!user) return [];
+  const items = [];
+  try {
+    const users = visibleUsers(user).slice(0, 50);
+    for (const row of users) {
+      if (row.id === user.id) continue;
+      const base = user.level === 'admin' ? '/admin/users' : '/reseller/users';
+      items.push({ label: `${row.username}${row.email ? ` · ${row.email}` : ''}`, href: `${base}/${row.id}`, group: user.level === 'admin' ? 'Użytkownicy' : 'Klienci', icon: 'users', keywords: `${row.username} ${row.email || ''} ${row.package || ''}` });
+    }
+    const domains = visibleDomains(user).slice(0, 50);
+    for (const row of domains) {
+      const href = user.level === 'admin' ? `/admin/dns?domain=${encodeURIComponent(row.name)}` : user.level === 'reseller' ? `/reseller/dns?domain=${encodeURIComponent(row.name)}` : '/user/domains';
+      items.push({ label: row.name, href, group: 'Domeny', icon: 'globe', keywords: row.name });
+    }
+    if (user.level === 'user') {
+      const ids = new Set(domains.map((row) => row.id));
+      const mailboxes = all('SELECT * FROM email_accounts ORDER BY domain, local_part').filter((row) => ids.has(row.domain_id)).slice(0, 50);
+      for (const row of mailboxes) items.push({ label: `${row.local_part}@${row.domain}`, href: `/user/email?domain=${encodeURIComponent(row.domain)}&q=${encodeURIComponent(row.local_part)}`, group: 'Skrzynki', icon: 'mail', keywords: `${row.local_part} ${row.domain}` });
+    }
+    if (user.level === 'admin' || user.level === 'reseller') {
+      const tickets = user.level === 'admin'
+        ? all("SELECT * FROM tickets WHERE status != 'closed' ORDER BY updated_at DESC LIMIT 30")
+        : all("SELECT t.* FROM tickets t JOIN users u ON u.id = t.user_id WHERE u.owner = ? AND t.status != 'closed' ORDER BY t.updated_at DESC LIMIT 30", user.username);
+      for (const row of tickets) {
+        const base = user.level === 'admin' ? '/admin/tickets' : '/reseller/tickets';
+        items.push({ label: `#${row.id} ${row.subject}`, href: `${base}/${row.id}`, group: 'Zgłoszenia', icon: 'ticket', keywords: `${row.subject} ${row.username || ''}` });
+      }
+    }
+  } catch { /* entity search is best effort; never break the page */ }
+  return items.slice(0, 120);
 }
 
 function impersonationBanner({ user, csrf }) {
@@ -363,6 +397,7 @@ export function renderPage({
   ${webmailAccessNotice(path)}
   <script>window.OA_CSRF=${raw(JSON.stringify(csrf || ''))};window.OA_PAGE=${raw(JSON.stringify({ level: viewLevel, path, title }))};</script>
   <script type="application/json" id="oa-nav-index">${raw(JSON.stringify(navIndex))}</script>
+  <script type="application/json" id="oa-entity-index">${raw(JSON.stringify(entityIndexFor(user)))}</script>
   <script src="/assets/app.js?v=${VERSION}" defer></script>
   <script src="/assets/i18n.js?v=${VERSION}" defer></script>
 </body>

@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { all, get, run, nowIso, hashPassword, audit, setting } from '../db.mjs';
 import { config } from '../config.mjs';
 import { limitsFor } from '../auth.mjs';
@@ -370,7 +371,19 @@ export function register(router) {
     try { dirInfo = listTenantDir(username, requested); }
     catch (error) { return filesRedirect(ctx, error); }
     const { path: abs, display } = dirInfo;
-    const entries = dirInfo.entries.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1));
+    const q = String(ctx.query.q || '').trim().toLowerCase();
+    const sortBy = ['name', 'size', 'mtime', 'type'].includes(String(ctx.query.sort)) ? String(ctx.query.sort) : 'name';
+    const sortDir = ctx.query.dir === 'desc' ? -1 : 1;
+    const entries = dirInfo.entries
+      .filter((entry) => !q || entry.name.toLowerCase().includes(q))
+      .sort((a, b) => {
+        if (sortBy === 'name') return sortDir * a.name.localeCompare(b.name);
+        if (sortBy === 'size') return sortDir * ((a.size || 0) - (b.size || 0));
+        if (sortBy === 'mtime') return sortDir * (new Date(a.mtime) - new Date(b.mtime));
+        return sortDir * (Number(b.dir) - Number(a.dir)) || a.name.localeCompare(b.name);
+      });
+    const disk = checkDisk(ctx.user);
+    const diskPct = disk.limit ? Math.min(100, Math.round((disk.used / disk.limit) * 100)) : 0;
 
     const absParts = display.split('/').filter(Boolean);
     const crumbs = absParts.slice(2).map((part, i) => ({
@@ -381,15 +394,38 @@ export function register(router) {
     if (editing) {
       try { editorContent = readTenantFile(username, display + '/' + editing.name).content; } catch { editorContent = ''; }
     }
+    const previewName = String(ctx.query.preview || '');
+    const previewEntry = previewName ? entries.find((entry) => entry.name === previewName && !entry.dir && !entry.unsafe) : null;
+    let preview = null;
+    if (previewEntry) {
+      const target = display + '/' + previewEntry.name;
+      const ext = path.extname(previewEntry.name).toLowerCase();
+      if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'].includes(ext)) {
+        preview = { kind: 'image', name: previewEntry.name, href: `/api/v1/files/download?path=${encodeURIComponent(target)}` };
+      } else {
+        let text = '';
+        try { text = readTenantFile(username, target).content.slice(0, 4000); } catch { text = ''; }
+        preview = { kind: 'text', name: previewEntry.name, text };
+      }
+    }
 
     const body = h`
-      ${card('Menedżer plików', h`
+      ${card('Pliki', h`
         <div class="file-pathbar">
           <a class="crumb-home" href="/user/files?path=/home/${username}" aria-label="Katalog domowy">${icon('home', { size: 15 })}</a>
           ${crumbs.map((c) => h`<span class="crumb-sep">/</span><a class="crumb-link" href="/user/files?path=${encodeURIComponent(c.path)}">${c.label}</a>`)}
           <span class="file-path-abs">${display}</span>
         </div>
-        <p class="file-count small muted">${entries.length} elementów · ${formatBytes(dirSize(abs) / 1024 / 1024)}</p>
+        <p class="file-count small muted">${entries.length} elementów · ${formatBytes(dirSize(abs) / 1024 / 1024)}${disk.limit ? ` · ${formatBytes(disk.used)} z ${formatBytes(disk.limit)}` : ''}</p>
+        ${disk.limit ? h`<div class="file-quota"><div class="progress" role="progressbar" aria-label="Wykorzystanie dysku" aria-valuenow="${diskPct}" aria-valuemin="0" aria-valuemax="100"><span class="${pctClass(diskPct)}"></span></div></div>` : ''}
+        <form method="get" action="/user/files" class="file-search">
+          <input type="hidden" name="path" value="${display}">
+          <div class="search">${icon('search', { size: 15 })}<input type="search" name="q" value="${e(q)}" placeholder="Szukaj w katalogu…" aria-label="Szukaj plików"></div>
+          <select name="sort" aria-label="Sortuj według"><option value="name" ${sortBy === 'name' ? 'selected' : ''}>Nazwa</option><option value="size" ${sortBy === 'size' ? 'selected' : ''}>Rozmiar</option><option value="mtime" ${sortBy === 'mtime' ? 'selected' : ''}>Data</option><option value="type" ${sortBy === 'type' ? 'selected' : ''}>Typ</option></select>
+          <select name="dir" aria-label="Kierunek sortowania"><option value="asc" ${sortDir === 1 ? 'selected' : ''}>Rosnąco</option><option value="desc" ${sortDir === -1 ? 'selected' : ''}>Malejąco</option></select>
+          <button class="btn btn-secondary btn-sm" type="submit">Filtruj</button>
+          ${q ? h`<a class="btn btn-ghost btn-sm" href="/user/files?path=${encodeURIComponent(display)}">Wyczyść</a>` : ''}
+        </form>
         <div class="file-toolbar">
           <details class="more-menu">
             <summary class="btn btn-primary btn-sm" role="button">${icon('plus', { size: 14 })} Nowy</summary>
@@ -406,17 +442,24 @@ export function register(router) {
             </div>
           </details>
         </div>
+        ${entries.length ? h`<form id="fileBulkForm" method="post" action="/user/files/bulk" class="file-bulkbar">
+          <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="path" value="${display}">
+          <span class="small muted">Zaznacz pliki, aby wykonać operację masową.</span>
+          <select name="action" aria-label="Operacja masowa"><option value="download">Pobierz zaznaczone (tar.gz)</option><option value="delete">Usuń zaznaczone</option></select>
+          <button class="btn btn-secondary btn-sm" type="submit" data-confirm="Wykonać operację na zaznaczonych plikach?">Wykonaj</button>
+        </form>` : ''}
         <div class="table-wrap"><table class="data-table file-table responsive-table">
-          <thead><tr><th>Nazwa</th><th>Rozmiar</th><th>Uprawnienia</th><th>Zmodyfikowano</th><th class="col-actions">Akcje</th></tr></thead>
+          <thead><tr><th class="col-check"><input type="checkbox" data-check-all form="fileBulkForm" aria-label="Zaznacz wszystkie pliki"></th><th>Nazwa</th><th>Rozmiar</th><th>Uprawnienia</th><th>Zmodyfikowano</th><th class="col-actions">Akcje</th></tr></thead>
           <tbody>
-            ${display !== `/home/${username}` ? h`<tr><td colspan="5"><a class="link" href="/user/files?path=${encodeURIComponent(display.split('/').slice(0, -1).join('/') || '/home/' + username)}">${icon('arrowRight', { size: 14 })} Parent directory</a></td></tr>` : ''}
+            ${display !== `/home/${username}` ? h`<tr><td colspan="6"><a class="link" href="/user/files?path=${encodeURIComponent(display.split('/').slice(0, -1).join('/') || '/home/' + username)}">${icon('arrowRight', { size: 14 })} Parent directory</a></td></tr>` : ''}
             ${entries.length ? entries.map((f) => h`<tr>
+              <td class="col-check" data-label="Wybór"><input type="checkbox" name="selected" value="${f.name}" form="fileBulkForm" aria-label="Zaznacz ${f.name}" ${f.unsafe ? 'disabled' : ''}></td>
               <td data-label="Nazwa"><div class="file-name">${icon(f.dir ? 'folder' : 'file', { size: 16 })}
                 ${f.unsafe ? h`<span title="Symbolic link escapes the account home">${f.name}</span>${badge('blocked', 'danger')}`
                   : f.dir ? h`<a href="/user/files?path=${encodeURIComponent(display + '/' + f.name)}">${f.name}</a>` : h`<span>${f.name}</span>`}</div></td>
               <td data-label="Rozmiar">${f.dir ? '—' : formatBytes(f.size / 1024 / 1024)}</td>
               <td class="cell-mono" data-label="Uprawnienia">${f.perms}</td>
-              <td class="small" data-label="Zmodyfikowano">${formatDate(f.mtime, { time: true })}</td>
+              <td class="small" data-label="Data">${formatDate(f.mtime, { time: true })}</td>
               <td class="col-actions" data-label="Akcje">${f.unsafe ? h`<span class="small muted">blocked</span>` : h`<div class="row-actions">
                 ${f.dir
                   ? h`<a class="btn btn-secondary btn-sm" href="/user/files?path=${encodeURIComponent(display + '/' + f.name)}">Otwórz</a>`
@@ -426,7 +469,7 @@ export function register(router) {
                 <details class="more-menu">
                   <summary class="btn btn-ghost btn-sm" role="button">Więcej</summary>
                   <div class="more-menu-list">
-                    ${!f.dir ? h`<a class="menu-item" href="/api/v1/files/download?path=${encodeURIComponent(display + '/' + f.name)}">Pobierz</a>` : ''}
+                    ${!f.dir ? h`<a class="menu-item" href="/user/files?path=${encodeURIComponent(display)}&preview=${encodeURIComponent(f.name)}">Podgląd</a><a class="menu-item" href="/api/v1/files/download?path=${encodeURIComponent(display + '/' + f.name)}">Pobierz</a>` : ''}
                     <button class="menu-item" type="button" data-open-modal="rename-${encodeURIComponent(f.name)}">Zmień nazwę</button>
                     <form method="post" action="/user/files/delete"><input type="hidden" name="_csrf" value="${ctx.csrf}">
                       <input type="hidden" name="path" value="${display}"><input type="hidden" name="name" value="${f.name}">
@@ -434,7 +477,7 @@ export function register(router) {
                   </div>
                 </details>
               </div>`}</td>
-            </tr>`) : h`<tr><td colspan="5">${emptyState('This directory is empty.')}</td></tr>`}
+            </tr>`) : h`<tr><td colspan="6">${emptyState('Ten katalog jest pusty.')}</td></tr>`}
           </tbody>
         </table></div>
       `, { padded: false })}
@@ -448,6 +491,9 @@ export function register(router) {
         </div>
         <div class="form-actions"><button class="btn btn-primary" type="submit">Create</button><a class="btn btn-ghost" href="/user/files?path=${encodeURIComponent(display)}">Cancel</a></div>
       </form>`) : ''}
+      ${preview ? card(`Podgląd · ${preview.name}`, preview.kind === 'image'
+        ? h`<img class="file-preview-image" src="${preview.href}" alt="${preview.name}">`
+        : h`<pre class="code-block file-preview-text">${preview.text || 'Brak podglądu tekstowego.'}</pre>`, { actions: [h`<a class="link small" href="/user/files?path=${encodeURIComponent(display)}">Zamknij podgląd</a>`] }) : ''}
       ${editing ? card(`Edit · ${editing.name}`, h`<form method="post" action="/user/files/save" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <input type="hidden" name="path" value="${display}"><input type="hidden" name="name" value="${editing.name}">
@@ -533,6 +579,47 @@ export function register(router) {
     } catch (error) { return filesRedirect(ctx, error, fallback); }
   });
 
+
+  router.post('/user/files/bulk', (ctx) => {
+    const requested = String(ctx.body.path || `/home/${ctx.user.username}`);
+    const names = [].concat(ctx.body.selected || []).map(String).filter(Boolean);
+    const action = String(ctx.body.action || '');
+    let dir;
+    try { dir = resolveUserPath(ctx.user.username, requested, { operation: action === 'download' ? 'read' : 'delete' }); }
+    catch (error) { return filesRedirect(ctx, error, `/user/files?path=${encodeURIComponent(requested)}`); }
+    const display = displayPath(ctx.user.username, dir);
+    if (!names.length) return ctx.redirect(`/user/files?path=${encodeURIComponent(display)}&flash=${encodeURIComponent('Nie zaznaczono plików')}`);
+    let safeNames = [];
+    try {
+      safeNames = names.map((name) => validateEntryName(name));
+      for (const name of safeNames) {
+        const target = resolveUserPath(ctx.user.username, display + '/' + name, { operation: 'read' });
+        if (path.dirname(target) !== dir) throw new Error('Wybrany plik nie jest bezpośrednim dzieckiem katalogu');
+      }
+    } catch (error) { return filesRedirect(ctx, error, `/user/files?path=${encodeURIComponent(display)}`); }
+
+    if (action === 'delete') {
+      let deleted = 0;
+      for (const name of safeNames) {
+        try { deleteTenantPath(ctx.user.username, display, name); deleted++; } catch { /* continue */ }
+      }
+      audit(ctx.user.username, ctx.user.level, 'files.bulk.delete', `${deleted}/${safeNames.length}: ${display}`, ctx.ip);
+      return ctx.redirect(`/user/files?path=${encodeURIComponent(display)}&flash=${encodeURIComponent(`Usunięto ${deleted} z ${safeNames.length} plików`)}`);
+    }
+    if (action === 'download') {
+      ctx.res.writeHead(200, {
+        'Content-Type': 'application/gzip',
+        'Content-Disposition': `attachment; filename="${path.basename(dir) || 'pliki'}-wybrane.tar.gz"`,
+      });
+      const tar = spawn('tar', ['-czf', '-', '-C', dir, '--', ...safeNames]);
+      tar.stdout.pipe(ctx.res);
+      tar.stderr.on('data', () => { /* errors break the stream; the browser sees a truncated archive */ });
+      tar.on('close', () => { try { ctx.res.end(); } catch { /* stream already ended */ } });
+      audit(ctx.user.username, ctx.user.level, 'files.bulk.download', `${safeNames.length}: ${display}`, ctx.ip);
+      return { handled: true };
+    }
+    return ctx.redirect(`/user/files?path=${encodeURIComponent(display)}&flash=${encodeURIComponent('Nieznana operacja')}`);
+  });
 
   /* ------------------------------------------------- streaming upload */
   router.post('/user/files/upload-stream', async (ctx) => {

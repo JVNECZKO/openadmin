@@ -2,7 +2,7 @@
 // catch-all, mailing lists, spam filters and usage reporting.
 import { all, get, run, nowIso, hashPassword, audit, setting } from '../db.mjs';
 import { limitsFor } from '../auth.mjs';
-import { html as h, raw, isEmail, formatBytes, formatDate, randomPassword } from '../util.mjs';
+import { html as h, raw, e, isEmail, formatBytes, formatDate, randomPassword } from '../util.mjs';
 import { page } from '../ui/respond.mjs';
 import { card, table, btn, badge, alert, emptyState, kvList, progress } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
@@ -36,29 +36,48 @@ export function register(router) {
   /* ------------------------------------------------------------ accounts */
   router.get('/user/email', (ctx) => {
     const domains = visibleDomains(ctx.user);
-    const selected = ctx.query.domain || domains[0]?.name;
-    const d = domains.find((x) => x.name === selected) || domains[0];
-    const rows = d ? all('SELECT * FROM email_accounts WHERE domain_id = ? ORDER BY local_part', d.id) : [];
+    const domainParam = String(ctx.query.domain || '');
+    const allDomains = domainParam === 'all';
+    const selected = allDomains ? 'all' : (domainParam || domains[0]?.name || '');
+    const d = allDomains ? null : (domains.find((x) => x.name === selected) || domains[0]);
+    const q = String(ctx.query.q || '').trim().toLowerCase();
+    let rows = allDomains
+      ? all('SELECT * FROM email_accounts ORDER BY domain, local_part').filter((row) => domains.some((domain) => domain.name === row.domain))
+      : (d ? all('SELECT * FROM email_accounts WHERE domain_id = ? ORDER BY local_part', d.id) : []);
+    if (q) rows = rows.filter((row) => `${row.local_part}@${row.domain}`.toLowerCase().includes(q) || row.domain.toLowerCase().includes(q));
     const editing = ctx.query.edit ? get('SELECT * FROM email_accounts WHERE id = ?', Number(ctx.query.edit)) : null;
     const canEdit = editing && domainFor(ctx.user, editing.domain_id) ? editing : null;
     const lim = limitsFor(ctx.user);
     const totalUsed = get('SELECT COALESCE(SUM(used_mb),0) u FROM email_accounts WHERE domain IN (SELECT name FROM domains WHERE user_id = ?)', ctx.user.id).u;
     const body = h`
       ${mailNav(ctx, 'accounts')}
-      ${domains.length ? domainSelect(domains, d?.name, { action: '/user/email' }) : alert('Add a domain before creating mailboxes.', 'warn')}
+      ${domains.length ? domainSelect(domains, selected, { action: '/user/email', includeAll: true }) : alert('Najpierw dodaj domenę, aby utworzyć skrzynki.', 'warn')}
+      <form method="get" action="/user/email" class="toolbar email-filter">
+        <input type="hidden" name="domain" value="${selected}">
+        <div class="toolbar-left"><div class="search">${icon('search', { size: 15 })}<input type="search" name="q" value="${e(q)}" placeholder="Szukaj skrzynki lub domeny…" aria-label="Szukaj skrzynek"></div><button class="btn btn-secondary btn-sm" type="submit">Szukaj</button>${q ? h`<a class="btn btn-ghost btn-sm" href="/user/email?domain=${encodeURIComponent(selected)}">Wyczyść</a>` : ''}</div>
+      </form>
+      ${rows.length ? h`<form id="emailBulkForm" method="post" action="/user/email/bulk" class="file-bulkbar">
+        <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="domain" value="${selected}"><input type="hidden" name="q" value="${e(q)}">
+        <span class="small muted">Zaznacz skrzynki, aby wykonać operację masową.</span>
+        <select name="action" aria-label="Operacja masowa"><option value="toggle">Zawieś / wznów zaznaczone</option><option value="delete">Usuń zaznaczone</option></select>
+        <button class="btn btn-secondary btn-sm" type="submit" data-confirm="Wykonać operację na zaznaczonych skrzynkach?">Wykonaj</button>
+      </form>` : ''}
       ${listCard({
-        title: 'Skrzynki e-mail', sub: `${rows.length} ${rows.length === 1 ? 'skrzynka' : 'skrzynek'} na ${d?.name || '—'} · ${formatBytes(totalUsed)} zajęte${lim.emails ? ` · limit ${lim.emails}` : ''}`,
+        title: 'Skrzynki e-mail', sub: `${rows.length} ${rows.length === 1 ? 'skrzynka' : 'skrzynek'} ${allDomains ? 'we wszystkich domenach' : `na ${d?.name || '—'}`} · ${formatBytes(totalUsed)} zajęte${lim.emails ? ` · limit ${lim.emails}` : ''}`,
         columns: [
+          ...(allDomains ? [{ label: 'Domena', dataLabel: 'Domena', render: (r) => h`<span class="cell-mono">${r.domain}</span>` }] : []),
           { label: 'Skrzynka', dataLabel: 'Skrzynka', render: (r) => h`<span class="cell-strong">${r.local_part}@${r.domain}</span><span class="cell-sub">${r.suspended ? 'Zawieszona' : 'Aktywna'}</span>` },
           { label: 'Limit', dataLabel: 'Limit', render: (r) => h`<div class="u-s67">${progress(r.used_mb, r.quota_mb || 1, { showText: false })}<span class="cell-sub">${formatBytes(r.used_mb)} / ${r.quota_mb ? formatBytes(r.quota_mb) : 'bez limitu'}</span></div>` },
           { label: 'Utworzono', dataLabel: 'Utworzono', render: (r) => formatDate(r.created_at) },
         ],
         rows,
-        createHref: d ? `/user/email/create?domain=${d.name}` : null,
+        createHref: d ? `/user/email/create?domain=${d.name}` : (domains.length ? '/user/email/create' : null),
         createLabel: 'Utwórz skrzynkę',
-        empty: 'Brak skrzynek na tej domenie.',
+        empty: q ? 'Brak skrzynek pasujących do wyszukiwania.' : 'Brak skrzynek na tej domenie.',
         responsive: true,
         actionsMenu: true,
+        selectable: true,
+        selectForm: 'emailBulkForm',
         actions: [
           { label: 'Edytuj', href: (r) => `/user/email?domain=${encodeURIComponent(r.domain)}&edit=${r.id}`, icon: 'edit' },
           { label: 'Webmail', href: (r) => `/webmail?email=${encodeURIComponent(r.local_part + '@' + r.domain)}`, icon: 'mail' },
@@ -68,14 +87,14 @@ export function register(router) {
         ],
         footer: h`<div class="row"><span class="small muted">${icon('info', { size: 14 })} Skrzynki używają tych samych zasad haseł co konta panelu. Webmail: <a class="link" href="/webmail">/webmail</a></span></div>`,
       })}
-      ${canEdit ? card(`Edit mailbox · ${canEdit.local_part}@${canEdit.domain}`, h`<form method="post" action="/user/email/${canEdit.id}/update" class="oa-form">
+      ${canEdit ? card(`Edytuj skrzynkę · ${canEdit.local_part}@${canEdit.domain}`, h`<form method="post" action="/user/email/${canEdit.id}/update" class="oa-form">
         <input type="hidden" name="_csrf" value="${ctx.csrf}">
         <div class="form-grid">
-          <div class="field"><label class="field-label">Mailbox</label><input value="${canEdit.local_part}@${canEdit.domain}" disabled></div>
-          <div class="field"><label class="field-label">New password (leave blank to keep)</label><input name="password" type="password" minlength="8"></div>
-          <div class="field"><label class="field-label">Quota (MB)</label><input name="quota_mb" type="number" min="0" value="${canEdit.quota_mb}"><p class="field-help">0 = unlimited.</p></div>
+          <div class="field"><label class="field-label">Skrzynka</label><input value="${canEdit.local_part}@${canEdit.domain}" disabled></div>
+          <div class="field"><label class="field-label" for="email-edit-pass">Nowe hasło (puste = bez zmiany)</label><input id="email-edit-pass" name="password" type="password" minlength="8"></div>
+          <div class="field"><label class="field-label" for="email-edit-quota">Limit (MB)</label><input id="email-edit-quota" name="quota_mb" type="number" min="0" value="${canEdit.quota_mb}"><p class="field-help">0 = bez limitu.</p></div>
         </div>
-        <div class="form-actions"><button class="btn btn-primary" type="submit">Save mailbox</button><a class="btn btn-ghost" href="/user/email?domain=${encodeURIComponent(canEdit.domain)}">Cancel</a></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Zapisz skrzynkę</button><a class="btn btn-ghost" href="/user/email?domain=${encodeURIComponent(canEdit.domain)}">Anuluj</a></div>
       </form>`) : ''}`;
     return page(ctx, { title: 'Skrzynki e-mail', subtitle: 'Twórz skrzynki POP3/IMAP i zarządzaj nimi', body });
   });
@@ -139,6 +158,22 @@ export function register(router) {
     syncMail(); apply({ mail: true });
     audit(ctx.user.username, ctx.user.level, 'email.update', `${m.local_part}@${m.domain}`, ctx.ip);
     return ctx.redirect('/user/email?domain=' + encodeURIComponent(m.domain) + '&flash=Mailbox%20updated');
+  });
+
+  router.post('/user/email/bulk', (ctx) => {
+    const ids = [].concat(ctx.body.selected || []).map((id) => Number(id)).filter((id) => Number.isSafeInteger(id) && id > 0);
+    const action = String(ctx.body.action || '');
+    let changed = 0;
+    for (const id of ids) {
+      const m = get('SELECT * FROM email_accounts WHERE id = ?', id);
+      if (!m || !domainFor(ctx.user, m.domain_id)) continue;
+      if (action === 'delete') { run('DELETE FROM email_accounts WHERE id = ?', m.id); changed++; }
+      else if (action === 'toggle') { run('UPDATE email_accounts SET suspended = ? WHERE id = ?', m.suspended ? 0 : 1, m.id); changed++; }
+    }
+    if (action === 'delete') { syncMail(); apply({ mail: true }); }
+    if (['delete', 'toggle'].includes(action) && changed) audit(ctx.user.username, ctx.user.level, `email.bulk.${action}`, `${changed} mailbox(es)`, ctx.ip);
+    const back = String(ctx.body.domain || visibleDomains(ctx.user)[0]?.name || '');
+    return ctx.redirect(`/user/email?domain=${encodeURIComponent(back)}&flash=${encodeURIComponent(`Zmieniono ${changed} z ${ids.length} skrzynek`)}`);
   });
 
   router.post('/user/email/:id/delete', (ctx) => {

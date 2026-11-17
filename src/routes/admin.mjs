@@ -15,7 +15,7 @@ import { card, table, btn, badge, alert, emptyState, kvList, progress, statCard,
 import { icon } from '../ui/icons.mjs';
 import { listCard, domainSelect } from '../ui/pages/list.mjs';
 import { countForNav, visibleUsers, visibleDomains, usageSeries, allUsageSeries, domainFor } from '../core/access.mjs';
-import { usersPage, userForm, createUser, updateUser, userDetailPage, toggleSuspend, deleteUser, packagesPage, packageForm, savePackage, resellersPage, resellerForm } from '../features/user-admin.mjs';
+import { usersPage, userForm, quickUserForm, createQuickUser, createUser, updateUser, userDetailPage, toggleSuspend, deleteUser, packagesPage, packageForm, savePackage, resellersPage, resellerForm } from '../features/user-admin.mjs';
 import { usageChartCard } from '../ui/pages/widgets.mjs';
 import { systemProvider, providerInfo } from '../providers/index.mjs';
 import { SERVERS } from '../webserver.mjs';
@@ -613,6 +613,8 @@ export function registerAdminRoutes(router) {
 
   /* ----------------------------------------------------------------- users */
   router.get('/admin/users', (ctx) => usersPage(ctx, { path: `${A}/users`, level: 'user' }));
+  router.get('/admin/users/quick', (ctx) => quickUserForm(ctx, { path: `${A}/users`, packages: all("SELECT * FROM packages WHERE type = 'user'") }));
+  router.post('/admin/users/quick', (ctx) => createQuickUser(ctx, { path: `${A}/users`, level: 'user' }));
   router.get('/admin/users/create', (ctx) => userForm(ctx, { path: `${A}/users`, packages: all("SELECT * FROM packages WHERE type = 'user'") }));
   router.post('/admin/users/create', (ctx) => createUser(ctx, { path: `${A}/users`, level: 'user', owner: ctx.body.owner || null }));
   router.get('/admin/users/move', (ctx) => {

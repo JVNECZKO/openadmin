@@ -201,9 +201,10 @@ test('customer domains page supports search, status chips and scoped actions', a
 test('customer domain search and status filters narrow the result set', async () => {
   const search = await getPage('/reseller/domains?q=example');
   assert.equal(search.res.status, 200);
-  assert.match(search.html, /example\.com/);
-  assert.doesNotMatch(search.html, /demo-site\.org/);
-  assert.doesNotMatch(search.html, new RegExp(foreignDomain.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const visibleSearch = search.html.replace(/<script[^>]*id="oa-entity-index"[^>]*>[\s\S]*?<\/script>/, '');
+  assert.match(visibleSearch, /example\.com/);
+  assert.doesNotMatch(visibleSearch, /demo-site\.org/);
+  assert.doesNotMatch(visibleSearch, new RegExp(foreignDomain.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 
   const suspended = await getPage('/reseller/domains?status=suspended');
   assert.equal(suspended.res.status, 200);

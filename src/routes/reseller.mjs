@@ -12,7 +12,7 @@ import { card, table, btn, badge, alert, emptyState, kvList, progress, statCard,
 import { icon } from '../ui/icons.mjs';
 import { domainSelect } from '../ui/pages/list.mjs';
 import { countForNav, visibleUsers, visibleDomains, canManageUser, domainFor } from '../core/access.mjs';
-import { usersPage, userForm, createUser, updateUser, userDetailPage, toggleSuspend, deleteUser, packagesPage, packageForm, savePackage } from '../features/user-admin.mjs';
+import { usersPage, userForm, quickUserForm, createQuickUser, createUser, updateUser, userDetailPage, toggleSuspend, deleteUser, packagesPage, packageForm, savePackage } from '../features/user-admin.mjs';
 import { rebuildZone } from '../dns.mjs';
 import { apply, applyStatus } from '../apply.mjs';
 import { appIcon, appName } from '../ui/appicons.mjs';
@@ -1050,6 +1050,8 @@ export function registerResellerRoutes(router) {
 
   router.get('/reseller/users', (ctx) => usersPage(ctx, { path: `${R}/users` }));
   router.get('/reseller/users/suspended', (ctx) => usersPage(ctx, { path: `${R}/users`, suspended: 1, title: 'Suspended Users' }));
+  router.get('/reseller/users/quick', (ctx) => quickUserForm(ctx, { path: `${R}/users`, packages: all("SELECT * FROM packages WHERE type = 'user'") }));
+  router.post('/reseller/users/quick', (ctx) => createQuickUser(ctx, { path: `${R}/users`, level: 'user', owner: ctx.user.username }));
   router.get('/reseller/users/create', (ctx) => userForm(ctx, { path: `${R}/users`, packages: all("SELECT * FROM packages WHERE type = 'user'") }));
   router.post('/reseller/users/create', (ctx) => createUser(ctx, { path: `${R}/users`, level: 'user', owner: ctx.user.username }));
   router.get('/reseller/users/move', (ctx) => {

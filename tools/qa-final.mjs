@@ -671,13 +671,13 @@ const FALLBACK_CONTRAST = String.raw`(() => {
 /* ------------------------------------------------------------- routes */
 const CRITICAL = {
   admin: [
-    '/admin', '/admin/users', '/admin/users/create', '/admin/settings', '/admin/security',
+    '/admin', '/admin/users', '/admin/users/create', '/admin/users/quick', '/admin/settings', '/admin/security',
     '/admin/health', '/admin/automation', '/admin/backup-center', '/admin/web-apps', '/admin/api-keys',
     '/admin/system-info', '/admin/services', '/admin/log-center', '/admin/mail', '/admin/updates-center',
     '/compat/admin/netdata', '/compat/admin/rspamd', '/help',
   ],
   reseller: [
-    '/reseller', '/reseller/users', '/reseller/users/create', '/reseller/domains', '/reseller/apps',
+    '/reseller', '/reseller/users', '/reseller/users/create', '/reseller/users/quick', '/reseller/domains', '/reseller/apps',
     '/reseller/backups', '/reseller/dns', '/reseller/packages/create', '/reseller/settings', '/help',
   ],
   user: [
@@ -687,14 +687,14 @@ const CRITICAL = {
   ],
 };
 const SHOT_ROUTES = new Set([
-  '/admin', '/admin/users/create', '/admin/settings', '/admin/security', '/admin/health', '/admin/backup-center',
-  '/admin/automation', '/admin/web-apps', '/reseller', '/reseller/users/create', '/reseller/domains',
+  '/admin', '/admin/users/create', '/admin/users/quick', '/admin/settings', '/admin/security', '/admin/health', '/admin/backup-center',
+  '/admin/automation', '/admin/web-apps', '/reseller', '/reseller/users/create', '/reseller/users/quick', '/reseller/domains',
   '/reseller/packages/create', '/user', '/user/app-catalog', '/user/email', '/user/email/new',
   '/user/databases/create', '/user/files', '/user/statistics', '/user/domains/create', '/help', '/login',
 ]);
 const AXE_ROUTES = new Set([
-  '/admin', '/admin/users/create', '/admin/settings', '/admin/security', '/admin/health', '/admin/backup-center',
-  '/reseller', '/reseller/users/create', '/reseller/domains', '/user', '/user/email', '/user/databases/create',
+  '/admin', '/admin/users/create', '/admin/users/quick', '/admin/settings', '/admin/security', '/admin/health', '/admin/backup-center',
+  '/reseller', '/reseller/users/create', '/reseller/users/quick', '/reseller/domains', '/user', '/user/email', '/user/databases/create',
   '/user/files', '/user/app-catalog', '/user/statistics', '/help', '/login',
 ]);
 

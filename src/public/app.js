@@ -298,6 +298,26 @@
   }
 
   const navIndex = readNavIndex();
+  const entityIndex = (() => {
+    try {
+      const parsed = JSON.parse($('#oa-entity-index')?.textContent || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  })();
+  const RECENT_KEY = 'oa_recent_pages';
+  function readRecent() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+      return Array.isArray(parsed) ? parsed.filter((item) => item && item.label && item.href).slice(0, 8) : [];
+    } catch { return []; }
+  }
+  function rememberRecent(item) {
+    if (!item || !item.href || item.href.startsWith('/login') || item.href.startsWith('/logout')) return;
+    try {
+      const next = [{ label: item.label, href: item.href, group: 'Ostatnio', icon: item.icon || 'clock' }, ...readRecent().filter((entry) => entry.href !== item.href)].slice(0, 8);
+      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    } catch { /* storage may be disabled */ }
+  }
   const palette = $('#cmdPalette');
   const cmdInput = $('#cmdInput');
   const cmdResults = $('#cmdResults');
@@ -393,11 +413,16 @@
     const q = String(query || '').trim().toLowerCase();
     const matches = (item) => !q || [item.label, item.group, item.href, item.keywords].filter(Boolean).join(' ').toLowerCase().includes(q);
     const actions = paletteActions().filter(matches);
+    const recent = readRecent().filter(matches);
+    const entities = entityIndex.filter(matches);
     const pages = navIndex.filter(matches);
-    paletteItems = [...actions, ...pages].slice(0, 40);
+    const seen = new Set();
+    const unique = (items) => items.filter((item) => { if (!item.href || seen.has(item.href)) return false; seen.add(item.href); return true; });
+    const recentItems = recent.map((item) => ({ ...item, group: 'Ostatnio', icon: item.icon || 'clock' }));
+    paletteItems = [...actions, ...unique(recentItems), ...unique(entities), ...unique(pages)].slice(0, 60);
     paletteSel = 0;
     if (!paletteItems.length) {
-      cmdResults.innerHTML = `<div class="cmd-empty"><span>No matches for “${escapeHtml(q)}”</span><small>Try “theme”, “domains” or “backup”.</small></div>`;
+      cmdResults.innerHTML = `<div class="cmd-empty"><span>No matches for “${escapeHtml(q)}”</span><small>Spróbuj „motyw”, „domeny” lub „backup”.</small></div>`;
       cmdInput?.removeAttribute('aria-activedescendant');
       return;
     }
@@ -423,6 +448,7 @@
     const item = paletteItems[index];
     if (!item) return;
     if (item.href) {
+      rememberRecent(item);
       closePalette();
       window.location.href = item.href;
       return;
@@ -482,6 +508,10 @@
 
   function initPalette() {
     if (!palette) return;
+    try {
+      const page = window.OA_PAGE || {};
+      if (page.path && page.title && page.path !== '/') rememberRecent({ label: page.title, href: page.path, group: 'Ostatnio' });
+    } catch { /* ignore */ }
     $$('[data-open-search]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
     cmdInput?.addEventListener('input', (event) => renderPalette(event.target.value));
     cmdResults?.addEventListener('click', (event) => {
@@ -1526,6 +1556,60 @@
     });
   }
 
+
+  function initPackageBuilder() {
+    const form = document.querySelector('[data-package-form]');
+    if (!form) return;
+    const preset = form.querySelector('[data-package-preset]');
+    const summary = form.querySelector('[data-package-summary]');
+    const featureSet = form.querySelector('[data-feature-set]');
+    const featureNote = form.querySelector('[data-feature-note]');
+    const limitInputs = $$('[data-limit]', form);
+    const presets = {
+      starter: { domains: 1, subdomains: 5, emails: 5, ftp: 2, databases: 1, disk_mb: 1024, bandwidth_mb: 10240, cron: 0, ssl: 1, max_processes: 50 },
+      business: { domains: 10, subdomains: 50, emails: 100, ftp: 20, databases: 20, disk_mb: 20480, bandwidth_mb: 204800, cron: 10, ssl: 10, max_processes: 100 },
+      unlimited: Object.fromEntries(limitInputs.map((input) => [input.dataset.limit, 0])),
+    };
+    const pl = document.documentElement.lang !== 'en';
+    const syncUnlimited = () => {
+      $$('[data-unlimited]', form).forEach((checkbox) => {
+        const input = form.querySelector(`[data-limit="${checkbox.dataset.unlimited}"]`);
+        if (!input) return;
+        input.disabled = checkbox.checked;
+        if (checkbox.checked) input.value = '0';
+      });
+      updateSummary();
+    };
+    const updateSummary = () => {
+      if (!summary) return;
+      const values = Object.fromEntries(limitInputs.map((input) => [input.dataset.limit, input.value]));
+      const fmt = (key, suffix = '') => values[key] === '0' || values[key] === '' ? (pl ? 'nielimitowane' : 'unlimited') : `${values[key]}${suffix}`;
+      summary.textContent = pl
+        ? `Domeny: ${fmt('domains')} · Skrzynki: ${fmt('emails')} · Dysk: ${fmt('disk_mb', ' MB')} · Transfer: ${fmt('bandwidth_mb', ' MB')}`
+        : `Domains: ${fmt('domains')} · Mailboxes: ${fmt('emails')} · Disk: ${fmt('disk_mb', ' MB')} · Bandwidth: ${fmt('bandwidth_mb', ' MB')}`;
+    };
+    form.addEventListener('change', (event) => {
+      if (event.target.matches('[data-unlimited]')) { syncUnlimited(); return; }
+      if (event.target.matches('[data-package-preset]') && presets[event.target.value]) {
+        for (const [key, value] of Object.entries(presets[event.target.value])) {
+          const input = form.querySelector(`[data-limit="${key}"]`);
+          if (input) input.value = String(value);
+        }
+        syncUnlimited();
+        return;
+      }
+      if (event.target.matches('[data-feature-set]') && featureNote) {
+        featureNote.classList.toggle('is-active', !!event.target.value);
+        featureNote.textContent = event.target.value
+          ? (pl ? 'Wybrany feature set nadpisuje poniższe przełączniki podczas zapisu.' : 'The selected feature set overrides the toggles below on save.')
+          : (pl ? 'Przy ręcznym ustawieniu decydują checkboksy.' : 'Manual mode uses the checkboxes below.');
+        return;
+      }
+      updateSummary();
+    });
+    syncUnlimited();
+  }
+
   function init() {
     root.classList.add('is-ready');
     initSidebar();
@@ -1548,6 +1632,7 @@
     initMisc();
     initUpload();
     initWizard();
+    initPackageBuilder();
     initTerminal();
     updateAutoRefreshUi();
 

@@ -114,6 +114,7 @@ export function table({
   cls = '',
   actionsMenu = false,
   menuLabel = 'Więcej',
+  selectForm = '',
 }) {
   if (!rows.length) {
     const message = safeEmptyMessage(empty);
@@ -126,13 +127,13 @@ export function table({
   return html`<div class="table-wrap" tabindex="0" role="region" aria-label="${label}">
     <table class="data-table ${cls}">
       <thead><tr>
-        ${selectable ? html`<th scope="col" class="col-check"><input type="checkbox" data-check-all aria-label="${selectAllLabel}"></th>` : ''}
+        ${selectable ? html`<th scope="col" class="col-check"><input type="checkbox" data-check-all ${selectForm ? raw(`form="${selectForm}"`) : ''} aria-label="${selectAllLabel}"></th>` : ''}
         ${columns.map((c) => html`<th scope="col" class="${c.align === 'right' ? 'ta-r' : ''}">${c.label}</th>`)}
         ${actions.length ? html`<th scope="col" class="col-actions">${actionsLabel}</th>` : ''}
       </tr></thead>
       <tbody>
         ${rows.map((row, rowIndex) => html`<tr>
-          ${selectable ? html`<td class="col-check"><input type="checkbox" name="selected[]" value="${row[rowKey]}" aria-label="${selectRowLabel} ${rowIndex + 1}"></td>` : ''}
+          ${selectable ? html`<td class="col-check"><input type="checkbox" name="selected[]" value="${row[rowKey]}" ${selectForm ? raw(`form="${selectForm}"`) : ''} aria-label="${selectRowLabel} ${rowIndex + 1}"></td>` : ''}
           ${columns.map((c) => html`<td class="${c.align === 'right' ? 'ta-r' : ''} ${c.cls || ''}" data-label="${e(c.dataLabel || c.label || '')}">${tableCell(c.render ? c.render(row) : row[c.key])}</td>`)}
           ${actions.length ? html`<td class="col-actions">${actionsMenu ? html`<div class="row-actions"><details class="more-menu"><summary class="btn btn-ghost btn-sm" role="button" aria-label="${menuLabel}">${menuLabel}</summary><div class="more-menu-list">${actions.map((a) => {
             if (a.show && !a.show(row)) return '';

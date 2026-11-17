@@ -5,7 +5,7 @@ import { icon } from '../icons.mjs';
 
 export function listCard({
   title, sub = '', columns, rows, actions = [], createHref, createLabel = 'Create', empty = 'Nothing here yet',
-  filter = null, toolbarLeft = [], toolbarRight = [], footer = '', selectable = false, flush = true, id = '', responsive = false, actionsMenu = false,
+  filter = null, toolbarLeft = [], toolbarRight = [], footer = '', selectable = false, flush = true, id = '', responsive = false, actionsMenu = false, selectForm = '',
 }) {
   const tools = [];
   if (filter) {
@@ -18,7 +18,7 @@ export function listCard({
   const hasToolbar = tools.length || right.length;
   return card(title, h`
     ${hasToolbar ? toolbar(tools, right) : ''}
-    <div id="${id || 'dataTable'}">${table({ columns, rows, actions, empty, selectable, cls: responsive ? 'responsive-table' : '', actionsMenu })}</div>
+    <div id="${id || 'dataTable'}">${table({ columns, rows, actions, empty, selectable, cls: responsive ? 'responsive-table' : '', actionsMenu, selectForm })}</div>
     ${footer ? h`<div class="card-foot">${footer}</div>` : ''}
   `, { sub, padded: !flush, cls: 'list-card' });
 }
@@ -27,12 +27,13 @@ export function formCard({ title, sub = '', fields, action, csrf, submit = 'Save
   return card(title, h`${description ? h`<p class="small muted mb-18">${description}</p>` : ''}${form(fields, { action, csrf, submit, cancel })}${extra}`, { sub });
 }
 
-export function domainSelect(domains, selected, { action = '', label = 'Domain' } = {}) {
+export function domainSelect(domains, selected, { action = '', label = 'Domain', includeAll = false, allLabel = 'Wszystkie domeny' } = {}) {
   if (!domains.length) return emptyState('No domains yet. Add a domain first.');
   return h`<div class="toolbar">
     <form method="get" action="${action}" class="row">
       <label class="field-label u-s11" for="domainSel">${label}</label>
       <select class="u-s15" id="domainSel" name="domain" data-domain-select>
+        ${includeAll ? h`<option value="all" ${selected === 'all' ? raw('selected') : ''}>${allLabel}</option>` : ''}
         ${domains.map((d) => h`<option value="${d.name}" ${d.name === selected ? raw('selected') : ''}>${d.name}</option>`)}
       </select>
       <noscript><button class="btn btn-secondary btn-sm" type="submit">Switch</button></noscript>

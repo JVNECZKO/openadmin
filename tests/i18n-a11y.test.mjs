@@ -850,3 +850,119 @@ test('UX stage 1: Security Center summary cards use one definition column', asyn
   assert.equal(res.status, 200);
   assert.match(html, /class="kv kv-cols-1"/);
 });
+
+test('UX stage 2: quick account creates a customer from one page', async () => {
+  const cookie = await loginAs('demoadmin');
+  const quick = await page('/admin/users/quick', cookie);
+  assert.equal(quick.res.status, 200);
+  assert.match(quick.html, /Szybkie konto klienta/);
+  const csrf = quick.html.match(/name="_csrf" value="([^"]+)"/)[1];
+  const username = `quickux${Date.now().toString(36).slice(-7)}`;
+  const res = await fetch(base + '/admin/users/quick', {
+    method: 'POST', redirect: 'manual',
+    headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, username, email: `${username}@example.test`, package: 'default' }).toString(),
+  });
+  const html = await res.text();
+  assert.equal(res.status, 200, html.slice(0, 200));
+  assert.match(html, /Konto utworzone|Konto zostało utworzone/);
+  const row = db.get('SELECT * FROM users WHERE username = ?', username);
+  assert.ok(row, 'quick account exists');
+  db.run('DELETE FROM users WHERE id = ?', row.id);
+  fs.rmSync(path.join(dataDir, 'homes', username), { recursive: true, force: true });
+});
+
+test('UX stage 2: package builder exposes presets, summary and unlimited toggles', async () => {
+  const cookie = await loginAs('demoreseller');
+  const { res, html } = await page('/reseller/packages/create', cookie);
+  assert.equal(res.status, 200);
+  assert.match(html, /data-package-form/);
+  assert.match(html, /data-package-preset/);
+  assert.match(html, /data-package-summary/);
+  assert.match(html, /nielimitowane/);
+  assert.match(html, /Starter/);
+});
+
+test('UX stage 2: e-mail has all-domains view, search and bulk controls', async () => {
+  const cookie = await loginAs('demouser');
+  const { res, html } = await page('/user/email?domain=all', cookie);
+  assert.equal(res.status, 200);
+  assert.match(html, /we wszystkich domenach/);
+  assert.match(html, /emailBulkForm/);
+  assert.match(html, /name="q"/);
+  assert.match(html, /Zawieś \/ wznów zaznaczone/);
+});
+
+test('UX stage 2: command palette receives scoped entity and recent-page indexes', async () => {
+  const cookie = await loginAs('demoadmin');
+  const { html } = await page('/admin', cookie);
+  assert.match(html, /id="oa-entity-index"/);
+  const raw = html.match(/<script[^>]*id="oa-entity-index"[^>]*>([\s\S]*?)<\/script>/)[1];
+  const entities = JSON.parse(raw);
+  assert.ok(entities.some((item) => item.group === 'Domeny'), 'domain entities are indexed');
+  assert.ok(entities.some((item) => item.group === 'Użytkownicy'), 'user entities are indexed');
+});
+
+test('UX stage 2: file manager search, quota, selection and bulk delete', async () => {
+  const cookie = await loginAs('demouser');
+  const listing = await page('/user/files', cookie);
+  const csrf = listing.html.match(/name="_csrf" value="([^"]+)"/)[1];
+  const name = `ux-preview-${Date.now()}.txt`;
+  const created = await fetch(base + '/user/files/create', {
+    method: 'POST', redirect: 'manual',
+    headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, path: '/home/demouser', kind: 'file', name, content: 'podgląd UX' }).toString(),
+  });
+  assert.equal(created.status, 302);
+  const filtered = await page(`/user/files?path=/home/demouser&q=${encodeURIComponent(name)}`, cookie);
+  assert.match(filtered.html, /fileBulkForm/);
+  assert.match(filtered.html, /data-check-all/);
+  assert.match(filtered.html, /file-quota|Wykorzystanie dysku/);
+  const preview = await page(`/user/files?path=/home/demouser&preview=${encodeURIComponent(name)}`, cookie);
+  assert.match(preview.html, /Podgląd/);
+  assert.match(preview.html, /podgląd UX/);
+  const removed = await fetch(base + '/user/files/bulk', {
+    method: 'POST', redirect: 'manual',
+    headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, path: '/home/demouser', action: 'delete', selected: name }).toString(),
+  });
+  assert.equal(removed.status, 302);
+  assert.equal(fs.existsSync(path.join(dataDir, 'homes', 'demouser', name)), false);
+});
+
+test('UX stage 2: e-mail bulk toggle changes only selected owned mailboxes', async () => {
+  const cookie = await loginAs('demouser');
+  const listing = await page('/user/email', cookie);
+  const csrf = listing.html.match(/name="_csrf" value="([^"]+)"/)[1];
+  const rows = db.all("SELECT * FROM email_accounts WHERE domain = 'example.com' ORDER BY local_part");
+  assert.ok(rows.length >= 2);
+  const target = rows[0];
+  const before = target.suspended;
+  const res = await fetch(base + '/user/email/bulk', {
+    method: 'POST', redirect: 'manual',
+    headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, domain: target.domain, action: 'toggle', 'selected[]': String(target.id) }).toString(),
+  });
+  assert.equal(res.status, 302);
+  assert.equal(db.get('SELECT suspended FROM email_accounts WHERE id = ?', target.id).suspended, before ? 0 : 1);
+  db.run('UPDATE email_accounts SET suspended = ? WHERE id = ?', before, target.id);
+});
+
+test('UX stage 2: package unlimited toggle persists as zero (unlimited)', async () => {
+  const cookie = await loginAs('demoadmin');
+  const form = await page('/admin/user-packages/create', cookie);
+  const csrf = form.html.match(/name="_csrf" value="([^"]+)"/)[1];
+  const name = `uxpkg${Date.now().toString(36).slice(-7)}`;
+  const res = await fetch(base + '/admin/user-packages/create', {
+    method: 'POST', redirect: 'manual',
+    headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, name, unl_domains: '1', lim_emails: '5' }).toString(),
+  });
+  assert.equal(res.status, 302);
+  const row = db.get('SELECT * FROM packages WHERE name = ?', name);
+  assert.ok(row);
+  const limits = JSON.parse(row.limits);
+  assert.equal(limits.domains, 0);
+  assert.equal(limits.emails, 5);
+  db.run('DELETE FROM packages WHERE name = ?', name);
+});

@@ -94,45 +94,81 @@ function fmtLimit(v, unit = '') {
   return `${Number(v).toLocaleString()}${unit}`;
 }
 
+const LIMIT_PL = {
+  domains: 'Domeny', subdomains: 'Subdomeny', emails: 'Skrzynki e-mail', email_quota_mb: 'Limit skrzynki (MB)',
+  ftp: 'Konta FTP', databases: 'Bazy danych', bandwidth_mb: 'Transfer (MB/mies.)', disk_mb: 'Limit dysku (MB)',
+  inodes: 'Inody', cron: 'Zadania cron', ssl: 'Certyfikaty SSL', users: 'Konta (reseller)', ips: 'Adresy IP',
+  packages: 'Pakiety (reseller)', autoresponders: 'Autorespondery', forwarders: 'Przekierowania', mailing_lists: 'Listy mailingowe',
+  cpu_percent: 'Limit CPU (%)', memory_mb: 'Limit pamięci (MB)', io_read_mbps: 'Odczyt IO (MB/s)', io_write_mbps: 'Zapis IO (MB/s)',
+  max_processes: 'Maks. procesów',
+};
+const BOOL_PL = { dns_control: 'Kontrola DNS', ssh: 'Dostęp SSH', cgi: 'Skrypty CGI', spam: 'Filtr spamu', catch_all: 'Catch-all', wordpress: 'Menedżer WordPress', nodejs: 'Aplikacje Node.js', python: 'Aplikacje Python', git: 'Git' };
+const PACKAGE_PRESETS = {
+  starter: { label: 'Starter — mała strona', values: { domains: 1, subdomains: 5, emails: 5, ftp: 2, databases: 1, disk_mb: 1024, bandwidth_mb: 10240, cron: 0, ssl: 1, max_processes: 50 } },
+  business: { label: 'Business — firma', values: { domains: 10, subdomains: 50, emails: 100, ftp: 20, databases: 20, disk_mb: 20480, bandwidth_mb: 204800, cron: 10, ssl: 10, max_processes: 100 } },
+  unlimited: { label: 'Unlimited — bez limitów', values: Object.fromEntries(LIMIT_FIELDS.map(([k]) => [k, 0])) },
+};
+
+function packageLimitInput(k, limits) {
+  const value = limits[k] ?? 0;
+  return h`<div class="field package-limit"><label class="field-label" for="lim-${k}">${LIMIT_PL[k] || k}</label>
+    <input id="lim-${k}" type="number" min="0" name="lim_${k}" value="${value}" data-limit="${k}">
+    <label class="check-field package-unlimited"><input type="checkbox" name="unl_${k}" value="1" data-unlimited="${k}" ${Number(value) === 0 ? 'checked' : ''}> <span>nielimitowane</span></label>
+  </div>`;
+}
+
 export function packageForm(ctx, { path, type, existing = null }) {
   const limits = existing ? safeJson(existing.limits, {}) : (type === 'reseller'
     ? { users: 50, domains: 500, subdomains: 1000, emails: 1000, databases: 200, bandwidth_mb: 0, disk_mb: 102400, ips: 2, packages: 20, php: ['8.3'], dns_control: 1, cpu_percent: 0, memory_mb: 0, io_read_mbps: 0, io_write_mbps: 0, max_processes: 200 }
     : { domains: 10, subdomains: 25, emails: 50, ftp: 10, databases: 10, bandwidth_mb: 102400, disk_mb: 10240, cron: 5, ssl: 10, php: ['8.3'], dns_control: 0, cpu_percent: 0, memory_mb: 0, io_read_mbps: 0, io_write_mbps: 0, max_processes: 100 });
-  const body = h`${card(existing ? `Edit package · ${existing.name}` : 'Create package', h`
-    <form method="post" action="${path}${existing ? '/' + encodeURIComponent(existing.name) : '/create'}" class="oa-form">
+  const fields = LIMIT_FIELDS.filter(([k]) => type === 'reseller' || !['users', 'ips', 'packages'].includes(k));
+  const body = h`${card(existing ? `Edytuj pakiet · ${existing.name}` : 'Nowy pakiet', h`
+    <form method="post" action="${path}${existing ? '/' + encodeURIComponent(existing.name) : '/create'}" class="oa-form package-form" data-package-form>
       <input type="hidden" name="_csrf" value="${ctx.csrf}">
       <div class="form-grid">
-        <div class="field"><label class="field-label">Package name</label>
-          <input name="name" value="${existing?.name || ''}" ${existing ? 'disabled' : 'required'} pattern="[a-zA-Z0-9_.-]{2,40}"></div>
-        <div class="field"><label class="field-label">Type</label><input value="${type === 'reseller' ? 'Reseller package' : 'User package'}" disabled></div>
+        <div class="field"><label class="field-label" for="pkg-name">Nazwa pakietu <span class="req">*</span></label>
+          <input id="pkg-name" name="name" value="${existing?.name || ''}" ${existing ? 'disabled' : 'required'} pattern="[a-zA-Z0-9_.-]{2,40}" placeholder="starter"></div>
+        <div class="field"><label class="field-label" for="pkg-type">Typ</label><input id="pkg-type" value="${type === 'reseller' ? 'Pakiet resellera' : 'Pakiet użytkownika'}" disabled></div>
+        <div class="field field-full"><label class="field-label" for="pkg-preset">Preset</label>
+          <select id="pkg-preset" data-package-preset><option value="">— własne ustawienia —</option>${Object.entries(PACKAGE_PRESETS).map(([key, preset]) => h`<option value="${key}">${preset.label}</option>`)}</select>
+          <p class="field-help">Preset wypełnia limity; możesz je potem zmienić. „Nielimitowane” oznacza 0 i nie zużywa limitu.</p></div>
       </div>
-      <h3 class="form-section">Resource limits</h3>
-      <p class="small muted u-s88">Set 0 for unlimited.</p>
-      <div class="form-grid form-grid-3">
-        ${LIMIT_FIELDS.filter(([k]) => type === 'reseller' || !['users', 'ips', 'packages'].includes(k)).map(([k, label]) => h`<div class="field">
-          <label class="field-label">${label}</label><input type="number" min="0" name="lim_${k}" value="${limits[k] ?? 0}">
-        </div>`)}
+      <div class="package-layout">
+        <div class="package-main">
+          <details class="package-section"><summary>Zasoby</summary>
+            <div class="form-grid form-grid-3">${fields.filter(([k]) => !['cpu_percent', 'memory_mb', 'io_read_mbps', 'io_write_mbps', 'max_processes'].includes(k)).map(([k]) => packageLimitInput(k, limits))}</div>
+          </details>
+          <details class="package-section"><summary>Funkcje</summary>
+            <div class="field field-full"><label class="field-label" for="pkg-feature-set">Feature set</label>
+              <select id="pkg-feature-set" name="feature_set" data-feature-set><option value="">— ręcznie —</option>${featureSets().map((f) => h`<option value="${f.name}" ${limits.feature_set === f.name ? 'selected' : ''}>${f.name}</option>`)}</select>
+              <p class="field-help" data-feature-note>Wybranie feature setu nadpisuje poniższe przełączniki funkcji. Przy ręcznym ustawieniu decydują checkboksy.</p></div>
+            <div class="form-grid form-grid-3">${BOOL_LIMITS.map(([k]) => h`<div class="field"><label class="check-field"><input type="checkbox" name="bool_${k}" value="1" data-feature-toggle ${Number(limits[k]) ? 'checked' : ''}> <span>${BOOL_PL[k] || k}</span></label></div>`)}</div>
+            <div class="field field-full"><label class="field-label">Wersje PHP</label><div class="radio-row">${PHP.map((v) => h`<label class="check-field"><input type="checkbox" name="php[]" value="${v}" data-feature-toggle ${(limits.php || []).includes(v) ? 'checked' : ''}> <span>PHP ${v}</span></label>`)}</div></div>
+          </details>
+          <details class="package-section"><summary>Wydajność i zasoby systemowe</summary>
+            <div class="form-grid form-grid-3">${fields.filter(([k]) => ['cpu_percent', 'memory_mb', 'io_read_mbps', 'io_write_mbps', 'max_processes'].includes(k)).map(([k]) => packageLimitInput(k, limits))}</div>
+          </details>
+        </div>
+        <aside class="package-summary"><div class="package-summary-inner">
+          <strong>Podsumowanie</strong>
+          <p class="small muted" data-package-summary>Wybierz preset lub ustaw limity ręcznie.</p>
+          <div class="small muted">Puste pole = 0 = nielimitowane. Feature set ma pierwszeństwo przed checkboksami.</div>
+        </div></aside>
       </div>
-      <h3 class="form-section">Features</h3>
-      <div class="field field-full"><label class="field-label">Feature set</label>
-        <select name="feature_set"><option value="">— ręcznie —</option>${featureSets().map((f) => h`<option value="${f.name}" ${limits.feature_set === f.name ? 'selected' : ''}>${f.name}</option>`)}</select>
-        <p class="field-help">Wybranie feature setu nadpisuje poniższe przełączniki funkcji.</p></div>
-      <div class="form-grid form-grid-3">
-        ${BOOL_LIMITS.map(([k, label]) => h`<div class="field"><label class="check-field"><input type="checkbox" name="bool_${k}" value="1" ${Number(limits[k]) ? 'checked' : ''}> <span>${label}</span></label></div>`)}
-        <div class="field field-full"><label class="field-label">PHP versions</label>
-          <div class="radio-row">${PHP.map((v) => h`<label class="check-field"><input type="checkbox" name="php[]" value="${v}" ${(limits.php || []).includes(v) ? 'checked' : ''}> <span>PHP ${v}</span></label>`)}</div></div>
-      </div>
-      <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('save', { size: 16 })} ${existing ? 'Save package' : 'Create package'}</button>
-        <a class="btn btn-ghost" href="${path}">Cancel</a></div>
+      <div class="package-savebar"><button class="btn btn-primary" type="submit">${icon('save', { size: 16 })} ${existing ? 'Zapisz pakiet' : 'Utwórz pakiet'}</button>
+        <a class="btn btn-ghost" href="${path}">Anuluj</a></div>
     </form>`)}`;
-  return page(ctx, { title: existing ? 'Edit Package' : 'Create Package', subtitle: type === 'reseller' ? 'Reseller package limits' : 'User package limits', body });
+  return page(ctx, { title: existing ? 'Edytuj pakiet' : 'Nowy pakiet', subtitle: type === 'reseller' ? 'Limity pakietu resellera' : 'Limity pakietu użytkownika', body });
 }
 
 export function savePackage(ctx, { type, owner, path }) {
   const name = String(ctx.body.name || '').trim();
   if (!/^[a-zA-Z0-9_.-]{2,40}$/.test(name)) return ctx.redirect(`${path}?flash=Invalid%20package%20name&type=error`);
   const limits = {};
-  for (const [k] of LIMIT_FIELDS) if (ctx.body[`lim_${k}`] !== undefined) limits[k] = Number(ctx.body[`lim_${k}`]) || 0;
+  for (const [k] of LIMIT_FIELDS) {
+    if (ctx.body[`unl_${k}`]) limits[k] = 0;
+    else if (ctx.body[`lim_${k}`] !== undefined) limits[k] = Number(ctx.body[`lim_${k}`]) || 0;
+  }
   limits.ssh = ctx.body.bool_ssh ? 1 : 0;
   limits.cgi = ctx.body.bool_cgi ? 1 : 0;
   limits.spam = ctx.body.bool_spam ? 1 : 0;
@@ -193,12 +229,94 @@ export function usersPage(ctx, { path = '/reseller/users', level = 'user', suspe
       { label: 'Delete', form: (u) => `${path}/${u.id}/delete`, confirm: 'Permanently delete this account and all its data?', icon: 'trash', danger: true },
     ],
   })}`;
-  return page(ctx, { title, subtitle: 'Manage hosted accounts', body, actions: [btn('Create user', { href: `${path}/create`, icon: 'plus' })] });
+  return page(ctx, { title, subtitle: 'Zarządzaj kontami hostingowymi', body, actions: [btn('Szybkie konto', { href: `${path}/quick`, variant: 'secondary', icon: 'plus' }), btn('Pełny kreator', { href: `${path}/create`, icon: 'plus' })] });
 }
 
 function visiblePackageRows(ctx) {
   return all("SELECT * FROM packages WHERE type = 'user' ORDER BY name")
     .filter((pkg) => ctx.user.level !== 'reseller' || !pkg.owner || pkg.owner === ctx.user.username);
+}
+
+
+/** One-page account creation for the common case: customer + package + optional site. */
+export function quickUserForm(ctx, { path, packages = [], values = {}, preflight = null, error = '' } = {}) {
+  const rows = (packages.length ? packages : visiblePackageRows(ctx)).filter((pkg) => pkg.type === 'user');
+  const v = values || {};
+  const selected = String(v.package || rows[0]?.name || '');
+  const resellerRows = ctx.user.level === 'admin' ? all("SELECT username FROM users WHERE level = 'reseller' ORDER BY username") : [];
+  const body = h`${error ? alert(error, 'danger') : ''}
+    ${preflight && (preflight.errors?.length || preflight.checks?.length) ? alert(h`<ul class="doc-list">${(preflight.errors || []).map((entry) => h`<li><strong>${entry.code || 'Błąd'}:</strong> ${entry.message || entry}</li>`)}</ul>`, 'danger', { title: 'Popraw pola i spróbuj ponownie' }) : ''}
+    ${card('Szybkie konto klienta', h`<form method="post" action="${path}/quick" class="oa-form" autocomplete="off">
+      <input type="hidden" name="_csrf" value="${ctx.csrf}">
+      <div class="form-grid">
+        <div class="field"><label class="field-label" for="quick-username">Login klienta <span class="req">*</span></label>
+          <input id="quick-username" name="username" value="${v.username || ''}" required pattern="[a-z0-9][a-z0-9_.-]{1,31}" placeholder="johndoe" autocomplete="off">
+          <p class="field-help">Małe litery, cyfry, kropka, myślnik i podkreślenie.</p></div>
+        <div class="field"><label class="field-label" for="quick-email">E-mail klienta <span class="req">*</span></label>
+          <input id="quick-email" name="email" type="email" value="${v.email || ''}" required></div>
+        <div class="field"><label class="field-label" for="quick-package">Pakiet <span class="req">*</span></label>
+          <select id="quick-package" name="package" required>${rows.map((pkg) => h`<option value="${pkg.name}" ${pkg.name === selected ? 'selected' : ''}>${pkg.name}${pkg.owner ? ` — ${pkg.owner}` : ' — globalny'}</option>`)}</select></div>
+        <div class="field"><label class="field-label" for="quick-domain">Domena (opcjonalnie)</label>
+          <input id="quick-domain" name="domain" value="${v.domain || ''}" placeholder="klient.pl" autocomplete="off">
+          <p class="field-help">Jeśli podasz domenę, panel utworzy stronę, DNS i certyfikat.</p></div>
+        <div class="field"><label class="field-label" for="quick-password">Hasło (opcjonalnie)</label>
+          <div class="field-control"><input id="quick-password" name="password" type="password" minlength="10" placeholder="Puste = link aktywacyjny">
+            <button class="btn btn-secondary btn-sm" type="button" data-genpass="#quick-password">Wygeneruj</button></div>
+          <p class="field-help">Puste pole oznacza bezpieczny link aktywacyjny zamiast hasła w plaintext.</p></div>
+        ${ctx.user.level === 'admin' ? h`<div class="field"><label class="field-label" for="quick-owner">Właściciel (reseller)</label>
+          <select id="quick-owner" name="owner"><option value="">Administrator (bez resellera)</option>${resellerRows.map((row) => h`<option value="${row.username}" ${v.owner === row.username ? 'selected' : ''}>${row.username}</option>`)}</select></div>` : ''}
+        <div class="field field-full"><label class="check-field"><input type="checkbox" name="create_domain" value="1" ${v.create_domain === undefined || v.create_domain ? 'checked' : ''}> <span>Utwórz stronę WWW, DNS i certyfikat dla podanej domeny</span></label></div>
+        <div class="field field-full"><label class="check-field"><input type="checkbox" name="create_mailbox" value="1" ${v.create_mailbox ? 'checked' : ''}> <span>Utwórz skrzynkę postmaster@domena</span></label></div>
+        <div class="field field-full"><label class="check-field"><input type="checkbox" name="create_backup" value="1" ${v.create_backup ? 'checked' : ''}> <span>Dodaj dzienny profil kopii zapasowej</span></label></div>
+        <div class="field field-full"><label class="field-label" for="quick-notes">Notatka wewnętrzna</label><textarea id="quick-notes" name="notes" rows="2">${v.notes || ''}</textarea></div>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">${icon('plus', { size: 16 })} Utwórz konto</button>
+        <a class="btn btn-ghost" href="${path}/create">Przejdź do pełnego kreatora</a>
+        <a class="btn btn-ghost" href="${path}">Anuluj</a></div>
+    </form>`, { sub: 'Najczęstszy scenariusz: klient, pakiet i opcjonalnie pierwsza strona. Pełny kreator pozostaje dostępny.' })}`;
+  return page(ctx, { title: 'Szybkie konto klienta', subtitle: 'Jedna strona zamiast pięciu kroków', body, wide: true });
+}
+
+export function createQuickUser(ctx, { path, level = 'user', owner = null } = {}) {
+  const body = ctx.body || {};
+  const values = { ...body };
+  const payload = {
+    actor: ctx.user,
+    level,
+    owner: owner ?? (body.owner || null),
+    username: body.username,
+    email: body.email,
+    package: body.package,
+    password: body.password,
+    activation: !body.password,
+    domain: body.domain,
+    create_domain: body.domain ? body.create_domain !== undefined : false,
+    create_dns: true,
+    create_mailbox: !!body.create_mailbox,
+    mailbox_local: 'postmaster',
+    mailbox_quota_mb: 1024,
+    create_backup: !!body.create_backup,
+    create_monitoring: false,
+    notify: true,
+    notes: body.notes,
+    rollbackOnFailure: true,
+    actorIp: ctx.ip,
+  };
+  let result;
+  try { result = provisionAccount(payload); }
+  catch (error) {
+    return quickUserForm(ctx, { path, values, error: `Nie udało się uruchomić provisioningu: ${error.message}` });
+  }
+  if (result.ok) {
+    try { rememberChoices(ctx.user, 'account', { createDns: true, backup: !!body.create_backup, docroot: true, php: true, vhost: true }); } catch { /* best effort */ }
+    return page(ctx, {
+      title: 'Konto utworzone',
+      subtitle: `${result.username} · ${result.package || ''}`,
+      body: h`${renderAccountResult(result)}<div class="row mt-18"><a class="btn btn-primary" href="${path}/${result.userId}">Otwórz konto</a><a class="btn btn-secondary" href="${path}/quick">Utwórz kolejne</a><a class="btn btn-ghost" href="${path}">Wróć do listy</a></div>`,
+      wide: true,
+    });
+  }
+  return quickUserForm(ctx, { path, values, preflight: result, error: 'Konto nie zostało utworzone — popraw zaznaczone pola.' });
 }
 
 export function userForm(ctx, { path, existing = null, packages = [], resellers = false, values = null, preflight = null, error = '' } = {}) {
