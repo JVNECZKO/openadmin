@@ -231,7 +231,7 @@ export async function handle(req, res) {
       try {
         const decoded = Buffer.from(String(req.headers.authorization).slice(6), 'base64').toString('utf8');
         const idx = decoded.indexOf(':');
-        if (idx > 0) {
+        if (idx > 0 && !decoded.slice(idx + 1).includes(':')) {
           const usernamePart = decoded.slice(0, idx);
           if (!rateLimited(usernamePart, ip)) earlyApiUser = apiLogin(usernamePart, decoded.slice(idx + 1), ip);
         }

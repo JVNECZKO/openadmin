@@ -702,6 +702,8 @@ const RESTORE_SKIP_TABLES = new Set([
   'backup_runs', 'operation_jobs', 'operation_job_stages', 'operation_job_events', 'scheduler_leases',
 ]);
 
+function quoteIdent(value) { return `"${String(value).replace(/"/g, '""')}"`; }
+
 function restoreDbFile(file) {
   const db = getDb();
   const escaped = file.replace(/'/g, "''");
@@ -720,9 +722,9 @@ function restoreDbFile(file) {
         const common = cols.filter((column) => restoredCols.includes(column));
         if (!common.length) continue;
         const list = common.map((column) => `"${column}"`).join(',');
-        db.exec(`DELETE FROM main."${name}"`);
-        db.exec(`INSERT INTO main."${name}" (${list}) SELECT ${list} FROM restored."${name}"`);
-        const count = db.prepare(`SELECT COUNT(*) AS n FROM main."${name}"`).get();
+        db.exec(`DELETE FROM main.${quoteIdent(name)}`);
+        db.exec(`INSERT INTO main.${quoteIdent(name)} (${list}) SELECT ${list} FROM restored.${quoteIdent(name)}`);
+        const count = db.prepare(`SELECT COUNT(*) AS n FROM main.${quoteIdent(name)}`).get();
         report.push({ object: `db:${name}`, status: 'restored', rows: Number(count?.n || 0) });
       }
       const violations = db.prepare('PRAGMA foreign_key_check').all();
