@@ -9,7 +9,7 @@ import { page } from '../ui/respond.mjs';
 import { card, table, btn, badge, alert, emptyState, kvList, progress, form } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
 import { listCard, domainSelect, paginate, pagination } from '../ui/pages/list.mjs';
-import { visibleUsers, canManageUser, visibleDomains, ownedUsernames, quota } from '../core/access.mjs';
+import { visibleUsers, visibleUsersPage, canManageUser, visibleDomains, ownedUsernames, quota } from '../core/access.mjs';
 import { passwordPolicyError } from '../security.mjs';
 import {
   provisionAccount, lastAccountProvision, pendingActivation, rememberChoices,
@@ -201,23 +201,26 @@ export function savePackage(ctx, { type, owner, path }) {
 
 /* ------------------------------------------------------------------ users */
 export function usersPage(ctx, { path = '/reseller/users', level = 'user', suspended = null, title = 'Użytkownicy' } = {}) {
-  const rows = visibleUsers(ctx.user, { level, suspended });
-  const withStats = rows.map((u) => ({
+  const perPage = 25;
+  const pageNo = Math.max(1, Number(ctx.query.page) || 1);
+  const q = String(ctx.query.q || '').trim();
+  const result = visibleUsersPage(ctx.user, { level, suspended, q, limit: perPage, offset: (pageNo - 1) * perPage });
+  const withStats = result.rows.map((u) => ({
     ...u,
     domainCount: get('SELECT COUNT(*) n FROM domains WHERE user_id = ?', u.id).n,
     disk: get('SELECT COALESCE(SUM(disk_mb),0) d FROM domains WHERE user_id = ?', u.id).d,
   }));
   const lim = limitsFor(ctx.user);
-  const paged = paginate(withStats, { page: ctx.query.page, perPage: 25 });
-  const pager = pagination({ base: path, page: paged.page, pages: paged.pages, label: 'Paginacja kont' });
+  const pages = Math.max(1, Math.ceil(result.total / perPage));
+  const pager = pagination({ base: path, query: q ? `q=${encodeURIComponent(q)}` : '', page: Math.min(pageNo, pages), pages, label: 'Paginacja kont' });
   const bulkBase = path.startsWith('/admin') ? '/admin/bulk' : '/reseller/bulk';
-  const body = h`${paged.total ? h`<form id="usersBulkForm" method="post" action="${bulkBase}/preview" class="file-bulkbar">
+  const body = h`${result.total ? h`<form id="usersBulkForm" method="post" action="${bulkBase}/preview" class="file-bulkbar">
     <input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="objectType" value="users">
     <span class="small muted">Zaznacz konta, aby przygotować operację masową.</span>
     <select name="action" aria-label="Operacja masowa"><option value="suspend">Zawieś zaznaczone</option><option value="activate">Aktywuj zaznaczone</option></select>
     <button class="btn btn-secondary btn-sm" type="submit">Pokaż podgląd</button>
   </form>` : ''}${listCard({
-    title, sub: `${paged.total} ${paged.total === 1 ? 'konto' : 'kont'}${level === 'user' && lim.users ? ` z ${lim.users}` : ''}`,
+    title, sub: `${result.total} ${result.total === 1 ? 'konto' : 'kont'}${level === 'user' && lim.users ? ` z ${lim.users}` : ''}`,
     columns: [
       { label: 'Login', dataLabel: 'Login', render: (u) => h`<a class="cell-strong" href="${path}/${u.id}">${u.username}</a><span class="cell-sub">${u.email || '—'}</span>` },
       { label: 'Domena', dataLabel: 'Domena', render: (u) => (u.domain ? h`<span class="cell-mono">${u.domain}</span>` : '—') },
@@ -227,13 +230,13 @@ export function usersPage(ctx, { path = '/reseller/users', level = 'user', suspe
       { label: 'Status', dataLabel: 'Status', render: (u) => (u.suspended ? badge('Zawieszony', 'danger', { dot: true }) : badge('Aktywny', 'ok', { dot: true })) },
       { label: 'Ostatnie logowanie', dataLabel: 'Ostatnie logowanie', render: (u) => (u.last_login ? formatDate(u.last_login) : 'nigdy') },
     ],
-    rows: paged.items,
+    rows: withStats,
     empty: 'Nie ma jeszcze kont.',
     responsive: true,
     selectable: true,
     selectForm: 'usersBulkForm',
     actionsMenu: true,
-    toolbarLeft: level === 'user' ? [h`<a class="chip ${suspended === null ? 'active' : ''}" href="${path}">Wszystkie</a><a class="chip ${suspended === 0 ? 'active' : ''}" href="${path}/suspended">Aktywne</a>`] : [],
+    toolbarLeft: [h`<form method="get" action="${path}" class="search"><input type="search" name="q" value="${q}" placeholder="Szukaj konta, e-maila lub pakietu…" aria-label="Szukaj kont"><button class="btn btn-secondary btn-sm" type="submit">Szukaj</button></form>`, ...(level === 'user' ? [h`<a class="chip ${suspended === null ? 'active' : ''}" href="${path}">Wszystkie</a><a class="chip ${suspended === 0 ? 'active' : ''}" href="${path}/suspended">Aktywne</a>`] : [])],
     actions: [
       { label: 'Zaloguj jako', form: (u) => `${path}/${u.id}/login-as`, icon: 'logout', show: (u) => ctx.user.level === 'admin' && level === 'user' },
       { label: 'Edytuj', href: (u) => `${path}/${u.id}`, icon: 'edit' },

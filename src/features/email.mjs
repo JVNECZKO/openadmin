@@ -32,6 +32,33 @@ function mailNav(ctx, active) {
   </div>`;
 }
 
+
+function emailCreateBody(ctx, { values = {}, error = '' } = {}) {
+  const domains = visibleDomains(ctx.user);
+  const picked = String(values.domain || ctx.query.domain || '');
+  const d = domains.find((x) => x.name === picked) || domains[0];
+  const q = quota(ctx.user, 'emails');
+  return h`${mailNav(ctx, 'accounts')}
+    ${error ? alert(error, 'danger') : ''}
+    ${!q.ok ? alert(`Osiągnięto limit skrzynek (${q.used}/${q.limit}).`, 'warn') : ''}
+    ${card('Dane skrzynki', h`<form method="post" action="/user/email/create" class="oa-form">
+      <input type="hidden" name="_csrf" value="${ctx.csrf}">
+      <div class="form-grid">
+        <div class="field"><label class="field-label" for="email-domain">Domena</label>
+          <select id="email-domain" name="domain">${domains.map((x) => h`<option value="${x.name}" ${x.name === d?.name ? 'selected' : ''}>${x.name}</option>`)}</select></div>
+        <div class="field"><label class="field-label" for="local">Nazwa skrzynki <span class="req">*</span></label>
+          <div class="field-control"><input id="local" name="local_part" type="text" value="${e(values.local_part || '')}" placeholder="info" required><span class="field-suffix">@${d?.name || 'domain'}</span></div>
+          <p class="field-help">Małe litery, cyfry, kropka, myślnik i podkreślenie.</p></div>
+        <div class="field"><label class="field-label" for="mpass">Hasło <span class="req">*</span></label>
+          <div class="field-control"><input id="mpass" name="password" type="password" required minlength="8" placeholder="Co najmniej 8 znaków">
+            <button class="btn btn-secondary btn-sm u-s18" type="button" data-genpass="#mpass">Wygeneruj</button></div></div>
+        <div class="field"><label class="field-label" for="email-quota">Limit (MB)</label><input id="email-quota" name="quota_mb" type="number" min="0" value="${Number(values.quota_mb) || 1024}"><p class="field-help">0 = bez limitu.</p></div>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit" ${!q.ok || !domains.length ? 'disabled' : ''}>${icon('plus', { size: 16 })} Utwórz skrzynkę</button>
+        <a class="btn btn-ghost" href="/user/email">Anuluj</a></div>
+    </form>`)}`;
+}
+
 export function register(router) {
   /* ------------------------------------------------------------ accounts */
   router.get('/user/email', (ctx) => {
@@ -102,39 +129,18 @@ export function register(router) {
   });
 
   router.get('/user/email/create', (ctx) => {
-    const domains = visibleDomains(ctx.user);
-    const d = MAIL_DOMAIN(ctx, ctx.query.domain);
-    const q = quota(ctx.user, 'emails');
-    const body = h`
-      ${mailNav(ctx, 'accounts')}
-      ${!q.ok ? alert(`Osiągnięto limit skrzynek (${q.used}/${q.limit}).`, 'warn') : ''}
-      ${card('Dane skrzynki', h`<form method="post" action="/user/email/create" class="oa-form">
-        <input type="hidden" name="_csrf" value="${ctx.csrf}">
-        <div class="form-grid">
-          <div class="field"><label class="field-label">Domena</label>
-            <select name="domain">${domains.map((x) => h`<option value="${x.name}" ${x.name === d?.name ? 'selected' : ''}>${x.name}</option>`)}</select></div>
-          <div class="field"><label class="field-label" for="local">Nazwa skrzynki <span class="req">*</span></label>
-            <div class="field-control"><input id="local" name="local_part" type="text" placeholder="info" required><span class="field-suffix">@${d?.name || 'domain'}</span></div>
-            <p class="field-help">Letters, numbers, dots, hyphens and underscores.</p></div>
-          <div class="field"><label class="field-label" for="mpass">Hasło <span class="req">*</span></label>
-            <div class="field-control"><input id="mpass" name="password" type="password" required minlength="8" placeholder="Co najmniej 8 znaków">
-              <button class="btn btn-secondary btn-sm u-s18" type="button" data-genpass="#mpass">Generate</button></div></div>
-          <div class="field"><label class="field-label">Limit (MB)</label><input name="quota_mb" type="number" min="0" value="1024"><p class="field-help">0 = unlimited.</p></div>
-        </div>
-        <div class="form-actions"><button class="btn btn-primary" type="submit" ${!q.ok || !domains.length ? 'disabled' : ''}>${icon('plus', { size: 16 })} Create mailbox</button>
-          <a class="btn btn-ghost" href="/user/email">Anuluj</a></div>
-      </form>`)}`;
-    return page(ctx, { title: 'Dodaj skrzynkę e-mail', subtitle: 'Utwórz skrzynkę POP3/IMAP', body });
+    return page(ctx, { title: 'Dodaj skrzynkę e-mail', subtitle: 'Utwórz skrzynkę POP3/IMAP', body: emailCreateBody(ctx) });
   });
 
   router.post('/user/email/create', (ctx) => {
+    const fail = (message) => page(ctx, { title: 'Dodaj skrzynkę e-mail', subtitle: 'Popraw dane skrzynki', body: emailCreateBody(ctx, { values: ctx.body, error: message }) });
     const d = domainFor(ctx.user, ctx.body.domain);
-    if (!d) return ctx.redirect('/user/email?flash=Domain%20not%20found&type=error');
+    if (!d) return fail('Domena nie należy do Twojego konta.');
     const local = String(ctx.body.local_part || '').trim().toLowerCase();
-    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(local)) return ctx.redirect('/user/email?flash=Invalid%20mailbox%20name&type=error');
-    if (!ctx.body.password || String(ctx.body.password).length < 8) return ctx.redirect('/user/email?flash=Password%20must%20be%20at%20least%208%20characters&type=error');
+    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(local)) return fail('Nazwa skrzynki może zawierać małe litery, cyfry, kropkę, myślnik i podkreślenie.');
+    if (!ctx.body.password || String(ctx.body.password).length < 8) return fail('Hasło musi mieć co najmniej 8 znaków.');
     const q = quota(ctx.user, 'emails');
-    if (!q.ok) return ctx.redirect('/user/email?flash=Mailbox%20limit%20reached&type=error');
+    if (!q.ok) return fail(`Osiągnięto limit skrzynek (${q.used}/${q.limit}).`);
     let mailHash = null;
     try { mailHash = dovecotHash(String(ctx.body.password)); } catch { /* openssl unavailable */ }
     run(`INSERT INTO email_accounts(domain_id, domain, local_part, password, quota_mb, used_mb, suspended, created_at, mail_hash)

@@ -978,3 +978,19 @@ test('UX stage 3: core screens do not leak untranslated English labels in pl', a
     for (const pattern of forbidden) assert.doesNotMatch(visible, pattern, `${route}: ${pattern}`);
   }
 });
+
+test('UX stage 3: invalid mailbox form keeps values and shows an inline error', async () => {
+  const cookie = await loginAs('demouser');
+  const form = await page('/user/email/create', cookie);
+  const csrf = form.html.match(/name="_csrf" value="([^"]+)"/)[1];
+  const res = await fetch(base + '/user/email/create', {
+    method: 'POST', redirect: 'manual',
+    headers: { Cookie: cookie, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrf, domain: 'example.com', local_part: 'Invalid Name', password: 'short', quota_mb: '2048' }).toString(),
+  });
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /Nazwa skrzynki może zawierać/);
+  assert.match(html, /value="Invalid Name"/);
+  assert.match(html, /value="2048"/);
+});

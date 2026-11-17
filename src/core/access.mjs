@@ -22,6 +22,25 @@ export function visibleUsers(actor, { level = null, suspended = null } = {}) {
   return all(sql, ...params);
 }
 
+export function visibleUsersPage(actor, { level = null, suspended = null, q = '', limit = 25, offset = 0 } = {}) {
+  const clauses = [];
+  const params = [];
+  if (actor.level === 'reseller') { clauses.push('owner = ?'); params.push(actor.username); }
+  else if (actor.level === 'user') { clauses.push('id = ?'); params.push(actor.id); }
+  if (level) { clauses.push('level = ?'); params.push(level); }
+  if (suspended !== null) { clauses.push('suspended = ?'); params.push(suspended ? 1 : 0); }
+  const query = String(q || '').trim().toLowerCase();
+  if (query) {
+    clauses.push('(lower(username) LIKE ? OR lower(email) LIKE ? OR lower(package) LIKE ?)');
+    const like = `%${query}%`;
+    params.push(like, like, like);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const total = Number(get(`SELECT COUNT(*) AS n FROM users ${where}`, ...params)?.n) || 0;
+  const rows = all(`SELECT * FROM users ${where} ORDER BY username LIMIT ? OFFSET ?`, ...params, Math.max(1, Math.min(200, Number(limit) || 25)), Math.max(0, Number(offset) || 0));
+  return { rows, total };
+}
+
 export function visibleDomains(actor) {
   if (actor.level === 'admin') return all('SELECT * FROM domains ORDER BY is_main DESC, name');
   if (actor.level === 'reseller') {
