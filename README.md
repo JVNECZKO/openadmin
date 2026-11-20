@@ -21,7 +21,7 @@ Domains, DNS, mail, files, databases, SSL, backups and a 110-command API — wit
 <p>
   <a href="https://openadmin.live"><strong>Website</strong></a> ·
   <a href="https://openadmin.live/pl/"><strong>Polski</strong></a> ·
-  <a href="https://openadmin.live/openadmin-1.0.0.tar.gz?v=1.0.0"><strong>Download v1.0.0</strong></a> ·
+  <a href="https://openadmin.live/openadmin-1.1.0.tar.gz?v=1.1.0"><strong>Download v1.1.0</strong></a> ·
   <a href="https://github.com/JVNECZKO/openadmin"><strong>GitHub</strong></a> ·
   <a href="docs/API.md"><strong>API</strong></a> ·
   <a href="docs/LINUX-DEPLOY.md"><strong>Deploy</strong></a>
@@ -72,9 +72,9 @@ Requires **Node.js 22.5+**. Nothing else — not even <code>npm install</code>.
 
 ### Run the demo
 
-    curl -fsSLO 'https://openadmin.live/openadmin-1.0.0.tar.gz?v=1.0.0'
-    tar xzf openadmin-1.0.0.tar.gz
-    cd openadmin-1.0.0
+    curl -fsSLO 'https://openadmin.live/openadmin-1.1.0.tar.gz?v=1.1.0'
+    tar xzf openadmin-1.1.0.tar.gz
+    cd openadmin-1.1.0
     OA_DEMO=1 node src/server.mjs
 
 Open <http://127.0.0.1:2222> and sign in:

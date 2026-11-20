@@ -299,9 +299,9 @@ export default {
           "Downloads the source, starts the panel on port 2222 and seeds three demo accounts. No database server, no root, no signup.",
         code:
           "curl -fsSLO \\\n" +
-          "  'https://openadmin.live/openadmin-1.0.0.tar.gz?v=1.0.0'\n" +
-          "tar xzf openadmin-1.0.0.tar.gz \\\n" +
-          "  && cd openadmin-1.0.0\n" +
+          "  'https://openadmin.live/openadmin-1.1.0.tar.gz?v=1.1.0'\n" +
+          "tar xzf openadmin-1.1.0.tar.gz \\\n" +
+          "  && cd openadmin-1.1.0\n" +
           "OA_DEMO=1 node src/server.mjs",
         note: "Then open http://127.0.0.1:2222.",
         accounts: [
@@ -318,9 +318,9 @@ export default {
           "Creates the system user and data directory, installs Node.js if needed, writes a systemd unit and prints a generated admin password once.",
         code:
           "curl -fsSLO \\\n" +
-          "  'https://openadmin.live/openadmin-1.0.0.tar.gz?v=1.0.0'\n" +
-          "tar xzf openadmin-1.0.0.tar.gz \\\n" +
-          "  && cd openadmin-1.0.0\n" +
+          "  'https://openadmin.live/openadmin-1.1.0.tar.gz?v=1.1.0'\n" +
+          "tar xzf openadmin-1.1.0.tar.gz \\\n" +
+          "  && cd openadmin-1.1.0\n" +
           "sudo ./install.sh --port 2222",
         note:
           "Tested on Debian 12, Ubuntu 22.04+, Rocky 9 and AlmaLinux 9. Open port 2222 in your firewall.",
@@ -349,8 +349,8 @@ export default {
     ],
     download: {
       label: "Download source",
-      file: "openadmin-1.0.0.tar.gz",
-      meta: "AGPL-3.0 · 1.0.0 · source archive",
+      file: "openadmin-1.1.0.tar.gz",
+      meta: "AGPL-3.0 · 1.1.0 · source archive",
     },
     copy: "Copy",
     copied: "Copied",
@@ -377,7 +377,7 @@ export default {
       "Full source code and updates",
       "No telemetry, no licence server",
     ],
-    cta: "Download v1.0.0",
+    cta: "Download v1.1.0",
     note: "No credit card. No signup. No “contact sales”.",
   },
   faq: {
@@ -436,7 +436,7 @@ export default {
           { label: "Screenshots", href: "#screenshots" },
           { label: "Install", href: "#install" },
           { label: "Pricing", href: "#pricing" },
-          { label: "Download", href: "/openadmin-1.0.0.tar.gz?v=1.0.0" },
+          { label: "Download", href: "/openadmin-1.1.0.tar.gz?v=1.1.0" },
         ],
       },
       {

@@ -3,6 +3,24 @@
 All notable changes to OpenAdmin are recorded here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## 1.1.0 — 2026-11-20
+
+UX and accessibility release. No breaking API or data migration; existing
+installations update the panel version automatically on boot.
+
+- Mobile card layouts for mailboxes, customer domains and Security Center summaries.
+- Readable row actions with labelled overflow menus; no wrapped “Run now” button.
+- Polish topbar, help and high-traffic screens; language regression test.
+- One-page quick account creation with an optional site and mailbox.
+- Package builder presets, collapsible sections, sticky summary and unlimited toggles.
+- File manager search/sort/quota/multi-select/bulk download/delete/preview.
+- E-mail all-domain view, search, bulk suspend/delete and labelled actions.
+- Command palette entities and recents.
+- Server-side account pagination; scoped pagination for domains, mailboxes and files.
+- Direct bulk selection, dirty-form guard, password reveal/copy, inline mailbox errors.
+- Shared terminology dictionary, contextual help links and collapsible dashboard/health/automation sections.
+- Full verification: 327 tests and 405 QA route/width checks.
+
 ## 1.0.0 — 2026-11-14
 
 First public release.

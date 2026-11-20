@@ -298,9 +298,9 @@ export default {
           "Skrypt pobiera źródła, uruchamia panel na porcie 2222 i zakłada trzy konta demo. Nie potrzebujesz serwera bazy danych, konta root ani rejestracji.",
         code:
           "curl -fsSLO \\\n" +
-          "  'https://openadmin.live/openadmin-1.0.0.tar.gz?v=1.0.0'\n" +
-          "tar xzf openadmin-1.0.0.tar.gz \\\n" +
-          "  && cd openadmin-1.0.0\n" +
+          "  'https://openadmin.live/openadmin-1.1.0.tar.gz?v=1.1.0'\n" +
+          "tar xzf openadmin-1.1.0.tar.gz \\\n" +
+          "  && cd openadmin-1.1.0\n" +
           "OA_DEMO=1 node src/server.mjs",
         note: "Następnie otwórz http://127.0.0.1:2222.",
         accounts: [
@@ -317,9 +317,9 @@ export default {
           "Instalator tworzy użytkownika systemowego i katalog danych, instaluje Node.js, jeśli trzeba, zapisuje jednostkę systemd i jednorazowo wypisuje wygenerowane hasło administratora.",
         code:
           "curl -fsSLO \\\n" +
-          "  'https://openadmin.live/openadmin-1.0.0.tar.gz?v=1.0.0'\n" +
-          "tar xzf openadmin-1.0.0.tar.gz \\\n" +
-          "  && cd openadmin-1.0.0\n" +
+          "  'https://openadmin.live/openadmin-1.1.0.tar.gz?v=1.1.0'\n" +
+          "tar xzf openadmin-1.1.0.tar.gz \\\n" +
+          "  && cd openadmin-1.1.0\n" +
           "sudo ./install.sh --port 2222",
         note:
           "Testowane na Debianie 12, Ubuntu 22.04+, Rocky 9 i AlmaLinux 9. Otwórz port 2222 w zaporze.",
@@ -348,8 +348,8 @@ export default {
     ],
     download: {
       label: "Pobierz źródła",
-      file: "openadmin-1.0.0.tar.gz",
-      meta: "AGPL-3.0 · 1.0.0 · archiwum źródeł",
+      file: "openadmin-1.1.0.tar.gz",
+      meta: "AGPL-3.0 · 1.1.0 · archiwum źródeł",
     },
     copy: "Kopiuj",
     copied: "Skopiowano",
@@ -376,7 +376,7 @@ export default {
       "Pełny kod źródłowy i aktualizacje",
       "Zero telemetrii, zero serwera licencji",
     ],
-    cta: "Pobierz wersję 1.0.0",
+    cta: "Pobierz wersję 1.1.0",
     note: "Bez karty. Bez rejestracji. Bez „skontaktuj się z działem sprzedaży”.",
   },
   faq: {
@@ -435,7 +435,7 @@ export default {
           { label: "Zrzuty ekranu", href: "#screenshots" },
           { label: "Instalacja", href: "#install" },
           { label: "Cennik", href: "#pricing" },
-          { label: "Pobierz", href: "/openadmin-1.0.0.tar.gz?v=1.0.0" },
+          { label: "Pobierz", href: "/openadmin-1.1.0.tar.gz?v=1.1.0" },
         ],
       },
       {

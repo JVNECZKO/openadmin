@@ -6,7 +6,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 
 export const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 function int(v, d) {
   const n = Number.parseInt(v ?? '', 10);

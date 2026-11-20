@@ -237,7 +237,7 @@ export function register(router) {
         ['Server IP', setting('server_ip', '127.0.0.1')],
         ['Operating system', 'Debian 12 (bookworm)'],
         ['Kernel', '6.1.0-amd64'],
-        ['Panel version', 'OpenAdmin ' + setting('panel_version', '1.0.0')],
+        ['Panel version', 'OpenAdmin ' + setting('panel_version', '1.1.0')],
         ['Panel port', '2222'],
         ['Nameservers', `${setting('ns1', 'ns1')} · ${setting('ns2', 'ns2')}`],
         ['Timezone', 'Europe/Warsaw'],

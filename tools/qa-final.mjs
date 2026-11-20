@@ -66,7 +66,7 @@ process.env.OA_DATA_DIR = UNIT_DATA;
 const startedAt = Date.now();
 const results = {
   meta: {
-    product: 'OpenAdmin', version: '1.0.0', generatedAt: new Date().toISOString(),
+    product: 'OpenAdmin', version: '1.1.0', generatedAt: new Date().toISOString(),
     base: null, isolated: !EXTERNAL_BASE, root: ROOT, widths: WIDTHS, node: process.version,
     chrome: CHROME, axe: null, dataDir: null, durationMs: 0,
   },

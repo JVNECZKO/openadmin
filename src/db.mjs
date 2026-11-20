@@ -1028,6 +1028,8 @@ function packageLimits(type) {
 export function seedBase({ adminUser, adminPassword, serverName, serverIp, ns1, ns2 } = {}) {
   const d = getDb();
   const count = get('SELECT COUNT(*) AS n FROM users');
+  // An upgrade keeps data but must surface the running release in the panel.
+  setSetting('panel_version', config.version);
   if (count && count.n > 0) return { created: false };
 
   const password = adminPassword || crypto.randomBytes(9).toString('base64url');

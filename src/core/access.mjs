@@ -136,7 +136,7 @@ export function serverInfo() {
     ip: setting('server_ip', '127.0.0.1'),
     os: process.platform,
     node: process.version,
-    version: setting('panel_version', '1.0.0'),
+    version: setting('panel_version', '1.1.0'),
     ns1: setting('ns1', ''),
     ns2: setting('ns2', ''),
   };

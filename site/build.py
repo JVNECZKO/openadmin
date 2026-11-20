@@ -10,9 +10,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
 SITE = "https://openadmin.live"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 GITHUB_URL = "https://github.com/JVNECZKO/openadmin"
-DOWNLOAD_PATH = "/openadmin-1.0.0.tar.gz?v=1.0.0"
+DOWNLOAD_PATH = "/openadmin-1.1.0.tar.gz?v=1.1.0"
 ASSET_VER = hashlib.sha256((ROOT / "assets" / "styles.css").read_bytes() + (ROOT / "assets" / "app.js").read_bytes()).hexdigest()[:10]
 SHOT_VER = hashlib.sha256((ROOT / "assets" / "shots" / "mariadb-1440.webp").read_bytes() + (ROOT / "assets" / "shots" / "dashboard-1440.webp").read_bytes() + (ROOT / "assets" / "og.jpg").read_bytes()).hexdigest()[:8]
 
@@ -614,7 +614,8 @@ ErrorDocument 404 /404.html
   RewriteEngine On
   # Canonical archive URL: bypass the pre-release cached object.
   RewriteCond %{QUERY_STRING} ^$
-  RewriteRule ^openadmin-1\.0\.0\.tar\.gz$ /openadmin-1.0.0.tar.gz?v=1.0.0 [R=301,L]
+  RewriteRule ^openadmin-1\.0\.0\.tar\.gz$ /openadmin-1.1.0.tar.gz [R=301,L]
+  RewriteRule ^openadmin-1\.1\.0\.tar\.gz$ /openadmin-1.1.0.tar.gz?v=1.1.0 [R=301,L]
   # Canonical host: send www to the apex domain.
   RewriteCond %{HTTP_HOST} ^www\.openadmin\.live$ [NC]
   RewriteRule ^ https://openadmin.live%{REQUEST_URI} [R=301,L]
@@ -664,14 +665,14 @@ def main():
         shutil.rmtree(assets_dst)
     shutil.copytree(assets_src, assets_dst)
 
-    archive = ROOT / "download" / "openadmin-1.0.0.tar.gz"
+    archive = ROOT / "download" / "openadmin-1.1.0.tar.gz"
     if not archive.exists():
         import subprocess
         archive.parent.mkdir(exist_ok=True)
         try:
             subprocess.run([
                 "git", "-C", str(ROOT.parent), "archive", "--format=tar.gz",
-                "--prefix=openadmin-1.0.0/", "-o", str(archive), "HEAD",
+                "--prefix=openadmin-1.1.0/", "-o", str(archive), "HEAD",
             ], check=True)
             print("generated source archive from git HEAD")
         except Exception as exc:

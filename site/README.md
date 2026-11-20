@@ -14,7 +14,7 @@ Fully static, no runtime dependencies, no external requests, no trackers.
 | **assets/app.js** | Menu, tabs, copy buttons, scroll reveals, card spotlight. No libraries. |
 | **assets/shots/** | 1440 px and 900 px WebP captures of the panel. |
 | **assets/fonts/** | Self-hosted WOFF2 subsets (latin + latin-ext) for Polish diacritics. |
-| **download/** | The generated openadmin-1.0.0.tar.gz source archive. |
+| **download/** | The generated openadmin-1.1.0.tar.gz source archive. |
 | **dist/** | Build output. Deploy it; do not hand-edit it. |
 
 ## Build
@@ -30,7 +30,7 @@ Or step by step:
 
 The build appends a content hash to the CSS and JS query strings, so a one-year
 cache is safe. It uses **git archive** to create the downloadable source tarball
-when **download/openadmin-1.0.0.tar.gz** is missing.
+when **download/openadmin-1.1.0.tar.gz** is missing.
 
 ## Deploy
 
